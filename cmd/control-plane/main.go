@@ -42,16 +42,19 @@ func main() {
 	var catalogStore httpapi.CatalogStore
 	var entitlementStore httpapi.EntitlementStore
 	var accountStore httpapi.AccountStore
+	var lineStore httpapi.LineStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
 		accountStore = identityRepository
-		catalogStore = catalog.NewPostgresRepository(pool)
+		catalogRepository := catalog.NewPostgresRepository(pool)
+		catalogStore = catalogRepository
+		lineStore = catalogRepository
 		entitlementStore = entitlement.NewPostgresRepository(pool)
 	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandlerWithAccounts(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore),
+		Handler:           httpapi.NewHandlerWithLines(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

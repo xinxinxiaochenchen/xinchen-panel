@@ -47,3 +47,27 @@ func TestNormalizeLine(t *testing.T) {
 }
 
 func intPtr(value int) *int { return &value }
+
+func TestNormalizeLinePatch(t *testing.T) {
+	name := "  Renamed  "
+	tags := []string{" fast "}
+	patch, err := NormalizeLinePatch(LinePatch{Name: &name, Enabled: boolPtr(false), Tags: &tags}, false)
+	if err != nil || patch.Name == nil || *patch.Name != "Renamed" || patch.Enabled == nil || *patch.Enabled || patch.Tags == nil || !reflect.DeepEqual(*patch.Tags, []string{"fast"}) {
+		t.Fatalf("normalized patch = %+v, %v", patch, err)
+	}
+	for _, candidate := range []LinePatch{
+		{},
+		{Name: stringPtr(" ")},
+		{Priority: intPtr(-1)},
+		{Weight: intPtr(0)},
+		{Tags: &[]string{"a", "a"}},
+		{MultiplierMilli: intPtr(500)},
+	} {
+		if _, err := NormalizeLinePatch(candidate, false); err == nil {
+			t.Fatalf("accepted invalid member patch: %+v", candidate)
+		}
+	}
+}
+
+func boolPtr(value bool) *bool       { return &value }
+func stringPtr(value string) *string { return &value }

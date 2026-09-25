@@ -22,23 +22,23 @@
 
 **Files:** `internal/catalog/line_repository.go`, `internal/catalog/line_repository_test.go`.
 
-- [ ] Test shared creation, duplicate shared name conflict, member creation with an active membership whose snapshot grants the node group and permits custom lines, and rejection for missing membership, disabled group/node, non-proxy node, and max custom line count. Test a concurrent limit attempt through two transactions. Test that a shared line granted by membership becomes unavailable when its node/group is disabled or loses proxy capability.
-- [ ] Insert `lines`, exactly one `line_hops` row, and a redacted `audit_logs` row atomically. For member creation, lock the user row, then read one active membership (`status='active'`, `starts_at<=now()`, `ends_at>now()`) and its snapshot limits; reject when `allow_custom_lines=false` or current count reaches `max_custom_lines`. Lock node and resource group rows before validating enabled state, proxy capability, and `proxy_port`.
-- [ ] Add paginated `ListAllLines`, `ListAllowedLines`, `GetAllowedLine`. Shared visibility requires line grant **and** node group grant in the membership snapshot; custom visibility requires ownership and a current membership with the node group grant. Re-evaluate line, node and group state on every allowed read.
-- [ ] Run local catalog tests, then compile `go test -c` for Linux and run it against a freshly migrated disposable PostgreSQL 16 database on `us dmit` through Termark. Clean the test database and binary afterward.
+- [x] Test shared creation, duplicate shared name conflict, member creation with an active membership whose snapshot grants the node group and permits custom lines, and rejection for missing membership, disabled group/node, non-proxy node, and max custom line count. Test a concurrent limit attempt through two transactions. Test that a shared line granted by membership becomes unavailable when its node/group is disabled or loses proxy capability.
+- [x] Insert `lines`, exactly one `line_hops` row, and a redacted `audit_logs` row atomically. For member creation, lock the user row, then read one active membership (`status='active'`, `starts_at<=now()`, `ends_at>now()`) and its snapshot limits; reject when `allow_custom_lines=false` or current count reaches `max_custom_lines`. Lock node and resource group rows before validating enabled state, proxy capability, and `proxy_port`.
+- [x] Add paginated `ListAllLines`, `ListAllowedLines`, `GetAllowedLine`. Shared visibility requires line grant **and** node group grant in the membership snapshot; custom visibility requires ownership and a current membership with the node group grant. Re-evaluate line, node and group state on every allowed read.
+- [x] Run local catalog tests, then compile `go test -c` for Linux and run it against a freshly migrated disposable PostgreSQL 16 database on `us dmit` through Termark. Clean the test database and binary afterward.
 
 ## Task 3: Update and delete
 
 **Files:** `internal/catalog/line_repository.go`, `internal/catalog/line_repository_test.go`, `internal/catalog/line_model.go`.
 
-- [ ] Test shared and owned update authorization, line disable, changed priority/weight/tags, immutable hop for this slice, and name conflicts. Test delete blocked by plan grants, proxy accesses or forwarding references; a successful owner delete must remove its hop and leave an audit row.
-- [ ] Implement `UpdateSharedLine`, `UpdateOwnLine`, and `DeleteOwnLine` transactionally with ownership checks. Keep the single-hop path immutable until a separate `PUT /admin/lines/{id}/hops` operation can validate all dependent resources.
-- [ ] Verify tests against PostgreSQL 16.
+- [x] Test shared and owned update authorization, line disable, changed priority/weight/tags, immutable hop for this slice, and name conflicts. Test delete blocked by plan grants, proxy accesses or forwarding references; a successful owner delete must remove its hop and leave an audit row.
+- [x] Implement `UpdateSharedLine`, `UpdateOwnLine`, and `DeleteOwnLine` transactionally with ownership checks. Keep the single-hop path immutable until a separate `PUT /admin/lines/{id}/hops` operation can validate all dependent resources.
+- [x] Verify tests against PostgreSQL 16.
 
 ## Task 4: REST and docs
 
 **Files:** `internal/platform/httpapi/lines.go`, `internal/platform/httpapi/lines_test.go`, `internal/platform/httpapi/server.go`, `cmd/control-plane/main.go`, `api/openapi/control-plane.yaml`, `README.md`.
 
-- [ ] Write handler tests for anonymous 401, member on admin route 403, write without CSRF 403, shared/admin create 201, own create 201, invalid body 400/422, absent entitlement 403, owner isolation 404, and page cursors.
-- [ ] Register `GET/POST /api/v1/admin/lines`, `GET/POST /api/v1/lines`, `GET/PATCH /api/v1/lines/{id}`, and `DELETE /api/v1/lines/{id}`. Admin update can use `/api/v1/admin/lines/{id}`. Restrict member mutations to owned lines and current entitlement.
+- [x] Write handler tests for anonymous 401, member on admin route 403, write without CSRF 403, shared/admin create 201, own create 201, invalid body 400/422, absent entitlement rejection, owner isolation 404, and page cursors.
+- [x] Register `GET/POST /api/v1/admin/lines`, `GET/POST /api/v1/lines`, `GET/PATCH /api/v1/lines/{id}`, and `DELETE /api/v1/lines/{id}`. Admin update can use `/api/v1/admin/lines/{id}`. Restrict member mutations to owned lines and current entitlement.
 - [ ] Update OpenAPI and README. Run `go test ./... -count=1`, `go vet ./...`, YAML parse, `git diff --check`, review, and deploy while `CONTROL_BROWSER_AUTH_ENABLED=false` on the public HTTP preview. Confirm health 200 and line routes 404 over plain HTTP.
