@@ -100,7 +100,7 @@ func NormalizeRule(input NewRule) (RuleInput, error) {
 		targetNodeID = &value
 	} else {
 		host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(*input.TargetHost), "."))
-		if !validPublicHost(host) {
+		if !ValidPublicHost(host) {
 			return RuleInput{}, ValidationError{"target_host", "expected public IP address or DNS hostname"}
 		}
 		targetHost = &host
@@ -134,7 +134,9 @@ func NormalizeRulePatch(input RulePatch) (RulePatch, error) {
 	return input, nil
 }
 
-func validPublicHost(host string) bool {
+// ValidPublicHost accepts a public IP literal or a well-formed DNS hostname.
+// DNS results still require PublicIP validation at connection time.
+func ValidPublicHost(host string) bool {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		return PublicIP(addr)
 	}
