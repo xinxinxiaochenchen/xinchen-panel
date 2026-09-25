@@ -18,6 +18,10 @@ type ReadyChecker interface {
 }
 
 func NewHandler(logger *slog.Logger, checker ReadyChecker) http.Handler {
+	return NewHandlerWithIdentity(logger, checker, nil)
+}
+
+func NewHandlerWithIdentity(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions) http.Handler {
 	mux := http.NewServeMux()
 	live := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -44,6 +48,9 @@ func NewHandler(logger *slog.Logger, checker ReadyChecker) http.Handler {
 		}
 		live(w, r)
 	})
+	if sessions != nil {
+		registerIdentityRoutes(mux, sessions)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
 	})

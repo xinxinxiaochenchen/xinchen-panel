@@ -8,3 +8,4 @@
 - 2026-09-25：接入 pgx/v5、数据库启动检查、依赖感知的 readiness 和事务化 migration 命令。单元测试、vet、PGlite up/down 通过；Go 到 PostgreSQL 16 的实时连接尚未验证。
 - 2026-09-25：`us dmit` 私有预览部署到 `/opt/network-control-plane/releases/2594ba4`。初次迁移因 AppleDouble 文件失败；回归测试先红后绿，修复后 API/DB 均健康，HTTP 探针 200，真实 PostgreSQL 16.10 迁移和重跑成功，原有 Nginx Proxy Manager 未受影响。
 - 2026-09-25：按用户要求发布 `2ead2ae`，将 API 临时绑定到公网 18080。开发机经 `179.255.145.149` 请求 `/live` 和 `/ready` 均返回 200；域名与 HTTPS 留待后续 Nginx 反代。当前仍只有基础健康接口，没有管理 UI。
+- 2026-09-26：开发身份与 RBAC 基础：版本 2 迁移、bcrypt 登录、哈希会话和 CSRF、安全 Cookie、`/me`、权限查询、UUIDv7 和管理员初始化命令。审查后补充默认关闭身份路由、登录限流、`lines.write.self` 权限分离与过期会话清理。全量 Go 测试与 vet 通过；真实 PostgreSQL 16 独立数据库中的迁移、回滚、会话仓储和管理员事务测试通过。公网预览暂不发布登录代码，正式库仍为迁移版本 1。

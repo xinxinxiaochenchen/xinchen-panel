@@ -15,8 +15,29 @@ func TestLoadFromDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HTTPAddr != "127.0.0.1:8080" || cfg.LogLevel != slog.LevelInfo || cfg.DatabaseURL == "" {
+	if cfg.HTTPAddr != "127.0.0.1:8080" || cfg.LogLevel != slog.LevelInfo || cfg.DatabaseURL == "" || cfg.BrowserAuthEnabled {
 		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+}
+
+func TestLoadFromBrowserAuthExplicitFlag(t *testing.T) {
+	lookup := func(key string) (string, bool) {
+		values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_BROWSER_AUTH_ENABLED": "true"}
+		value, ok := values[key]
+		return value, ok
+	}
+	cfg, err := LoadFrom(lookup)
+	if err != nil || !cfg.BrowserAuthEnabled {
+		t.Fatalf("enabled flag = %+v, %v", cfg, err)
+	}
+	_, err = LoadFrom(func(key string) (string, bool) {
+		if key == "CONTROL_BROWSER_AUTH_ENABLED" {
+			return "sometimes", true
+		}
+		return lookup(key)
+	})
+	if err == nil {
+		t.Fatal("expected invalid boolean error")
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"controlplane/internal/identity"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/db"
 	"controlplane/internal/platform/httpapi"
@@ -35,9 +36,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	var sessions httpapi.IdentitySessions
+	if cfg.BrowserAuthEnabled {
+		sessions = identity.NewService(identity.NewPostgresRepository(pool))
+	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandler(logger, db.HealthCheck{Database: pool}),
+		Handler:           httpapi.NewHandlerWithIdentity(logger, db.HealthCheck{Database: pool}, sessions),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -45,6 +50,9 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if cfg.BrowserAuthEnabled {
+		go identity.RunSessionJanitor(ctx, identity.NewPostgresRepository(pool), logger)
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

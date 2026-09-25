@@ -10,9 +10,10 @@ import (
 )
 
 type Config struct {
-	HTTPAddr    string
-	LogLevel    slog.Level
-	DatabaseURL string
+	HTTPAddr           string
+	LogLevel           slog.Level
+	DatabaseURL        string
+	BrowserAuthEnabled bool
 }
 
 func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
@@ -37,6 +38,13 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, fmt.Errorf("CONTROL_DATABASE_URL: expected a postgres URL with host")
 	}
 	cfg.DatabaseURL = value
+	if value, ok := lookup("CONTROL_BROWSER_AUTH_ENABLED"); ok {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("CONTROL_BROWSER_AUTH_ENABLED: expected true or false")
+		}
+		cfg.BrowserAuthEnabled = enabled
+	}
 	if value, ok := lookup("CONTROL_LOG_LEVEL"); ok {
 		switch strings.ToLower(value) {
 		case "debug":

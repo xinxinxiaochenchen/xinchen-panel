@@ -2,6 +2,7 @@ FROM scratch
 WORKDIR /app
 COPY bin/control-plane /usr/local/bin/control-plane
 COPY bin/migrate /usr/local/bin/migrate
+COPY bin/admin-bootstrap /usr/local/bin/admin-bootstrap
 COPY migrations /app/migrations
 USER 65532:65532
 EXPOSE 8080
