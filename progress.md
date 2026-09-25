@@ -17,3 +17,4 @@
 - 2026-09-26：完成单跳线路 API，提交 `b51c548` 并部署到 `us dmit`。正式库升级前备份 `pre-lines-b51c548.dump`；公网健康接口 200，登录与线路接口 404，API/DB healthy。部署记录提交 `ecd26d1`。
 - 2026-09-26：开始直达转发规则切片。复核已批准的架构、现有 SQL/RBAC/HTTP 模式和干净的隔离工作区；完整 Go 基线测试通过。新增实施计划 `docs/superpowers/plans/2026-09-26-direct-forward-rules.md`。
 - 2026-09-26：完成直达 TCP/UDP/BOTH 转发规则、原子端口预留、目标策略默认拒绝、订购限制、审计/outbox 和 REST/OpenAPI。策略撤销会标记相关规则待收敛。回归测试先复现已禁用账户仍可重新启用规则，再修正仓储锁与状态校验。完整 Go 测试、vet、OpenAPI 解析通过；真实 PostgreSQL 16 独立库重建两次，转发集成测试均通过。公网认证继续关闭，实际 Agent 执行尚未接入。
+- 2026-09-26：提交 `235abdf` 并发布到 `us dmit`；正式库先备份至 `pre-forward-235abdf.dump`，迁移版本 4 已应用。API/DB 容器 healthy、重启次数 0；公网纯 IP 健康接口均为 200，登录和转发管理接口均为 404。专用测试数据库及临时二进制已清理，现有 Nginx Proxy Manager 的 80/443 端口未变。
