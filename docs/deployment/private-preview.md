@@ -2,12 +2,13 @@
 
 本部署只验证控制面基础、PostgreSQL 迁移和健康接口。业务 API、前端和 Agent 尚未完成；公网 18080 仅供临时纯 IP 连通性测试，不是正式控制台。
 
-## 当前状态（2026-09-25）
+## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `2ead2ae`，目录 `/opt/network-control-plane/releases/2ead2ae`。
+- 已在 `us dmit` 部署提交 `c5b1664`，目录 `/opt/network-control-plane/releases/c5b1664`。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1；数据库有 13 张 public 表（12 张业务基础表加 `schema_migrations`）；重复执行 `migrate up` 成功。
+- 迁移记录版本 1、2；身份/RBAC 表和 21 个权限码已创建；重复执行 `migrate up` 成功。升级前备份位于 `/opt/network-control-plane/backups/pre-identity-c5b1664.dump`，权限 `0600`。
+- 浏览器认证由 `CONTROL_BROWSER_AUTH_ENABLED=false` 关闭。公网 `POST /api/v1/auth/login` 返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
 
