@@ -50,6 +50,17 @@ func (s *sessionStub) Authenticate(_ context.Context, token string) (identity.Pu
 	return identity.PublicUser{ID: "id-1", Email: "member@example.com", Permissions: []string{"nodes.read"}}, nil
 }
 
+func (s *sessionStub) VerifyCSRF(ctx context.Context, token, csrf string) (identity.PublicUser, error) {
+	user, err := s.Authenticate(ctx, token)
+	if err != nil {
+		return identity.PublicUser{}, err
+	}
+	if csrf != strings.Repeat("b", 64) {
+		return identity.PublicUser{}, identity.ErrInvalidCSRF
+	}
+	return user, nil
+}
+
 func (s *sessionStub) Logout(_ context.Context, token, csrf string) error {
 	if token != strings.Repeat("a", 64) {
 		return identity.ErrUnauthenticated

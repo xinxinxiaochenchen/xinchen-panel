@@ -20,6 +20,7 @@ const (
 type IdentitySessions interface {
 	Login(context.Context, string, string) (identity.LoginResult, error)
 	Authenticate(context.Context, string) (identity.PublicUser, error)
+	VerifyCSRF(context.Context, string, string) (identity.PublicUser, error)
 	Logout(context.Context, string, string) error
 }
 

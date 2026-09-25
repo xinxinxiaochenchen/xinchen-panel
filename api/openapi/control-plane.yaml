@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health and browser identity endpoints for the independently designed network control plane. Browser identity requires HTTPS.
+  description: Health, browser identity and resource directory endpoints for the independently designed network control plane. Browser identity requires HTTPS.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -126,7 +126,136 @@ paths:
                 $ref: '#/components/schemas/PermissionsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/admin/resource-groups:
+    get:
+      operationId: listResourceGroups
+      summary: List all resource groups (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Resource groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceGroupList'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createResourceGroup
+      summary: Create a resource group (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewResourceGroup'}
+      responses:
+        '201':
+          description: Created group
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResourceGroup'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/nodes:
+    get:
+      operationId: listAllNodes
+      summary: List all nodes (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: All nodes
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NodeList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createNode
+      summary: Create a node (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewNode'}
+      responses:
+        '201':
+          description: Created node
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/nodes:
+    get:
+      operationId: listAllowedNodes
+      summary: List nodes allowed by the active membership snapshot
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Authorized and enabled nodes
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NodeList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/nodes/{id}:
+    get:
+      operationId: getAllowedNode
+      summary: Get an authorized node
+      security: [{browserSession: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Authorized node
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
 components:
+  parameters:
+    PageLimit:
+      in: query
+      name: limit
+      schema: {type: integer, minimum: 1, maximum: 200, default: 100}
+    PageCursor:
+      in: query
+      name: cursor
+      description: Opaque next_cursor value from the preceding list response.
+      schema: {type: string}
   securitySchemes:
     browserSession:
       type: apiKey
@@ -156,6 +285,16 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource already exists.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    ValidationError:
+      description: Input is structurally valid JSON but has invalid fields.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
     RateLimited:
       description: Login rate limit reached. Retry-After gives the wait in seconds.
       headers:
@@ -195,6 +334,72 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    NewResourceGroup:
+      type: object
+      required: [code, name, region]
+      properties:
+        code: {type: string, example: RFC.JPT1}
+        name: {type: string}
+        region: {type: string}
+        enabled: {type: boolean, default: true}
+    ResourceGroup:
+      allOf:
+        - {$ref: '#/components/schemas/NewResourceGroup'}
+        - type: object
+          required: [id, enabled, created_at]
+          properties:
+            id: {type: string, format: uuid}
+            created_at: {type: string, format: date-time}
+    ResourceGroupList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ResourceGroup'}
+        next_cursor: {type: ['string', 'null']}
+    NewNode:
+      type: object
+      required: [group_id, name, region, host, capabilities]
+      properties:
+        group_id: {type: string, format: uuid}
+        name: {type: string}
+        region: {type: string}
+        host: {type: string}
+        public_ip: {type: ['string', 'null']}
+        proxy_port:
+          type: ['integer', 'null']
+          minimum: 1
+          maximum: 65535
+          description: Required when capabilities includes proxy; omitted for forward-only nodes.
+        capabilities:
+          type: array
+          items: {type: string, enum: [proxy, forward]}
+        bandwidth_bps: {type: ['integer', 'null'], minimum: 0}
+        multiplier_milli: {type: integer, minimum: 1, default: 1000}
+        tags:
+          type: array
+          items: {type: string}
+        enabled: {type: boolean, default: true}
+    Node:
+      allOf:
+        - {$ref: '#/components/schemas/NewNode'}
+        - type: object
+          required: [id, group_code, multiplier_milli, tags, enabled, agent_status, created_at]
+          properties:
+            id: {type: string, format: uuid}
+            group_code: {type: string}
+            agent_status: {type: string, enum: [unknown, online, offline, revoked]}
+            last_seen_at: {type: ['string', 'null'], format: date-time}
+            created_at: {type: string, format: date-time}
+    NodeList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Node'}
+        next_cursor: {type: ['string', 'null']}
     User:
       type: object
       required: [id, email, status, timezone, roles, permissions]

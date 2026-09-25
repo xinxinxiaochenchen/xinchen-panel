@@ -78,7 +78,7 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 2 || migrations[0].Version != 1 || migrations[1].Version != 2 {
-		t.Fatalf("expected identity migration after initial schema: %+v", migrations)
+	if len(migrations) != 3 || migrations[0].Version != 1 || migrations[1].Version != 2 || migrations[2].Version != 3 {
+		t.Fatalf("expected catalog audit migration after identity schema: %+v", migrations)
 	}
 }

@@ -22,6 +22,10 @@ func NewHandler(logger *slog.Logger, checker ReadyChecker) http.Handler {
 }
 
 func NewHandlerWithIdentity(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions) http.Handler {
+	return NewHandlerWithCatalog(logger, checker, sessions, nil)
+}
+
+func NewHandlerWithCatalog(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore) http.Handler {
 	mux := http.NewServeMux()
 	live := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -50,6 +54,9 @@ func NewHandlerWithIdentity(logger *slog.Logger, checker ReadyChecker, sessions 
 	})
 	if sessions != nil {
 		registerIdentityRoutes(mux, sessions)
+		if catalog != nil {
+			registerCatalogRoutes(mux, sessions, catalog)
+		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")

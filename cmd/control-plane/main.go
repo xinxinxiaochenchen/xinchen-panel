@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"controlplane/internal/catalog"
 	"controlplane/internal/identity"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/db"
@@ -37,12 +38,14 @@ func main() {
 	}
 	defer pool.Close()
 	var sessions httpapi.IdentitySessions
+	var catalogStore httpapi.CatalogStore
 	if cfg.BrowserAuthEnabled {
 		sessions = identity.NewService(identity.NewPostgresRepository(pool))
+		catalogStore = catalog.NewPostgresRepository(pool)
 	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandlerWithIdentity(logger, db.HealthCheck{Database: pool}, sessions),
+		Handler:           httpapi.NewHandlerWithCatalog(logger, db.HealthCheck{Database: pool}, sessions, catalogStore),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
