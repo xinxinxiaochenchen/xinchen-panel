@@ -4,7 +4,7 @@
 
 ## 本地运行
 
-需要 Go 1.27.1。执行：
+需要 Go 1.27.1 和 PostgreSQL。设置 `CONTROL_DATABASE_URL`，例如 `postgres://app:secret@127.0.0.1:5432/control`，再执行：
 
 ```sh
 go test ./...
@@ -19,7 +19,7 @@ curl http://127.0.0.1:8080/api/v1/health/live
 curl http://127.0.0.1:8080/api/v1/health/ready
 ```
 
-当前 `/ready` 仅表示 HTTP 服务可以处理请求。接入 PostgreSQL 后会加入数据库探测。响应带 `X-Request-ID`，错误使用统一 JSON envelope。接口契约位于 `api/openapi/control-plane.yaml`。
+`/live` 只检查进程；`/ready` 在数据库不可用时返回 503。响应带 `X-Request-ID`，错误使用统一 JSON envelope。接口契约位于 `api/openapi/control-plane.yaml`。
 
 ## 数据库
 

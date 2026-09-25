@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"controlplane/internal/platform/config"
+	"controlplane/internal/platform/db"
 	"controlplane/internal/platform/httpapi"
 )
 
@@ -21,9 +22,15 @@ func main() {
 		os.Exit(2)
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	pool, err := db.Open(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("database unavailable", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandler(logger, nil),
+		Handler:           httpapi.NewHandler(logger, db.HealthCheck{Database: pool}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

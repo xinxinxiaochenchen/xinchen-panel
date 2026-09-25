@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
 
 type Config struct {
-	HTTPAddr string
-	LogLevel slog.Level
+	HTTPAddr    string
+	LogLevel    slog.Level
+	DatabaseURL string
 }
 
 func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
@@ -26,6 +28,15 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil || port < 1 || port > 65535 {
 		return Config{}, fmt.Errorf("CONTROL_HTTP_ADDR: invalid port %q", portText)
 	}
+	value, ok := lookup("CONTROL_DATABASE_URL")
+	if !ok || value == "" {
+		return Config{}, fmt.Errorf("CONTROL_DATABASE_URL: required")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Host == "" {
+		return Config{}, fmt.Errorf("CONTROL_DATABASE_URL: expected a postgres URL with host")
+	}
+	cfg.DatabaseURL = value
 	if value, ok := lookup("CONTROL_LOG_LEVEL"); ok {
 		switch strings.ToLower(value) {
 		case "debug":

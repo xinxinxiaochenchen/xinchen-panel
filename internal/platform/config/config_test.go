@@ -6,11 +6,16 @@ import (
 )
 
 func TestLoadFromDefaults(t *testing.T) {
-	cfg, err := LoadFrom(func(string) (string, bool) { return "", false })
+	cfg, err := LoadFrom(func(key string) (string, bool) {
+		if key == "CONTROL_DATABASE_URL" {
+			return "postgres://app:secret@localhost:5432/control", true
+		}
+		return "", false
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HTTPAddr != "127.0.0.1:8080" || cfg.LogLevel != slog.LevelInfo {
+	if cfg.HTTPAddr != "127.0.0.1:8080" || cfg.LogLevel != slog.LevelInfo || cfg.DatabaseURL == "" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 }
@@ -19,6 +24,9 @@ func TestLoadFromRejectsInvalidAddress(t *testing.T) {
 	_, err := LoadFrom(func(key string) (string, bool) {
 		if key == "CONTROL_HTTP_ADDR" {
 			return "not-an-address", true
+		}
+		if key == "CONTROL_DATABASE_URL" {
+			return "postgres://localhost/control", true
 		}
 		return "", false
 	})
@@ -32,6 +40,9 @@ func TestLoadFromRejectsInvalidLogLevel(t *testing.T) {
 		if key == "CONTROL_LOG_LEVEL" {
 			return "verbose", true
 		}
+		if key == "CONTROL_DATABASE_URL" {
+			return "postgres://localhost/control", true
+		}
 		return "", false
 	})
 	if err == nil {
@@ -42,8 +53,9 @@ func TestLoadFromRejectsInvalidLogLevel(t *testing.T) {
 func TestLoadFromOverrides(t *testing.T) {
 	cfg, err := LoadFrom(func(key string) (string, bool) {
 		values := map[string]string{
-			"CONTROL_HTTP_ADDR": ":9090",
-			"CONTROL_LOG_LEVEL": "debug",
+			"CONTROL_HTTP_ADDR":    ":9090",
+			"CONTROL_LOG_LEVEL":   "debug",
+			"CONTROL_DATABASE_URL": "postgres://localhost/control",
 		}
 		value, ok := values[key]
 		return value, ok
@@ -53,5 +65,24 @@ func TestLoadFromOverrides(t *testing.T) {
 	}
 	if cfg.HTTPAddr != ":9090" || cfg.LogLevel != slog.LevelDebug {
 		t.Fatalf("unexpected overrides: %+v", cfg)
+	}
+}
+
+func TestLoadFromRequiresDatabaseURL(t *testing.T) {
+	_, err := LoadFrom(func(string) (string, bool) { return "", false })
+	if err == nil {
+		t.Fatal("expected missing database URL error")
+	}
+}
+
+func TestLoadFromRejectsNonPostgresURL(t *testing.T) {
+	_, err := LoadFrom(func(key string) (string, bool) {
+		if key == "CONTROL_DATABASE_URL" {
+			return "https://example.com/control", true
+		}
+		return "", false
+	})
+	if err == nil {
+		t.Fatal("expected invalid database URL error")
 	}
 }
