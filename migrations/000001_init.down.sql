@@ -1,5 +1,3 @@
-BEGIN;
-
 DROP TABLE outbox_events;
 DROP TABLE memberships;
 DROP TABLE plan_line_grants;
@@ -12,5 +10,3 @@ DROP TABLE agents;
 DROP TABLE nodes;
 DROP TABLE resource_groups;
 DROP TABLE users;
-
-COMMIT;

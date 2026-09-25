@@ -54,7 +54,7 @@ func TestLoadFromOverrides(t *testing.T) {
 	cfg, err := LoadFrom(func(key string) (string, bool) {
 		values := map[string]string{
 			"CONTROL_HTTP_ADDR":    ":9090",
-			"CONTROL_LOG_LEVEL":   "debug",
+			"CONTROL_LOG_LEVEL":    "debug",
 			"CONTROL_DATABASE_URL": "postgres://localhost/control",
 		}
 		value, ok := values[key]

@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE TABLE users (
     id uuid PRIMARY KEY,
     email text NOT NULL UNIQUE,
@@ -140,5 +138,3 @@ CREATE TABLE outbox_events (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX outbox_events_pending_idx ON outbox_events(available_at) WHERE processed_at IS NULL;
-
-COMMIT;
