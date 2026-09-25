@@ -1,0 +1,47 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"controlplane/internal/platform/config"
+	"controlplane/internal/platform/httpapi"
+)
+
+func main() {
+	cfg, err := config.LoadFrom(os.LookupEnv)
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(2)
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	server := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           httpapi.NewHandler(logger),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("shutdown failed", "error", err)
+		}
+	}()
+	logger.Info("control plane listening", "address", cfg.HTTPAddr)
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Error("server failed", "error", err)
+		os.Exit(1)
+	}
+}
