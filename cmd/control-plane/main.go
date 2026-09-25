@@ -14,6 +14,7 @@ import (
 	"controlplane/internal/entitlement"
 	"controlplane/internal/forward"
 	"controlplane/internal/identity"
+	"controlplane/internal/orchestration"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/db"
 	"controlplane/internal/platform/httpapi"
@@ -79,6 +80,7 @@ func main() {
 	if cfg.BrowserAuthEnabled {
 		go identity.RunSessionJanitor(ctx, identity.NewPostgresRepository(pool), logger)
 	}
+	go orchestration.NewConvergenceWorker(pool, orchestration.NewRevisionRepository(pool)).Run(ctx, logger)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
