@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health, browser identity, resource directory and entitlement endpoints for the independently designed network control plane. Browser identity requires HTTPS.
+  description: Health, browser identity, user lifecycle, resource directory and entitlement endpoints for the independently designed network control plane. Browser identity requires HTTPS.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -126,6 +126,72 @@ paths:
                 $ref: '#/components/schemas/PermissionsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/me/password:
+    post:
+      operationId: changeMyPassword
+      summary: Change the authenticated user's password and revoke all sessions
+      security: [{browserSession: []}]
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PasswordChange'}
+      responses:
+        '204':
+          description: Password changed; all browser sessions revoked and cookies cleared.
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /api/v1/admin/users:
+    get:
+      operationId: listUsers
+      summary: List users (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createUser
+      summary: Create an active normal user (administrator)
+      description: Set an initial password over HTTPS and share it with the user through an approved channel. The response and audit log omit the password.
+      security: [{browserSession: []}]
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewUser'}
+      responses:
+        '201':
+          description: Created user without password material
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /api/v1/admin/plans:
     get:
       operationId: listPlans
@@ -379,7 +445,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Forbidden:
-      description: CSRF token missing or invalid.
+      description: Permission denied, or CSRF token missing or invalid.
       content:
         application/json:
           schema:
@@ -433,6 +499,29 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    NewUser:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        password: {type: string, writeOnly: true, description: '12 to 72 UTF-8 bytes.'}
+        timezone: {type: string, default: Asia/Shanghai}
+    PasswordChange:
+      type: object
+      required: [old_password, new_password]
+      additionalProperties: false
+      properties:
+        old_password: {type: string, writeOnly: true}
+        new_password: {type: string, writeOnly: true, description: '12 to 72 UTF-8 bytes; must differ from the old password.'}
+    UserList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/User'}
+        next_cursor: {type: ['string', 'null']}
     NewPlanLimits:
       type: object
       properties:

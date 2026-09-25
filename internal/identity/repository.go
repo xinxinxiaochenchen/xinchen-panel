@@ -44,11 +44,27 @@ WHERE lower(u.email) = $1 GROUP BY u.id`
 	return user, nil
 }
 
-func (r *PostgresRepository) InsertSession(ctx context.Context, session Session) error {
-	_, err := r.pool.Exec(ctx, `INSERT INTO browser_sessions(token_hash,csrf_hash,user_id,expires_at)
+func (r *PostgresRepository) InsertSession(ctx context.Context, session Session, expectedPasswordHash string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin session creation: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var currentHash, status string
+	err = tx.QueryRow(ctx, `SELECT password_hash,status FROM users WHERE id=$1 FOR UPDATE`, session.UserID).Scan(&currentHash, &status)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (currentHash != expectedPasswordHash || status != "active")) {
+		return ErrInvalidCredentials
+	}
+	if err != nil {
+		return fmt.Errorf("lock session user: %w", err)
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO browser_sessions(token_hash,csrf_hash,user_id,expires_at)
 VALUES ($1,$2,$3,$4)`, session.TokenHash[:], session.CSRFHash[:], session.UserID, session.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit session creation: %w", err)
 	}
 	return nil
 }

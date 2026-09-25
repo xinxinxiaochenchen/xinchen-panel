@@ -41,7 +41,7 @@ func TestPostgresRepositorySessionLifecycle(t *testing.T) {
 		t.Fatalf("lookup = %+v, %v", user, err)
 	}
 	record := Session{TokenHash: sha256.Sum256([]byte("session")), CSRFHash: sha256.Sum256([]byte("csrf")), UserID: userID, ExpiresAt: time.Now().Add(time.Hour)}
-	if err := repo.InsertSession(ctx, record); err != nil {
+	if err := repo.InsertSession(ctx, record, user.PasswordHash); err != nil {
 		t.Fatal(err)
 	}
 	found, principal, err := repo.FindSession(ctx, record.TokenHash)
@@ -59,7 +59,7 @@ func TestPostgresRepositorySessionLifecycle(t *testing.T) {
 VALUES ($1,$2,$3,now()-interval '2 hours',now()-interval '1 hour')`, expiredHash[:], record.CSRFHash[:], userID); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.InsertSession(ctx, record); err != nil {
+	if err := repo.InsertSession(ctx, record, user.PasswordHash); err != nil {
 		t.Fatal(err)
 	}
 	deleted, err := repo.DeleteExpiredSessions(ctx, time.Now(), 1)

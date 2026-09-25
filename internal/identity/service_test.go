@@ -14,16 +14,24 @@ import (
 type memoryRepository struct {
 	user     User
 	sessions map[[32]byte]Session
+	onFind   func()
 }
 
 func (r *memoryRepository) FindUserByEmail(_ context.Context, email string) (User, error) {
 	if email != r.user.Email {
 		return User{}, ErrNotFound
 	}
-	return r.user, nil
+	user := r.user
+	if r.onFind != nil {
+		r.onFind()
+	}
+	return user, nil
 }
 
-func (r *memoryRepository) InsertSession(_ context.Context, record Session) error {
+func (r *memoryRepository) InsertSession(_ context.Context, record Session, expectedPasswordHash string) error {
+	if r.user.PasswordHash != expectedPasswordHash || r.user.Status != "active" {
+		return ErrInvalidCredentials
+	}
 	if r.sessions == nil {
 		r.sessions = map[[32]byte]Session{}
 	}
@@ -107,6 +115,17 @@ func TestLoginRejectsInvalidCredentialsUniformly(t *testing.T) {
 		if !errors.Is(err, ErrInvalidCredentials) || len(repo.sessions) != 0 {
 			t.Fatalf("%+v: err=%v sessions=%d", tc, err, len(repo.sessions))
 		}
+	}
+}
+
+func TestLoginRejectsPasswordRotatedAfterVerification(t *testing.T) {
+	repo := activeRepository(t)
+	repo.onFind = func() { repo.user.PasswordHash = "rotated-password-hash" }
+	if _, err := NewService(repo).Login(context.Background(), repo.user.Email, "correct-password"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("login after password rotation = %v", err)
+	}
+	if len(repo.sessions) != 0 {
+		t.Fatal("stale login inserted a session")
 	}
 }
 

@@ -167,7 +167,7 @@ func catalogPrincipal(w http.ResponseWriter, r *http.Request, sessions IdentityS
 		writeIdentityError(w, r, err)
 		return identity.PublicUser{}, false
 	}
-	if !slices.Contains(user.Permissions, permission) {
+	if permission != "" && !slices.Contains(user.Permissions, permission) {
 		WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "permission denied")
 		return identity.PublicUser{}, false
 	}

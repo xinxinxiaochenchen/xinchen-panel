@@ -30,6 +30,10 @@ func NewHandlerWithCatalog(logger *slog.Logger, checker ReadyChecker, sessions I
 }
 
 func NewHandlerWithEntitlements(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore) http.Handler {
+	return NewHandlerWithAccounts(logger, checker, sessions, catalog, entitlements, nil)
+}
+
+func NewHandlerWithAccounts(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore, accounts AccountStore) http.Handler {
 	mux := http.NewServeMux()
 	live := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -63,6 +67,9 @@ func NewHandlerWithEntitlements(logger *slog.Logger, checker ReadyChecker, sessi
 		}
 		if entitlements != nil {
 			registerEntitlementRoutes(mux, sessions, entitlements)
+		}
+		if accounts != nil {
+			registerAccountRoutes(mux, sessions, accounts)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

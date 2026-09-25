@@ -62,7 +62,7 @@ type Session struct {
 
 type Repository interface {
 	FindUserByEmail(context.Context, string) (User, error)
-	InsertSession(context.Context, Session) error
+	InsertSession(context.Context, Session, string) error
 	FindSession(context.Context, [32]byte) (Session, User, error)
 	DeleteSession(context.Context, [32]byte) error
 }
@@ -108,7 +108,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (LoginResul
 	if err := s.repository.InsertSession(ctx, Session{
 		TokenHash: sha256.Sum256(tokenBytes), CSRFHash: sha256.Sum256(csrfBytes),
 		UserID: user.ID, ExpiresAt: expiresAt,
-	}); err != nil {
+	}, user.PasswordHash); err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			return LoginResult{}, ErrInvalidCredentials
+		}
 		return LoginResult{}, fmt.Errorf("create session: %w", err)
 	}
 	return LoginResult{User: user.Public(), Token: hex.EncodeToString(tokenBytes),
