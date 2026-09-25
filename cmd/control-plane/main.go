@@ -58,9 +58,17 @@ func main() {
 		forwardPolicyStore = forwardRepository
 		entitlementStore = entitlement.NewPostgresRepository(pool)
 	}
+	handler := httpapi.NewHandlerWithForwardPolicies(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore, forwardStore, forwardPolicyStore)
+	if cfg.WebDir != "" {
+		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {
+			logger.Error("web bundle unavailable", "error", err)
+			os.Exit(2)
+		}
+		handler = httpapi.NewWebHandler(handler, os.DirFS(cfg.WebDir))
+	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandlerWithForwardPolicies(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore, forwardStore, forwardPolicyStore),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

@@ -2,3 +2,5 @@ deployments/compose/.env
 *.log
 .DS_Store
 bin/
+apps/web/node_modules/
+apps/web/dist/

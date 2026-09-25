@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则，以及套餐和订购授权 API。转发的数据面执行、订阅、分流、计费和 Agent 业务 API 尚未实现。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则、套餐和订购授权 API，以及纯 IP 只读预览页。转发的数据面执行、订阅、分流、计费和 Agent 业务 API 尚未实现。
 
 ## 本地运行
 
@@ -21,6 +21,8 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 ```
 
 `/live` 只检查进程；`/ready` 在数据库不可用时返回 503。响应带 `X-Request-ID`，错误使用统一 JSON envelope。接口契约位于 `api/openapi/control-plane.yaml`。
+
+前端位于 `apps/web`。运行 `npm --prefix apps/web ci` 与 `npm --prefix apps/web run build` 后，可设置绝对路径 `CONTROL_WEB_DIR=/path/to/apps/web/dist`，由 Go 服务在 `/` 提供静态页面，`/api/*` 仍由原 API 处理。开发时可在 `apps/web` 运行 `npm run dev`，Vite 会把 `/api` 代理到本机 8080。纯 HTTP 预览仅显示真实就绪状态和模块结构，不展示账户数据或开放登录。
 
 ## 数据库
 
@@ -64,6 +66,6 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 后续阶段
 
-按模块继续增加：用户状态与角色管理、套餐编辑与账期、Agent 同步、代理连接与转发执行、订阅与分流、流量计费以及前端控制台。当前 Docker Compose 部署只是纯 IP 技术预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+按模块继续增加：用户状态与角色管理、套餐编辑与账期、Agent 同步、代理连接与转发执行、订阅与分流、流量计费以及可操作的前端控制台。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前基础服务的纯 IP 预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例仅用于健康检查，不代表完整控制台已经上线。

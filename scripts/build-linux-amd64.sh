@@ -2,6 +2,8 @@
 set -eu
 
 mkdir -p bin
+npm --prefix apps/web ci --no-audit --no-fund
+npm --prefix apps/web run build
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/control-plane ./cmd/control-plane
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/migrate ./cmd/migrate
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/admin-bootstrap ./cmd/admin-bootstrap

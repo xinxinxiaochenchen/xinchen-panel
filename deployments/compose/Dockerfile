@@ -1,3 +1,10 @@
+FROM node:22-bookworm-slim AS webbuild
+WORKDIR /src/apps/web
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY apps/web ./
+RUN npm run build
+
 FROM golang:1.27.1-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -14,6 +21,7 @@ COPY --from=build /out/control-plane /usr/local/bin/control-plane
 COPY --from=build /out/migrate /usr/local/bin/migrate
 COPY --from=build /out/admin-bootstrap /usr/local/bin/admin-bootstrap
 COPY migrations /app/migrations
+COPY --from=webbuild /src/apps/web/dist /app/web
 USER nonroot:nonroot
 EXPOSE 8080
 CMD ["/usr/local/bin/control-plane"]

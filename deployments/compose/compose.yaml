@@ -45,6 +45,7 @@ services:
       CONTROL_HTTP_ADDR: 0.0.0.0:8080
       CONTROL_LOG_LEVEL: info
       CONTROL_BROWSER_AUTH_ENABLED: ${CONTROL_BROWSER_AUTH_ENABLED:-false}
+      CONTROL_WEB_DIR: /app/web
       CONTROL_DATABASE_URL: postgres://controlplane:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/controlplane
     read_only: true
     security_opt:

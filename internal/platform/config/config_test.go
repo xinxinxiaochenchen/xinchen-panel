@@ -41,6 +41,29 @@ func TestLoadFromBrowserAuthExplicitFlag(t *testing.T) {
 	}
 }
 
+func TestLoadFromOptionalWebDirectory(t *testing.T) {
+	cfg, err := LoadFrom(func(key string) (string, bool) {
+		values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_WEB_DIR": "/app/web"}
+		value, ok := values[key]
+		return value, ok
+	})
+	if err != nil || cfg.WebDir != "/app/web" {
+		t.Fatalf("web directory = %+v, %v", cfg, err)
+	}
+	_, err = LoadFrom(func(key string) (string, bool) {
+		if key == "CONTROL_WEB_DIR" {
+			return "", true
+		}
+		if key == "CONTROL_DATABASE_URL" {
+			return "postgres://localhost/control", true
+		}
+		return "", false
+	})
+	if err == nil {
+		t.Fatal("accepted an explicitly empty web directory")
+	}
+}
+
 func TestLoadFromRejectsInvalidAddress(t *testing.T) {
 	_, err := LoadFrom(func(key string) (string, bool) {
 		if key == "CONTROL_HTTP_ADDR" {

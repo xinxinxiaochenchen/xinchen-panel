@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	LogLevel           slog.Level
 	DatabaseURL        string
 	BrowserAuthEnabled bool
+	WebDir             string
 }
 
 func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
@@ -38,6 +40,12 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, fmt.Errorf("CONTROL_DATABASE_URL: expected a postgres URL with host")
 	}
 	cfg.DatabaseURL = value
+	if value, ok := lookup("CONTROL_WEB_DIR"); ok {
+		if value == "" || !filepath.IsAbs(value) {
+			return Config{}, fmt.Errorf("CONTROL_WEB_DIR: expected an absolute directory path")
+		}
+		cfg.WebDir = value
+	}
 	if value, ok := lookup("CONTROL_BROWSER_AUTH_ENABLED"); ok {
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {
