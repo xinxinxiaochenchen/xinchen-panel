@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health, browser identity, user lifecycle, resource directory and entitlement endpoints for the independently designed network control plane. Browser identity requires HTTPS.
+  description: Health, browser identity, user lifecycle, resource directory, entitlement, single-hop line and direct forwarding endpoints for the independently designed network control plane. Browser identity requires HTTPS.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -580,8 +580,199 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/forward-rules:
+    get:
+      operationId: listOwnForwardRules
+      summary: List the current user's forwarding rules
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Forward rules, including disabled rules
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardRuleList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createForwardRule
+      summary: Reserve a direct TCP, UDP or BOTH forwarding port
+      description: The target kind, physical protocol and destination port must match enabled administrator policies; absent policies deny by default. The rule remains pending until the ingress Agent applies it. A disabled rule still reserves its port. Multi-hop line selection is not accepted by this endpoint yet.
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewForwardRule'}
+      responses:
+        '201':
+          description: Durable pending or disabled forward rule
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardRule'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/forward-rules/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/ForwardRuleID'}
+    get:
+      operationId: getOwnForwardRule
+      summary: Get an owned forwarding rule
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Forward rule
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardRule'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateOwnForwardRule
+      summary: Rename or enable/disable an owned forwarding rule
+      description: Endpoint, port, protocol and target are immutable; delete and recreate the rule to change them.
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ForwardRulePatch'}
+      responses:
+        '200':
+          description: Updated forward rule
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardRule'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      operationId: deleteOwnForwardRule
+      summary: Delete an owned rule and release its port reservations
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+      responses:
+        '204': {description: Rule deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/admin/forward-target-policies:
+    get:
+      operationId: listForwardTargetPolicies
+      summary: List administrator-approved forwarding destinations
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Destination policies
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardTargetPolicyList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createForwardTargetPolicy
+      summary: Approve a destination kind, protocol and port range
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewForwardTargetPolicy'}
+      responses:
+        '201':
+          description: Approved destination policy
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardTargetPolicy'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/forward-target-policies/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/ForwardTargetPolicyID'}
+    get:
+      operationId: getForwardTargetPolicy
+      summary: Get a forwarding destination policy
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Destination policy
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardTargetPolicy'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateForwardTargetPolicy
+      summary: Enable or disable a forwarding destination policy
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ForwardTargetPolicyPatch'}
+      responses:
+        '200':
+          description: Updated destination policy
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForwardTargetPolicy'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      operationId: deleteForwardTargetPolicy
+      summary: Revoke a forwarding destination policy
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+      responses:
+        '204': {description: Destination policy deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
 components:
   parameters:
+    ForwardTargetPolicyID:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, format: uuid}
+    ForwardRuleID:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, format: uuid}
     LineID:
       in: path
       name: id
@@ -745,6 +936,95 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/Line'}
+        next_cursor: {type: ['string', 'null']}
+    NewForwardTargetPolicy:
+      type: object
+      required: [kind, protocol, port_start, port_end]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [public_host, node]}
+        target_group_id: {type: string, format: uuid, description: 'Required for node policies; forbidden for public_host.'}
+        protocol: {type: string, enum: [TCP, UDP]}
+        port_start: {type: integer, minimum: 1, maximum: 65535}
+        port_end: {type: integer, minimum: 1, maximum: 65535}
+        enabled: {type: boolean, default: true}
+    ForwardTargetPolicyPatch:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled: {type: boolean}
+    ForwardTargetPolicy:
+      type: object
+      required: [id, kind, target_group_id, protocol, port_start, port_end, enabled, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [public_host, node]}
+        target_group_id: {type: ['string', 'null'], format: uuid}
+        protocol: {type: string, enum: [TCP, UDP]}
+        port_start: {type: integer}
+        port_end: {type: integer}
+        enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ForwardTargetPolicyList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ForwardTargetPolicy'}
+        next_cursor: {type: ['string', 'null']}
+    NewForwardRule:
+      type: object
+      required: [name, ingress_node_id, ingress_port, target_port, protocol]
+      additionalProperties: false
+      oneOf:
+        - required: [target_node_id]
+          not: {required: [target_host]}
+        - required: [target_host]
+          not: {required: [target_node_id]}
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        ingress_node_id: {type: string, format: uuid}
+        ingress_port: {type: integer, minimum: 1024, maximum: 65535}
+        target_node_id: {type: string, format: uuid}
+        target_host: {type: string, description: 'Public IP literal or DNS hostname; resolved addresses must be checked by the Agent.'}
+        target_port: {type: integer, minimum: 1, maximum: 65535}
+        protocol: {type: string, enum: [TCP, UDP, BOTH]}
+        enabled: {type: boolean, default: true}
+    ForwardRulePatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        enabled: {type: boolean}
+    ForwardRule:
+      type: object
+      required: [id, user_id, name, ingress_node_id, ingress_port, target_node_id, target_host, target_port, line_id, protocol, enabled, apply_status, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        name: {type: string}
+        ingress_node_id: {type: string, format: uuid}
+        ingress_port: {type: integer}
+        target_node_id: {type: ['string', 'null'], format: uuid}
+        target_host: {type: ['string', 'null']}
+        target_port: {type: integer}
+        line_id: {type: ['string', 'null'], format: uuid, description: 'Always null in the direct-only release.'}
+        protocol: {type: string, enum: [TCP, UDP, BOTH]}
+        enabled: {type: boolean}
+        apply_status: {type: string, enum: [pending, active, apply_failed, disabled]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ForwardRuleList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ForwardRule'}
         next_cursor: {type: ['string', 'null']}
     NewUser:
       type: object

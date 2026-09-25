@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路，以及套餐和订购授权 API。转发、订阅、分流、计费和 Agent 业务 API 尚未实现。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则，以及套餐和订购授权 API。转发的数据面执行、订阅、分流、计费和 Agent 业务 API 尚未实现。
 
 ## 本地运行
 
@@ -24,7 +24,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 3 已在独立 PostgreSQL 16 测试库验证应用和回滚。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 4 已在独立 PostgreSQL 16 测试库验证应用。
 
 ## 资源目录开发状态
 
@@ -38,6 +38,10 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享单跳线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模，首版只接受一个代理出口 hop；自有线路数受订购快照约束。管理列表保留停用的自有线路；实际连接使用应调用 `GetUsableLine` 复核启用、节点能力和当前授权。公网纯 HTTP 预览保持关闭这些路由。
 
+## 直达转发规则开发状态
+
+普通用户可通过 `GET/POST /api/v1/forward-rules` 和 `GET/PATCH/DELETE /api/v1/forward-rules/{id}` 创建、查看、改名、启停及删除自有的直达转发规则。入口节点必须具备 `forward` 能力且属于有效订购授权的资源组；目标可为授权节点或公网地址。管理员通过 `/api/v1/admin/forward-target-policies` 批准目标类型、节点组、协议和目标端口范围；默认无授权，普通用户不能自行放开。TCP、UDP 与 BOTH 分别原子占用对应端口，每节点规则数受订购快照约束；停用保留端口，删除释放端口。多跳线路尚未开放，端口与目标变更需删除后重建。写入审计和 outbox 后，状态仍为待下发；Agent 执行链路未接入前不会有实际转发。公网纯 HTTP 预览保持关闭这些路由。
+
 ## 用户生命周期开发状态
 
 管理员可通过 `POST /api/v1/admin/users` 创建普通用户，通过 `GET /api/v1/admin/users` 分页查看用户。创建请求的初始密码仅用于生成 bcrypt 哈希，不进入响应或审计记录。用户通过 `POST /api/v1/me/password` 提交旧密码和新密码，成功后所有浏览器会话在同一数据库事务中撤销，当前 Cookie 也会清除。登录会话创建与密码轮换使用用户行锁避免旧密码并发登录；改密尝试每账户限 5 次/5 分钟。创建与改密接口需要 HTTPS、有效会话与 CSRF 令牌；当前公网纯 HTTP 预览保持关闭。
@@ -50,6 +54,6 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 后续阶段
 
-按模块继续增加：用户状态与角色管理、套餐编辑与账期、Agent 同步、代理连接与转发、订阅与分流、流量计费以及前端控制台。当前 Docker Compose 部署只是纯 IP 技术预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+按模块继续增加：用户状态与角色管理、套餐编辑与账期、Agent 同步、代理连接与转发执行、订阅与分流、流量计费以及前端控制台。当前 Docker Compose 部署只是纯 IP 技术预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前基础服务的纯 IP 预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例仅用于健康检查，不代表完整控制台已经上线。

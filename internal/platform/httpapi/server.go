@@ -38,6 +38,14 @@ func NewHandlerWithAccounts(logger *slog.Logger, checker ReadyChecker, sessions 
 }
 
 func NewHandlerWithLines(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore, accounts AccountStore, lines LineStore) http.Handler {
+	return NewHandlerWithForward(logger, checker, sessions, catalog, entitlements, accounts, lines, nil)
+}
+
+func NewHandlerWithForward(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore, accounts AccountStore, lines LineStore, forward ForwardStore) http.Handler {
+	return NewHandlerWithForwardPolicies(logger, checker, sessions, catalog, entitlements, accounts, lines, forward, nil)
+}
+
+func NewHandlerWithForwardPolicies(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore, accounts AccountStore, lines LineStore, forward ForwardStore, policies ForwardPolicyStore) http.Handler {
 	mux := http.NewServeMux()
 	live := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -77,6 +85,12 @@ func NewHandlerWithLines(logger *slog.Logger, checker ReadyChecker, sessions Ide
 		}
 		if lines != nil {
 			registerLineRoutes(mux, sessions, lines)
+		}
+		if forward != nil {
+			registerForwardRoutes(mux, sessions, forward)
+		}
+		if policies != nil {
+			registerForwardPolicyRoutes(mux, sessions, policies)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,7 @@ import (
 
 	"controlplane/internal/catalog"
 	"controlplane/internal/entitlement"
+	"controlplane/internal/forward"
 	"controlplane/internal/identity"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/db"
@@ -43,6 +44,8 @@ func main() {
 	var entitlementStore httpapi.EntitlementStore
 	var accountStore httpapi.AccountStore
 	var lineStore httpapi.LineStore
+	var forwardStore httpapi.ForwardStore
+	var forwardPolicyStore httpapi.ForwardPolicyStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
@@ -50,11 +53,14 @@ func main() {
 		catalogRepository := catalog.NewPostgresRepository(pool)
 		catalogStore = catalogRepository
 		lineStore = catalogRepository
+		forwardRepository := forward.NewPostgresRepository(pool)
+		forwardStore = forwardRepository
+		forwardPolicyStore = forwardRepository
 		entitlementStore = entitlement.NewPostgresRepository(pool)
 	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandlerWithLines(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore),
+		Handler:           httpapi.NewHandlerWithForwardPolicies(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore, forwardStore, forwardPolicyStore),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
