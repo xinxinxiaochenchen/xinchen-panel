@@ -33,6 +33,19 @@ func TestLoadMigrationsRejectsDuplicateVersion(t *testing.T) {
 	}
 }
 
+func TestLoadMigrationsIgnoresAppleDoubleMetadata(t *testing.T) {
+	migrations, err := LoadMigrations(fstest.MapFS{
+		"000001_first.up.sql":   &fstest.MapFile{Data: []byte("SELECT 1;")},
+		"._000001_first.up.sql": &fstest.MapFile{Data: []byte("macOS metadata")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrations) != 1 || migrations[0].Version != 1 {
+		t.Fatalf("unexpected migrations: %+v", migrations)
+	}
+}
+
 func TestPendingMigrationsRejectsChangedAppliedFile(t *testing.T) {
 	migrations, err := LoadMigrations(fstest.MapFS{
 		"000001_first.up.sql": &fstest.MapFile{Data: []byte("SELECT 1;")},

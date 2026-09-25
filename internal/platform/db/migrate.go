@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,6 +37,9 @@ func LoadMigrations(files fs.FS) ([]Migration, error) {
 	migrations := make([]Migration, 0, len(names))
 	seen := make(map[int64]struct{}, len(names))
 	for _, name := range names {
+		if strings.HasPrefix(name, "._") {
+			continue
+		}
 		parts := migrationFilename.FindStringSubmatch(name)
 		if parts == nil {
 			return nil, fmt.Errorf("invalid migration filename %q", name)
@@ -54,6 +58,9 @@ func LoadMigrations(files fs.FS) ([]Migration, error) {
 		}
 		sum := sha256.Sum256(content)
 		migrations = append(migrations, Migration{Version: version, Name: name, SQL: string(content), Checksum: hex.EncodeToString(sum[:])})
+	}
+	if len(migrations) == 0 {
+		return nil, errors.New("no up migrations found")
 	}
 	sort.Slice(migrations, func(i, j int) bool { return migrations[i].Version < migrations[j].Version })
 	return migrations, nil
