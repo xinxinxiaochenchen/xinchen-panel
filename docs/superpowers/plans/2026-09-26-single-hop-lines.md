@@ -41,4 +41,4 @@
 
 - [x] Write handler tests for anonymous 401, member on admin route 403, write without CSRF 403, shared/admin create 201, own create 201, invalid body 400/422, absent entitlement rejection, owner isolation 404, and page cursors.
 - [x] Register `GET/POST /api/v1/admin/lines`, `GET/POST /api/v1/lines`, `GET/PATCH /api/v1/lines/{id}`, and `DELETE /api/v1/lines/{id}`. Admin update can use `/api/v1/admin/lines/{id}`. Restrict member mutations to owned lines and current entitlement.
-- [ ] Update OpenAPI and README. Run `go test ./... -count=1`, `go vet ./...`, YAML parse, `git diff --check`, review, and deploy while `CONTROL_BROWSER_AUTH_ENABLED=false` on the public HTTP preview. Confirm health 200 and line routes 404 over plain HTTP.
+- [x] Update OpenAPI and README. Run `go test ./... -count=1`, `go vet ./...`, YAML parse, `git diff --check`, review, and deploy while `CONTROL_BROWSER_AUTH_ENABLED=false` on the public HTTP preview. Confirm health 200 and line routes 404 over plain HTTP.

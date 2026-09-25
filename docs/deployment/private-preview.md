@@ -1,17 +1,17 @@
 # 纯 IP 预览部署（`us dmit`）
 
-本部署验证控制面基础、PostgreSQL 迁移和健康接口。资源目录、套餐订购与用户生命周期 API 已包含在发布版中，但浏览器身份路由关闭，公网无法调用这些业务接口。前端、线路、转发、订阅、分流、计费和 Agent 尚未完成；公网 18080 仅供临时纯 IP 连通性测试，不是正式控制台。
+本部署验证控制面基础、PostgreSQL 迁移和健康接口。资源目录、套餐订购、用户生命周期与单跳线路 API 已包含在发布版中，但浏览器身份路由关闭，公网无法调用这些业务接口。前端、转发、订阅、分流、计费和 Agent 尚未完成；公网 18080 仅供临时纯 IP 连通性测试，不是正式控制台。
 
 ## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `93f8c0b`，目录 `/opt/network-control-plane/releases/93f8c0b`。
+- 已在 `us dmit` 部署提交 `b51c548`，目录 `/opt/network-control-plane/releases/b51c548`。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1、2、3；目录审计表和代理端点唯一索引已创建。本次无新增迁移。升级前备份位于 `/opt/network-control-plane/backups/pre-user-lifecycle-93f8c0b.dump`，权限 `0600`。
-- 运行容器中 `CONTROL_BROWSER_AUTH_ENABLED=false`，浏览器认证关闭。公网 `POST /api/v1/auth/login`、`POST /api/v1/admin/users` 和 `POST /api/v1/me/password` 均返回 404；不能在明文 HTTP 上提交密码。
+- 迁移记录版本 1、2、3；目录审计表和代理端点唯一索引已创建。本次无新增迁移。升级前备份位于 `/opt/network-control-plane/backups/pre-lines-b51c548.dump`，权限 `0600`。
+- 运行容器中 `CONTROL_BROWSER_AUTH_ENABLED=false`，浏览器认证关闭。公网 `/api/v1/auth/login`、`/api/v1/lines` 和 `/api/v1/admin/lines` 均返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
-- 2026-09-26 从开发机请求公网 IP 的 `/live` 和 `/ready` 均返回 200；登录、创建用户和改密接口均返回 404。API/DB 容器均为 healthy。
+- 2026-09-26 从开发机请求公网 IP 的 `/live` 和 `/ready` 均返回 200；登录及线路接口均返回 404。API/DB 容器均为 healthy。
 
 ## 布局与边界
 
@@ -35,4 +35,4 @@
 
 ## 公网接入
 
-当前按用户要求开放 18080 用于纯 IP 连通性测试；这个版本只有健康接口，没有可操作的控制台页面。不要在明文 HTTP 上测试未来带 Cookie 的登录功能。域名和证书就绪后，在现有 Nginx Proxy Manager 中创建 HTTPS 代理主机，并将 `CONTROL_BIND_IP` 恢复为 `127.0.0.1`，再关闭公网 18080 访问。
+当前按用户要求开放 18080 用于纯 IP 连通性测试；公网仅有健康接口，没有可操作的控制台页面。不要在明文 HTTP 上测试带 Cookie 的登录功能。域名和证书就绪后，在现有 Nginx Proxy Manager 中创建 HTTPS 代理主机，并将 `CONTROL_BIND_IP` 恢复为 `127.0.0.1`，再关闭公网 18080 访问。
