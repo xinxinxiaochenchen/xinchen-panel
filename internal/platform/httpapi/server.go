@@ -13,9 +13,13 @@ import (
 
 var fallbackRequestID atomic.Uint64
 
-func NewHandler(logger *slog.Logger) http.Handler {
+type ReadyChecker interface {
+	Check(context.Context) error
+}
+
+func NewHandler(logger *slog.Logger, checker ReadyChecker) http.Handler {
 	mux := http.NewServeMux()
-	health := func(w http.ResponseWriter, r *http.Request) {
+	live := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 			return
@@ -23,8 +27,23 @@ func NewHandler(logger *slog.Logger) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}
-	mux.HandleFunc("/api/v1/health/live", health)
-	mux.HandleFunc("/api/v1/health/ready", health)
+	mux.HandleFunc("/api/v1/health/live", live)
+	mux.HandleFunc("/api/v1/health/ready", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			return
+		}
+		if checker != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := checker.Check(ctx); err != nil {
+				logger.Warn("readiness dependency unavailable", "error", err)
+				WriteError(w, r, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "dependency unavailable")
+				return
+			}
+		}
+		live(w, r)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
 	})
