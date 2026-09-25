@@ -1,0 +1,70 @@
+name: network-control-plane
+
+services:
+  db:
+    image: postgres:16.10-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: controlplane
+      POSTGRES_USER: controlplane
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U controlplane -d controlplane"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    mem_limit: 256m
+    networks: [private]
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deployments/compose/Dockerfile.prebuilt
+    restart: "no"
+    command: ["/usr/local/bin/migrate", "up"]
+    environment:
+      CONTROL_DATABASE_URL: postgres://controlplane:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/controlplane
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deployments/compose/Dockerfile.prebuilt
+    restart: unless-stopped
+    environment:
+      CONTROL_HTTP_ADDR: 0.0.0.0:8080
+      CONTROL_LOG_LEVEL: info
+      CONTROL_DATABASE_URL: postgres://controlplane:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/controlplane
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/control-plane", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 128m
+    networks: [private]
+
+volumes:
+  postgres_data:
+
+networks:
+  private:

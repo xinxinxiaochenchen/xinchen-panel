@@ -29,3 +29,5 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 ## 后续阶段
 
 按模块依次增加：身份与 RBAC、节点/线路目录、Agent 同步、代理连接与转发、订阅与分流、流量计费、前端控制台以及 Docker Compose 部署。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+
+当前基础服务的私有预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例仅监听服务器回环地址，不代表完整控制台已经上线。

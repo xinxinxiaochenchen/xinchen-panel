@@ -21,6 +21,13 @@ func main() {
 		slog.Error("invalid configuration", "error", err)
 		os.Exit(2)
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--healthcheck" {
+		if err := checkLocalHealth(context.Background(), cfg.HTTPAddr); err != nil {
+			slog.Error("healthcheck failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	pool, err := db.Open(context.Background(), cfg.DatabaseURL)
 	if err != nil {
