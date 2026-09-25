@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health, browser identity and resource directory endpoints for the independently designed network control plane. Browser identity requires HTTPS.
+  description: Health, browser identity, resource directory and entitlement endpoints for the independently designed network control plane. Browser identity requires HTTPS.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -126,6 +126,105 @@ paths:
                 $ref: '#/components/schemas/PermissionsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/admin/plans:
+    get:
+      operationId: listPlans
+      summary: List plans (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Plans
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlanList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createPlan
+      summary: Create an active plan with explicit grants (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewPlan'}
+      responses:
+        '201':
+          description: Created plan
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Plan'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/memberships:
+    post:
+      operationId: createMembership
+      summary: Assign an immediately active membership (administrator)
+      description: Copies current plan grants and limits to an immutable membership snapshot.
+      security: [{browserSession: []}]
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewMembership'}
+      responses:
+        '201':
+          description: Created active membership
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Membership'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/my/membership:
+    get:
+      operationId: getMyMembership
+      summary: Get the authenticated user's current membership
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Current membership
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Membership'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/my/entitlements:
+    get:
+      operationId: getMyEntitlements
+      summary: Get the authenticated user's frozen current plan entitlements
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Current membership snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EntitlementSnapshot'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /api/v1/admin/resource-groups:
     get:
       operationId: listResourceGroups
@@ -334,6 +433,89 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    NewPlanLimits:
+      type: object
+      properties:
+        max_forward_rules_per_node: {type: integer, minimum: 0, default: 0}
+        max_subscriptions: {type: integer, minimum: 0, default: 0}
+        max_routing_rules: {type: integer, minimum: 0, default: 0}
+        allow_custom_lines: {type: boolean, default: false}
+        max_custom_lines: {type: integer, minimum: 0, default: 0}
+        max_hops: {type: integer, const: 1, default: 1}
+    PlanLimits:
+      allOf:
+        - {$ref: '#/components/schemas/NewPlanLimits'}
+        - type: object
+          required: [max_forward_rules_per_node, max_subscriptions, max_routing_rules, allow_custom_lines, max_custom_lines, max_hops]
+    NewPlan:
+      type: object
+      required: [name, quota_bytes]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        quota_bytes: {type: integer, minimum: 0}
+        default_multiplier_milli: {type: integer, minimum: 1, maximum: 100000, default: 1000}
+        limits: {$ref: '#/components/schemas/NewPlanLimits'}
+        resource_group_ids:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        line_ids:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: uuid}
+    Plan:
+      allOf:
+        - {$ref: '#/components/schemas/NewPlan'}
+        - type: object
+          required: [id, billing_mode, period_months, status, default_multiplier_milli, limits, resource_group_ids, line_ids, created_at]
+          properties:
+            id: {type: string, format: uuid}
+            billing_mode: {type: string, const: monthly_anchor}
+            period_months: {type: integer, const: 1}
+            status: {type: string, enum: [active, archived]}
+            created_at: {type: string, format: date-time}
+    PlanList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Plan'}
+        next_cursor: {type: ['string', 'null']}
+    NewMembership:
+      type: object
+      required: [user_id, plan_id, starts_at, ends_at, anchor_day, timezone]
+      properties:
+        user_id: {type: string, format: uuid}
+        plan_id: {type: string, format: uuid}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        anchor_day: {type: integer, minimum: 1, maximum: 31}
+        timezone: {type: string, example: Asia/Shanghai}
+    EntitlementSnapshot:
+      type: object
+      required: [plan_name, quota_bytes, default_multiplier_milli, limits, resource_group_ids, line_ids]
+      properties:
+        plan_name: {type: string}
+        quota_bytes: {type: integer, minimum: 0}
+        default_multiplier_milli: {type: integer, minimum: 1}
+        limits: {$ref: '#/components/schemas/PlanLimits'}
+        resource_group_ids:
+          type: array
+          items: {type: string, format: uuid}
+        line_ids:
+          type: array
+          items: {type: string, format: uuid}
+    Membership:
+      allOf:
+        - {$ref: '#/components/schemas/NewMembership'}
+        - type: object
+          required: [id, status, snapshot, created_at]
+          properties:
+            id: {type: string, format: uuid}
+            status: {type: string, const: active}
+            snapshot: {$ref: '#/components/schemas/EntitlementSnapshot'}
+            created_at: {type: string, format: date-time}
     NewResourceGroup:
       type: object
       required: [code, name, region]

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"controlplane/internal/catalog"
+	"controlplane/internal/entitlement"
 	"controlplane/internal/identity"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/db"
@@ -39,13 +40,15 @@ func main() {
 	defer pool.Close()
 	var sessions httpapi.IdentitySessions
 	var catalogStore httpapi.CatalogStore
+	var entitlementStore httpapi.EntitlementStore
 	if cfg.BrowserAuthEnabled {
 		sessions = identity.NewService(identity.NewPostgresRepository(pool))
 		catalogStore = catalog.NewPostgresRepository(pool)
+		entitlementStore = entitlement.NewPostgresRepository(pool)
 	}
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewHandlerWithCatalog(logger, db.HealthCheck{Database: pool}, sessions, catalogStore),
+		Handler:           httpapi.NewHandlerWithEntitlements(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
