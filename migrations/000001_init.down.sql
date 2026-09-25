@@ -1,0 +1,16 @@
+BEGIN;
+
+DROP TABLE outbox_events;
+DROP TABLE memberships;
+DROP TABLE plan_line_grants;
+DROP TABLE plan_resource_group_grants;
+DROP TABLE plan_limits;
+DROP TABLE plans;
+DROP TABLE line_hops;
+DROP TABLE lines;
+DROP TABLE agents;
+DROP TABLE nodes;
+DROP TABLE resource_groups;
+DROP TABLE users;
+
+COMMIT;

@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: Network Control Plane API
+  version: 0.1.0
+  description: Initial health endpoints for the independently designed network control plane.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /api/v1/health/live:
+    get:
+      operationId: getLiveness
+      summary: Process liveness
+      responses:
+        '200':
+          description: The HTTP process can serve requests.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/health/ready:
+    get:
+      operationId: getReadiness
+      summary: Initial process readiness
+      description: In this foundation phase readiness only reflects HTTP process readiness; dependency probes will be added with database wiring.
+      responses:
+        '200':
+          description: The process is ready to serve current endpoints.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  headers:
+    RequestID:
+      description: Server generated request identifier for support and logs.
+      schema:
+        type: string
+  responses:
+    InternalError:
+      description: Unexpected server error.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
