@@ -40,7 +40,7 @@
 
 - [x] Test that migration files are discovered in numeric order, have a stable SHA-256 checksum, and reject modified already-applied migrations. This test uses real SQL fixture files and the migration planner, not source text assertions. Run it red.
 - [x] Implement `internal/platform/db/migrate.go`: create `schema_migrations(version bigint primary key, checksum text, applied_at timestamptz)`; acquire a PostgreSQL advisory lock; for each up SQL file, run its statements and metadata insert in one transaction; refuse a checksum mismatch. Remove explicit BEGIN/COMMIT from migration files so runner owns the transaction. Implement `cmd/migrate/main.go up` with database URL config. Run tests and vet.
-- [ ] Execute the migration on a temporary PostgreSQL-compatible engine where possible, then commit `feat: add ordered transactional migrations`.
+- [x] Execute the migration on a temporary PostgreSQL-compatible engine where possible, then commit `feat: add ordered transactional migrations`. It was subsequently applied and rerun on PostgreSQL 16.10 in the private preview.
 
 ## Verification boundary
 
@@ -50,4 +50,4 @@ If no PostgreSQL network server is available locally, verify migration parsing a
 
 - `go test ./...` and `go vet ./...` pass with pgx/v5 pinned.
 - The up SQL creates 12 tables in PGlite and the down SQL removes all 12.
-- The Go migration command has not been connected to a PostgreSQL 16 server in this workspace; this remains a deployment gate.
+- The Go migration command applied version 1 on PostgreSQL 16.10 in `us dmit`; a second run succeeded without changes.

@@ -24,10 +24,10 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 和 `000001_init.down.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。两份 SQL 已通过 PostgreSQL 语法解析，并在临时 PGlite 实例中完成建表及回滚检查；Go migration 命令尚未在部署用 PostgreSQL 16 上验证，生产使用前需完成此项测试。
+`migrations/000001_init.up.sql` 和 `000001_init.down.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。两份 SQL 已通过 PostgreSQL 语法解析和临时 PGlite 建表/回滚检查；Go migration 命令也已在 `us dmit` 的 PostgreSQL 16.10 中成功应用并重跑验证幂等性。
 
 ## 后续阶段
 
-按模块依次增加：身份与 RBAC、节点/线路目录、Agent 同步、代理连接与转发、订阅与分流、流量计费、前端控制台以及 Docker Compose 部署。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+按模块依次增加：身份与 RBAC、节点/线路目录、Agent 同步、代理连接与转发、订阅与分流、流量计费以及前端控制台。当前 Docker Compose 部署只是私有预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前基础服务的私有预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例仅监听服务器回环地址，不代表完整控制台已经上线。
