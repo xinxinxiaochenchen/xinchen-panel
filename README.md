@@ -23,7 +23,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 和 `000001_init.down.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表。此阶段尚未集成 migration 执行器，也未在真实 PostgreSQL 上运行；不要将它作为生产迁移使用。下一阶段将加入受控迁移执行、真实数据库集成测试和连接就绪探测。
+`migrations/000001_init.up.sql` 和 `000001_init.down.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表。两份 SQL 已通过 PostgreSQL 语法解析，并在临时 PGlite 实例中完成建表及回滚检查。此阶段尚未集成 migration 执行器，也未在部署用 PostgreSQL 16 上运行；不要将它作为生产迁移使用。下一阶段将加入受控迁移执行、真实数据库集成测试和连接就绪探测。
 
 ## 后续阶段
 

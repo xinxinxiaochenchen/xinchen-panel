@@ -4,3 +4,4 @@
 - 2026-09-25：完成十部分架构设计及自检；补齐代理连接模型、用户自有线路、配额租约和配置收敛语义；等待用户确认架构。
 - 2026-09-25：用户确认架构。检查本机环境：Node 可用，Go 和 Docker 不在 PATH；准备按阶段实施，Go 工具链需临时下载。
 - 2026-09-25：在隔离工作区 `codex/control-plane-foundation` 完成配置与 HTTP 基础层；Go 1.27.1 官方归档 SHA-256 校验通过；测试和 vet 通过。SQL 使用 PostgreSQL parser 成功解析，OpenAPI YAML 成功解析；真实 PostgreSQL 迁移尚未运行。本地 HTTP 冒烟验证返回 200/200/404，响应含请求 ID。
+- 2026-09-25：临时 PGlite 实例执行 migration up/down，创建 12 张表并成功回滚至 0 张表。第一阶段基础服务已验证；外部 PostgreSQL 16 仍待下阶段接入。

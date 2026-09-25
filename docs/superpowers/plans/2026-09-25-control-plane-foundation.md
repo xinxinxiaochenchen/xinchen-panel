@@ -48,8 +48,16 @@
 - [x] Create `migrations/000001_init.down.sql` dropping only these tables in reverse dependency order. Parse both migration files with `pglast` rather than writing a test that merely mirrors table names. A live PostgreSQL migration test belongs to the next phase because Docker/Postgres is not present locally.
 - [x] Create `api/openapi/control-plane.yaml` with `GET /api/v1/health/live`, `GET /api/v1/health/ready`, error schema and `X-Request-ID` response header. Align actual routes with this prefix. Add `README.md` build/run/test commands and precise limitations of this phase.
 - [x] Run `go test ./...`, `go vet ./...`, `git diff --check`, and smoke test the binary using a local port and `curl`. Expected: tests and vet pass; liveness and readiness return 200 JSON; an unknown route returns the documented error envelope.
-- [ ] Commit: `feat: add initial schema and API contract`.
+- [x] Commit: `feat: add initial schema and API contract`.
 
 ## Scope and next plans
 
 The next vertical slices are: identity and RBAC; node/line/catalog APIs; Agent enrollment and config convergence; proxy access and forwarding; subscriptions/routing; quota and usage; SaaS console UI; deployment and end-to-end verification. Each slice needs its own focused plan and working tests. The foundation does not claim those features are implemented.
+
+## Verification record
+
+- Go 1.27.1 archive SHA-256: `ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12` (matches official metadata).
+- `go test ./...` and `go vet ./...` passed with a temporary Go cache.
+- PostgreSQL parser accepted up and down SQL; PGlite created 12 tables and rollback left 0 tables.
+- Localhost smoke test returned 200 for both health endpoints and 404 with the documented error envelope for an unknown path.
+- No external PostgreSQL 16 or Docker runtime was present; deployment verification remains for a later phase.
