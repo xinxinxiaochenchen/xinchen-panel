@@ -3,6 +3,7 @@ package orchestration
 import (
 	"testing"
 
+	"controlplane/internal/agentproto"
 	"controlplane/internal/agentruntime"
 )
 
@@ -25,6 +26,14 @@ func TestCanonicalForwardPayloadIgnoresOrderRevisionAndDiagnostics(t *testing.T)
 	}
 	if len(leftHash) != 64 {
 		t.Fatalf("SHA-256 digest length = %d", len(leftHash))
+	}
+	wireJSON, wireHash, err := agentproto.CanonicalForwardConfig(left.Snapshot.Rules)
+	if err != nil || string(wireJSON) != string(leftJSON) || wireHash != leftHash {
+		t.Fatalf("wire and persistence digest differ: %s %s %v", leftHash, wireHash, err)
+	}
+	left.Snapshot.Revision = 0
+	if _, _, err := CanonicalForwardPayload(left); err == nil {
+		t.Fatal("zero revision accepted")
 	}
 	right.Snapshot.Rules[0].TargetPort = 8443
 	_, changedHash, err := CanonicalForwardPayload(right)
