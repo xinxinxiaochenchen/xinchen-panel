@@ -14,9 +14,9 @@
 
 **Files:** `internal/catalog/line_model.go`, `internal/catalog/line_model_test.go`.
 
-- [ ] Test that `NormalizeLine` accepts a UUID proxy node, trimmed 1–100 character name, priority 0–1000, weight 1–100, at most 16 unique tags, and a boolean enabled flag. Test invalid node IDs, empty name, invalid priority/weight/tags, and attempted user multiplier override.
-- [ ] Implement `NewLine`, `LineInput`, `Line`, and `LineHop` with `node_id` as the sole hop input. A shared line may set `multiplier_milli` in 1–100000; a member line uses no multiplier override. The output exposes `hops:[{position:0,node_id,role:"egress"}]`.
-- [ ] Run `go test ./internal/catalog -run TestNormalizeLine -count=1` after the failing and passing states.
+- [x] Test that `NormalizeLine` accepts a UUID proxy node, trimmed 1–100 character name, priority 0–1000, weight 1–100, at most 16 unique tags, and a boolean enabled flag. Test invalid node IDs, empty name, invalid priority/weight/tags, and attempted user multiplier override.
+- [x] Implement `NewLine`, `LineInput`, `Line`, and `LineHop` with `node_id` as the sole hop input. A shared line may set `multiplier_milli` in 1–100000; a member line uses no multiplier override. The output exposes `hops:[{position:0,node_id,role:"egress"}]`.
+- [x] Run `go test ./internal/catalog -run TestNormalizeLine -count=1` after the failing and passing states.
 
 ## Task 2: PostgreSQL create and read
 
