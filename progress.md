@@ -7,3 +7,4 @@
 - 2026-09-25：临时 PGlite 实例执行 migration up/down，创建 12 张表并成功回滚至 0 张表。第一阶段基础服务已验证；外部 PostgreSQL 16 仍待下阶段接入。
 - 2026-09-25：接入 pgx/v5、数据库启动检查、依赖感知的 readiness 和事务化 migration 命令。单元测试、vet、PGlite up/down 通过；Go 到 PostgreSQL 16 的实时连接尚未验证。
 - 2026-09-25：`us dmit` 私有预览部署到 `/opt/network-control-plane/releases/2594ba4`。初次迁移因 AppleDouble 文件失败；回归测试先红后绿，修复后 API/DB 均健康，HTTP 探针 200，真实 PostgreSQL 16.10 迁移和重跑成功，原有 Nginx Proxy Manager 未受影响。
+- 2026-09-25：按用户要求发布 `2ead2ae`，将 API 临时绑定到公网 18080。开发机经 `179.255.145.149` 请求 `/live` 和 `/ready` 均返回 200；域名与 HTTPS 留待后续 Nginx 反代。当前仍只有基础健康接口，没有管理 UI。
