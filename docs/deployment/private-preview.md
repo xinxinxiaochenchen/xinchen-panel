@@ -4,7 +4,7 @@
 
 ## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `a056e72`，目录 `/opt/network-control-plane/releases/a056e72`。
+- 已在 `us dmit` 部署提交 `ce02780`，目录 `/opt/network-control-plane/releases/ce02780`。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/` 返回 200 HTML，浏览器渲染七项导航、浅深色主题、手机布局及真实就绪状态；`/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
 - 迁移记录版本 1–5；新增 `config_revisions` 表。升级前备份位于 `/opt/network-control-plane/backups/pre-web-a056e72.dump`，权限 `0600`。
@@ -12,6 +12,7 @@
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
 - 2026-09-26 发布 `a056e72`：公网首页 HTML、就绪探针均返回 200，登录返回 404；浏览器预览页实时状态显示“运行正常”。API/DB 容器均为 healthy、重启次数为 0；现有 Nginx Proxy Manager 未改动。迁移 5 已先在独立库验证，测试库及临时文件已清理。
+- 2026-09-26 发布 `ce02780`：控制面新增配置收敛 worker。正式库升级前备份为 `/opt/network-control-plane/backups/pre-convergence-ce02780.dump`，权限 `0600`；迁移仍为 5。公网首页和就绪探针返回 200，登录返回 404。API/DB 均 healthy、重启次数 0；正式库暂无 Agent，因而尚无实际转发。独立测试数据库和测试二进制已清理，原有 Nginx Proxy Manager 继续运行。
 
 ## 布局与边界
 

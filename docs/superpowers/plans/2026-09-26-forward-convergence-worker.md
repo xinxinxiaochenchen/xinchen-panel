@@ -41,4 +41,4 @@
 
 - [x] **Step 1:** Add `Run(ctx, logger)` with a 15-second event poll and 60-second sweep, and start it from `main` after database readiness. Cancellation must stop the loop cleanly; errors must be logged without stopping other work.
 - [x] **Step 2:** Run complete Go tests, vet, race checks for the worker, PostgreSQL integration tests, and `git diff --check`.
-- [ ] **Step 3:** Commit the verified slice. Do not describe forwarding as active until Agent enrollment, transport, and apply ACK are connected.
+- [x] **Step 3:** Commit the verified slice. Do not describe forwarding as active until Agent enrollment, transport, and apply ACK are connected.
