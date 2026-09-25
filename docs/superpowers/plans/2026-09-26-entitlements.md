@@ -42,7 +42,7 @@
 - [x] Add the five endpoints, use `plans.write` for writes, `plans.read` for admin list, and `dashboard.read` for own reads. Reuse uniform JSON errors and list pagination, while keeping creation endpoints unavailable when browser auth is disabled.
 - [x] Update OpenAPI schemas, parameter refs, and response codes. Parse YAML, run `go test ./... -count=1`, `go vet ./...`, `git diff --check`, and seek read-only code review.
 
-Verification on 2026-09-26: Go tests and vet passed; OpenAPI YAML parsed; real PostgreSQL 16 integration passed with plan grants, frozen snapshots and catalog node authorization. Review found private-line grants and time zone/expiry edges; these were fixed and retested. The deployed public IP release remains at `43f17c8` until this stage is packaged.
+Verification on 2026-09-26: Go tests and vet passed; OpenAPI YAML parsed; real PostgreSQL 16 integration passed with plan grants, frozen snapshots and catalog node authorization. Review found private-line grants and time zone/expiry edges; these were fixed and retested. The public IP preview was updated to `33201ce` with browser authentication still disabled.
 
 ## Deployment boundary
 

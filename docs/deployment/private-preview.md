@@ -1,17 +1,17 @@
 # 纯 IP 预览部署（`us dmit`）
 
-本部署验证控制面基础、PostgreSQL 迁移和健康接口。资源组与节点目录 API 已包含在发布版中，但浏览器身份路由关闭，公网无法调用这些业务接口。前端、线路、转发、订阅、分流、计费和 Agent 尚未完成；公网 18080 仅供临时纯 IP 连通性测试，不是正式控制台。
+本部署验证控制面基础、PostgreSQL 迁移和健康接口。资源目录与套餐订购 API 已包含在发布版中，但浏览器身份路由关闭，公网无法调用这些业务接口。前端、线路、转发、订阅、分流、计费和 Agent 尚未完成；公网 18080 仅供临时纯 IP 连通性测试，不是正式控制台。
 
 ## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `43f17c8`，目录 `/opt/network-control-plane/releases/43f17c8`。
+- 已在 `us dmit` 部署提交 `33201ce`，目录 `/opt/network-control-plane/releases/33201ce`。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1、2、3；目录审计表和代理端点唯一索引已创建；重复执行 `migrate up` 成功。升级前备份位于 `/opt/network-control-plane/backups/pre-catalog-43f17c8.dump`，权限 `0600`。
+- 迁移记录版本 1、2、3；目录审计表和代理端点唯一索引已创建。本次无新增迁移。升级前备份位于 `/opt/network-control-plane/backups/pre-entitlement-33201ce.dump`，权限 `0600`。
 - 浏览器认证由 `CONTROL_BROWSER_AUTH_ENABLED=false` 关闭。公网 `POST /api/v1/auth/login` 返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
-- 2026-09-26 从开发机请求公网 IP 的 `/live` 和 `/ready` 均返回 200，`POST /api/v1/auth/login` 返回 404；API 和数据库容器均为 healthy。
+- 2026-09-26 从开发机请求公网 IP 的 `/live` 和 `/ready` 均返回 200，`POST /api/v1/auth/login` 返回 404；服务器本地 `/api/v1/admin/plans` 也返回 404。
 
 ## 布局与边界
 
