@@ -27,4 +27,4 @@
 **Files:** `deployments/compose/Dockerfile.prebuilt`, `deployments/compose/compose.yaml`, `scripts/build-linux-amd64.sh`, `README.md`, `docs/deployment/private-preview.md`.
 
 - [x] Package web assets with the Go release and set `CONTROL_WEB_DIR` in Compose while retaining the existing 18080 port and private database.
-- [ ] Run Go tests, vet, frontend build, HTTP smoke test, and diff check. Back up the formal database, deploy to `us dmit` through Termark, apply migration 5, and verify public IP page and health without enabling login.
+- [x] Run Go tests, vet, frontend build, HTTP smoke test, and diff check. Back up the formal database, deploy to `us dmit` through Termark, apply migration 5, and verify public IP page and health without enabling login.
