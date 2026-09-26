@@ -2,6 +2,8 @@ package config
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -128,5 +130,53 @@ func TestLoadFromRejectsNonPostgresURL(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected invalid database URL error")
+	}
+}
+
+func TestLoadFromAgentTLSRequiresCompleteFiles(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{"server.crt", "server.key", "agent-ca.crt", "agent-ca.key"} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_AGENT_TLS_ADDR": "127.0.0.1:18443",
+		"CONTROL_AGENT_TLS_CERT_FILE": filepath.Join(directory, "server.crt"), "CONTROL_AGENT_TLS_KEY_FILE": filepath.Join(directory, "server.key"),
+		"CONTROL_AGENT_CA_CERT_FILE": filepath.Join(directory, "agent-ca.crt"), "CONTROL_AGENT_CA_KEY_FILE": filepath.Join(directory, "agent-ca.key")}
+	lookup := func(key string) (string, bool) { value, ok := values[key]; return value, ok }
+	cfg, err := LoadFrom(lookup)
+	if err != nil || cfg.AgentTLSAddr != "127.0.0.1:18443" || cfg.AgentCACertFile == "" {
+		t.Fatalf("complete Agent TLS config = %+v, %v", cfg, err)
+	}
+	delete(values, "CONTROL_AGENT_CA_KEY_FILE")
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("incomplete Agent TLS config accepted")
+	}
+}
+
+func TestLoadFromAgentTLSRejectsPublicBindAndWeakKeyPermissions(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{"server.crt", "server.key", "agent-ca.crt", "agent-ca.key"} {
+		mode := os.FileMode(0600)
+		if name == "agent-ca.key" {
+			mode = 0644
+		}
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(name), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_AGENT_TLS_ADDR": "127.0.0.1:18443",
+		"CONTROL_AGENT_TLS_CERT_FILE": filepath.Join(directory, "server.crt"), "CONTROL_AGENT_TLS_KEY_FILE": filepath.Join(directory, "server.key"),
+		"CONTROL_AGENT_CA_CERT_FILE": filepath.Join(directory, "agent-ca.crt"), "CONTROL_AGENT_CA_KEY_FILE": filepath.Join(directory, "agent-ca.key")}
+	lookup := func(key string) (string, bool) { value, ok := values[key]; return value, ok }
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("world-readable Agent CA key accepted")
+	}
+	if err := os.Chmod(values["CONTROL_AGENT_CA_KEY_FILE"], 0600); err != nil {
+		t.Fatal(err)
+	}
+	values["CONTROL_AGENT_TLS_ADDR"] = "0.0.0.0:18443"
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("public Agent TLS bind accepted")
 	}
 }

@@ -2,10 +2,86 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health, browser identity, user lifecycle, resource directory, entitlement, single-hop line and direct forwarding endpoints for the independently designed network control plane. Browser identity requires HTTPS.
+  description: Health, browser identity, user lifecycle, resource directory, entitlement, single-hop line, direct forwarding and Agent enrollment contracts for the independently designed network control plane. Browser identity and Agent enrollment require HTTPS.
 servers:
   - url: http://127.0.0.1:8080
 paths:
+  /api/v1/admin/nodes/{id}/agent-enrollment:
+    post:
+      operationId: createAgentEnrollmentToken
+      summary: Issue a ten-minute one-time enrollment token for a node
+      description: Requires an administrator browser session with agents.write, CSRF and current password reauthentication. Available only when Agent TLS is configured; the public HTTP preview keeps browser authentication disabled. Issuing another token for the same node revokes its previous unused token. The action is audited without storing the token; the token appears only in this response.
+      security: [{browserSession: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: {type: string, format: password}
+      responses:
+        '201':
+          description: One-time Agent enrollment token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expires_at]
+                properties:
+                  token: {type: string}
+                  expires_at: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/agent/enroll:
+    post:
+      operationId: enrollAgent
+      summary: Exchange a one-time Agent token and Ed25519 CSR for a client certificate
+      description: Served only by the dedicated TLS Agent listener when configured. The public HTTP preview does not mount this endpoint. The token is valid for 10 minutes and consumed once. The private key remains on the Agent. The server certificate must be trusted and cover the address used by the Agent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, csr_pem, version]
+              properties:
+                token: {type: string, description: One-time bearer token issued for an existing node.}
+                csr_pem: {type: string, description: PEM encoded PKCS#10 Ed25519 certificate request.}
+                version: {type: string, description: Agent software version.}
+      responses:
+        '201':
+          description: Short-lived client certificate bound to the enrolled node.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [node_id, certificate_pem, ca_certificate_pem, expires_at]
+                properties:
+                  node_id: {type: string, format: uuid}
+                  certificate_pem: {type: string}
+                  ca_certificate_pem: {type: string}
+                  expires_at: {type: string, format: date-time}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/v1/health/live:
     get:
       operationId: getLiveness

@@ -26,7 +26,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表；`000005_config_revisions.up.sql` 增加按 Agent 节点保存的期望配置版本。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 5 已在独立 PostgreSQL 16 测试库验证，且已应用到纯 IP 预览实例。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表；`000005_config_revisions.up.sql` 增加按 Agent 节点保存的期望配置版本；`000006_agent_enrollment.up.sql` 增加一次性入网令牌和证书到期字段。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 6 已在独立 PostgreSQL 16 测试库验证；纯 IP 预览的正式库仍为版本 5，发布新版本时才应用迁移 6。
 
 ## 资源目录开发状态
 
@@ -52,7 +52,9 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 配置版本仓储在锁定 Agent 后，于同一数据库事务读取当前节点事实并编译完整转发快照。可执行内容的 SHA-256 不变时不新增版本，但会刷新逐规则诊断；变化时递增 `desired_revision`。Agent 回执必须匹配节点、版本和摘要；应用成功才推进 `applied_revision`，失败回执可随重试更新，但已应用版本不会被失败回执覆盖。失败原因有长度和字符限制。收敛 worker 消费转发规则与目标策略的 outbox 事件，并定期扫描 Agent 节点，以处理套餐到期等时间驱动的撤销。**Agent 身份与通信、回执传输仍待实现**；即使生成配置版本，线上也不会因此执行转发。
 
-`internal/agentproto` 定义版本 1 的 JSON 消息封包和直达转发配置/结果负载。封包限制为 1 MiB，拒绝未知版本、字段、重复 JSON 字段和无效身份；Agent 验证快照有效期及与控制面一致的可执行内容摘要后才能应用。当前只有协议编解码，尚无入网、mTLS 传输或 Agent 进程。
+`internal/agentproto` 定义版本 1 的 JSON 消息封包和直达转发配置/结果负载。封包限制为 1 MiB，拒绝未知版本、字段、重复 JSON 字段和无效身份；Agent 验证快照有效期及与控制面一致的可执行内容摘要后才能应用。协议编解码尚未连接到 mTLS 传输或 Agent 进程。
+
+`internal/agentidentity` 增加 Agent 入网身份基础：10 分钟一次性令牌只以 SHA-256 存库；Agent 以 Ed25519 CSR 换取绑定节点 URI 的 24 小时客户端证书；签发和令牌消费在同一事务中完成。证书认证会核对 CA、节点 URI、当前数据库指纹、节点启用状态与吊销状态。启用独立 TLS 监听器时，管理员须用当前密码重新认证，并经 `POST /api/v1/admin/nodes/{id}/agent-enrollment` 签发令牌；签发记录审计但不保存明文令牌。Agent 经 TLS `POST /api/v1/agent/enroll` 入网，入口有单进程 IP、令牌及全局速率限制。TLS 监听器需要 `CONTROL_AGENT_TLS_ADDR`、`CONTROL_AGENT_TLS_CERT_FILE`、`CONTROL_AGENT_TLS_KEY_FILE`、`CONTROL_AGENT_CA_CERT_FILE`、`CONTROL_AGENT_CA_KEY_FILE` 全部配置；监听地址目前限回环，私钥文件权限不能对组或其他用户开放。CA 私钥不写入数据库或响应，Agent 私钥不离开节点。当前公网纯 IP 预览不启用这些配置，故没有入网或令牌路由；证书轮换、WebSocket 流、心跳和配置 ACK 仍待完成。
 
 ## 用户生命周期开发状态
 

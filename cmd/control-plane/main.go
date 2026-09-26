@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"controlplane/internal/agentidentity"
 	"controlplane/internal/catalog"
 	"controlplane/internal/entitlement"
 	"controlplane/internal/forward"
@@ -47,6 +48,7 @@ func main() {
 	var lineStore httpapi.LineStore
 	var forwardStore httpapi.ForwardStore
 	var forwardPolicyStore httpapi.ForwardPolicyStore
+	var agentTokenStore httpapi.AgentTokenStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
@@ -58,8 +60,11 @@ func main() {
 		forwardStore = forwardRepository
 		forwardPolicyStore = forwardRepository
 		entitlementStore = entitlement.NewPostgresRepository(pool)
+		if cfg.AgentTLSAddr != "" {
+			agentTokenStore = agentidentity.NewEnrollmentService(pool, nil)
+		}
 	}
-	handler := httpapi.NewHandlerWithForwardPolicies(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore, forwardStore, forwardPolicyStore)
+	handler := httpapi.NewHandlerWithAgentTokens(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore, forwardStore, forwardPolicyStore, agentTokenStore)
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {
 			logger.Error("web bundle unavailable", "error", err)
@@ -77,6 +82,10 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if _, err := startConfiguredAgentServer(ctx, cfg, pool, logger, stop); err != nil {
+		logger.Error("Agent TLS listener unavailable", "error", err)
+		os.Exit(1)
+	}
 	if cfg.BrowserAuthEnabled {
 		go identity.RunSessionJanitor(ctx, identity.NewPostgresRepository(pool), logger)
 	}

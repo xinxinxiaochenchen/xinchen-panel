@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,6 +17,11 @@ type Config struct {
 	DatabaseURL        string
 	BrowserAuthEnabled bool
 	WebDir             string
+	AgentTLSAddr       string
+	AgentTLSCertFile   string
+	AgentTLSKeyFile    string
+	AgentCACertFile    string
+	AgentCAKeyFile     string
 }
 
 func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
@@ -65,6 +71,53 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 			cfg.LogLevel = slog.LevelError
 		default:
 			return Config{}, fmt.Errorf("CONTROL_LOG_LEVEL: unsupported level %q", value)
+		}
+	}
+	agentFields := []struct {
+		key    string
+		target *string
+	}{
+		{"CONTROL_AGENT_TLS_ADDR", &cfg.AgentTLSAddr},
+		{"CONTROL_AGENT_TLS_CERT_FILE", &cfg.AgentTLSCertFile},
+		{"CONTROL_AGENT_TLS_KEY_FILE", &cfg.AgentTLSKeyFile},
+		{"CONTROL_AGENT_CA_CERT_FILE", &cfg.AgentCACertFile},
+		{"CONTROL_AGENT_CA_KEY_FILE", &cfg.AgentCAKeyFile},
+	}
+	agentConfigured := false
+	for _, field := range agentFields {
+		if value, ok := lookup(field.key); ok && value != "" {
+			*field.target = value
+			agentConfigured = true
+		}
+	}
+	if agentConfigured {
+		for _, field := range agentFields {
+			if *field.target == "" {
+				return Config{}, fmt.Errorf("%s: required when Agent TLS is enabled", field.key)
+			}
+		}
+		host, portText, err := net.SplitHostPort(cfg.AgentTLSAddr)
+		port, portErr := strconv.Atoi(portText)
+		if err != nil || portErr != nil || port < 1 || port > 65535 || host != "127.0.0.1" && host != "::1" && host != "localhost" {
+			return Config{}, fmt.Errorf("CONTROL_AGENT_TLS_ADDR: expected a loopback address and valid port")
+		}
+		for _, field := range agentFields[1:] {
+			if !filepath.IsAbs(*field.target) {
+				return Config{}, fmt.Errorf("%s: expected absolute file path", field.key)
+			}
+			info, err := os.Stat(*field.target)
+			if err != nil || !info.Mode().IsRegular() {
+				return Config{}, fmt.Errorf("%s: file unavailable", field.key)
+			}
+		}
+		for _, field := range []struct {
+			key  string
+			path string
+		}{{"CONTROL_AGENT_TLS_KEY_FILE", cfg.AgentTLSKeyFile}, {"CONTROL_AGENT_CA_KEY_FILE", cfg.AgentCAKeyFile}} {
+			info, err := os.Stat(field.path)
+			if err != nil || info.Mode().Perm()&0077 != 0 {
+				return Config{}, fmt.Errorf("%s: private key must be readable only by its owner", field.key)
+			}
 		}
 	}
 	return cfg, nil

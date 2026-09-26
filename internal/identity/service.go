@@ -164,6 +164,19 @@ func (s *Service) Authenticate(ctx context.Context, token string) (PublicUser, e
 	return user.Public(), nil
 }
 
+// VerifyPassword confirms the current account password immediately before a
+// sensitive action. It does not extend the browser session.
+func (s *Service) VerifyPassword(ctx context.Context, token, password string) (PublicUser, error) {
+	_, user, err := s.lookup(ctx, token)
+	if err != nil {
+		return PublicUser{}, err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		return PublicUser{}, ErrInvalidCredentials
+	}
+	return user.Public(), nil
+}
+
 func (s *Service) VerifyCSRF(ctx context.Context, token, csrfToken string) (PublicUser, error) {
 	record, user, err := s.lookup(ctx, token)
 	if err != nil {

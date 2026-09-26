@@ -46,6 +46,10 @@ func NewHandlerWithForward(logger *slog.Logger, checker ReadyChecker, sessions I
 }
 
 func NewHandlerWithForwardPolicies(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore, accounts AccountStore, lines LineStore, forward ForwardStore, policies ForwardPolicyStore) http.Handler {
+	return NewHandlerWithAgentTokens(logger, checker, sessions, catalog, entitlements, accounts, lines, forward, policies, nil)
+}
+
+func NewHandlerWithAgentTokens(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore, accounts AccountStore, lines LineStore, forward ForwardStore, policies ForwardPolicyStore, agentTokens AgentTokenStore) http.Handler {
 	mux := http.NewServeMux()
 	live := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -91,6 +95,9 @@ func NewHandlerWithForwardPolicies(logger *slog.Logger, checker ReadyChecker, se
 		}
 		if policies != nil {
 			registerForwardPolicyRoutes(mux, sessions, policies)
+		}
+		if agentTokens != nil {
+			registerAgentTokenRoutes(mux, sessions, agentTokens)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -78,7 +78,7 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 5 || migrations[0].Version != 1 || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[3].Version != 4 || migrations[4].Version != 5 {
-		t.Fatalf("expected configuration revision migration after forward rule schema: %+v", migrations)
+	if len(migrations) != 6 || migrations[0].Version != 1 || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[3].Version != 4 || migrations[4].Version != 5 || migrations[5].Version != 6 {
+		t.Fatalf("expected Agent enrollment migration after configuration revisions; found %d migrations", len(migrations))
 	}
 }

@@ -103,6 +103,28 @@ func TestLoginCreatesHashedSessionAndAuthenticates(t *testing.T) {
 	}
 }
 
+func TestVerifyPasswordRequiresCurrentSessionAndPassword(t *testing.T) {
+	repo := activeRepository(t)
+	service := NewService(repo)
+	login, err := service.Login(context.Background(), repo.user.Email, "correct-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user, err := service.VerifyPassword(context.Background(), login.Token, "correct-password"); err != nil || user.ID != repo.user.ID {
+		t.Fatalf("valid reauthentication = %+v, %v", user, err)
+	}
+	if _, err := service.VerifyPassword(context.Background(), login.Token, "wrong-password"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("incorrect password = %v", err)
+	}
+	if _, err := service.VerifyPassword(context.Background(), "invalid", "correct-password"); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("invalid session = %v", err)
+	}
+	repo.user.PasswordHash = "rotated-password-hash"
+	if _, err := service.VerifyPassword(context.Background(), login.Token, "correct-password"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("rotated password = %v", err)
+	}
+}
+
 func TestLoginRejectsInvalidCredentialsUniformly(t *testing.T) {
 	for _, tc := range []struct{ email, password, status string }{
 		{"missing@example.com", "correct-password", "active"},
