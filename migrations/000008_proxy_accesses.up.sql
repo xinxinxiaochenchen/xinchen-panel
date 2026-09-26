@@ -1,3 +1,10 @@
+INSERT INTO permissions(code, description) VALUES
+    ('proxy_accesses.read', 'View own proxy accesses and credential'),
+    ('proxy_accesses.write', 'Manage own proxy accesses');
+INSERT INTO role_permissions(role_code, permission_code)
+SELECT roles.code, permissions.code FROM roles CROSS JOIN permissions
+WHERE roles.code IN ('admin', 'user') AND permissions.code IN ('proxy_accesses.read', 'proxy_accesses.write');
+
 CREATE TABLE proxy_accesses (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id),

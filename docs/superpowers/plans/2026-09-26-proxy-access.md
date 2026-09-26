@@ -22,15 +22,15 @@
 
 **Files:** `internal/proxyaccess/model_test.go`, `model.go`, `repository_test.go`, `repository.go`.
 
-- [ ] Test name/line validation and safe API DTO that never includes hash/ciphertext.
-- [ ] Test creation, pagination, get, enable/disable, delete and credential rotation in PostgreSQL 16. Include cross-user ownership, expired membership, disabled/unauthorized line and concurrent same-name creation.
-- [ ] Use owner row lock for mutations, a current membership snapshot, line/node/group revalidation, transactional audit and outbox. Return stable domain errors.
+- [x] Test name/line validation and safe API DTO that never includes hash/ciphertext.
+- [x] Test creation, pagination, get, enable/disable, delete and credential rotation in PostgreSQL 16. Include cross-user ownership, expired membership, disabled/unauthorized line and concurrent same-name creation.
+- [x] Use owner row lock for mutations, a current membership snapshot, line/node/group revalidation, transactional audit and outbox. Return stable domain errors.
 
 ### Task 3: REST, configuration and data plane
 
 **Files:** `internal/platform/httpapi/proxy_access*.go`, `cmd/control-plane/main.go`, `internal/orchestration/*`, `internal/agentproto/*`, `internal/agentruntime/*`, `cmd/agent/*`, `api/openapi/control-plane.yaml`.
 
-- [ ] Test REST ownership, RBAC, CSRF, no-cache credential reads, rotation and error mapping.
+- [x] Test REST ownership, RBAC, CSRF, no-cache credential reads, rotation and error mapping.
 - [ ] Test node-scoped proxy snapshot compilation, ACL revocation, digest and ACK/NACK behavior; extend protocol with proxy configuration.
 - [ ] Test TLS Trojan CONNECT against a real local socket using a generated cert; reject unknown credentials, invalid frames, unauthorized targets and expired membership/lease.
 - [ ] Wire Agent runtime, logs, configuration and Docker deployment without exposing browser secrets on the pure HTTP preview.

@@ -23,8 +23,12 @@ func TestLoadFromDefaults(t *testing.T) {
 }
 
 func TestLoadFromBrowserAuthExplicitFlag(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "proxy-key")
+	if err := os.WriteFile(keyPath, []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	lookup := func(key string) (string, bool) {
-		values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_BROWSER_AUTH_ENABLED": "true"}
+		values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_BROWSER_AUTH_ENABLED": "true", "CONTROL_PROXY_CREDENTIAL_KEY_FILE": keyPath}
 		value, ok := values[key]
 		return value, ok
 	}
@@ -178,5 +182,28 @@ func TestLoadFromAgentTLSRejectsPublicBindAndWeakKeyPermissions(t *testing.T) {
 	values["CONTROL_AGENT_TLS_ADDR"] = "0.0.0.0:18443"
 	if _, err := LoadFrom(lookup); err == nil {
 		t.Fatal("public Agent TLS bind accepted")
+	}
+}
+
+func TestLoadFromBrowserAuthRequiresProxyCredentialKey(t *testing.T) {
+	values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_BROWSER_AUTH_ENABLED": "true"}
+	lookup := func(key string) (string, bool) { value, ok := values[key]; return value, ok }
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("browser auth accepted without credential encryption key")
+	}
+	keyPath := filepath.Join(t.TempDir(), "proxy-key")
+	if err := os.WriteFile(keyPath, []byte("short"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	values["CONTROL_PROXY_CREDENTIAL_KEY_FILE"] = keyPath
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("browser auth accepted short credential encryption key")
+	}
+	if err := os.WriteFile(keyPath, []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFrom(lookup)
+	if err != nil || len(cfg.ProxyCredentialKey) != 32 {
+		t.Fatalf("valid credential key = %v, length=%d", err, len(cfg.ProxyCredentialKey))
 	}
 }

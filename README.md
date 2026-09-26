@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则、套餐和订购授权 API、Agent 入网与配置流，以及纯 IP 只读预览页。代理连接、订阅、分流和计费尚未实现；当前服务器尚未启用 Agent TLS 和实际转发。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则、套餐和订购授权 API、Agent 入网与配置流，以及纯 IP 只读预览页。代理连接的凭据与管理 API 已在开发分支实现，数据面下发与执行、订阅、分流和计费尚未实现；当前服务器尚未启用 Agent TLS 和实际转发。
 
 ## 本地运行
 
@@ -43,6 +43,10 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 ## 直达转发规则开发状态
 
 普通用户可通过 `GET/POST /api/v1/forward-rules` 和 `GET/PATCH/DELETE /api/v1/forward-rules/{id}` 创建、查看、改名、启停及删除自有的直达转发规则。入口节点必须具备 `forward` 能力且属于有效订购授权的资源组；目标可为授权节点或公网地址。管理员通过 `/api/v1/admin/forward-target-policies` 批准目标类型、节点组、协议和目标端口范围；默认无授权，普通用户不能自行放开。TCP、UDP 与 BOTH 分别原子占用对应端口，每节点规则数受订购快照约束；停用保留端口，删除释放端口。多跳线路尚未开放，端口与目标变更需删除后重建。写入审计和 outbox 后，状态仍为待下发；Agent 执行链路未接入前不会有实际转发。公网纯 HTTP 预览保持关闭这些路由。
+
+## Trojan 代理连接开发状态
+
+开发分支新增 `proxy_accesses` 迁移 8、每连接随机凭据、Trojan SHA-224 摘要和 AES-256-GCM 加密存储。创建与启用时复核当前有效订购、单跳线路、出口节点和资源组授权；用户只能查询和管理自己的连接，凭据只经专门的授权响应返回。创建、轮换、更新和删除写审计及待收敛事件。启用浏览器身份认证前必须提供权限为 `0600` 的绝对路径 `CONTROL_PROXY_CREDENTIAL_KEY_FILE`，文件内容为 32 字节密钥的无填充 base64url 编码。缺少密钥时启动会拒绝开启浏览器身份路由。迁移 8 和仓储生命周期已在独立 PostgreSQL 16 测试库验证；正式库当前仍为迁移 7，纯 IP 预览未包含此分支改动。代理配置编译、Agent TLS 执行、证书和订阅输出仍待实现，所以创建连接尚不能产生可用的网络代理。
 
 ## Agent 转发运行时开发状态
 

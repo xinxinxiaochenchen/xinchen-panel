@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health, browser identity, user lifecycle, resource directory, entitlement, single-hop line, direct forwarding and Agent enrollment contracts for the independently designed network control plane. Browser identity and Agent enrollment require HTTPS.
+  description: Health, browser identity, user lifecycle, resource directory, entitlement, single-hop line, proxy access, direct forwarding and Agent enrollment contracts for the independently designed network control plane. Browser identity and Agent enrollment require HTTPS.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -666,6 +666,121 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/proxy-accesses:
+    get:
+      operationId: listOwnProxyAccesses
+      summary: List the current user's proxy accesses without credentials
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Current user's proxy accesses.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProxyAccessList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createProxyAccess
+      summary: Create a Trojan proxy access on one authorized single-hop line
+      description: Requires an active membership and an enabled, authorized proxy line. The generated credential is shown only in this response and the owner's dedicated credential endpoint. The current pure IP preview does not expose this route.
+      security: [{browserSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewProxyAccess'}
+      responses:
+        '201':
+          description: Created access and its generated credential.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProxyAccessCreated'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/proxy-accesses/{id}:
+    parameters: [{$ref: '#/components/parameters/ProxyAccessID'}]
+    get:
+      operationId: getOwnProxyAccess
+      summary: Read one's proxy access without the credential
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Owned proxy access.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProxyAccess'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateOwnProxyAccess
+      summary: Rename or enable/disable one's proxy access
+      security: [{browserSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProxyAccessPatch'}
+      responses:
+        '200':
+          description: Updated proxy access.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProxyAccess'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      operationId: deleteOwnProxyAccess
+      summary: Delete one's proxy access
+      security: [{browserSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      responses:
+        '204': {description: Proxy access deleted.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/proxy-accesses/{id}/credential:
+    get:
+      operationId: revealOwnProxyCredential
+      summary: Read the current proxy credential for an owned, authorized access
+      security: [{browserSession: []}]
+      parameters: [{$ref: '#/components/parameters/ProxyAccessID'}]
+      responses:
+        '200':
+          description: Credential. Cache-Control is no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProxyCredential'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/proxy-accesses/{id}/credential-rotation:
+    post:
+      operationId: rotateOwnProxyCredential
+      summary: Replace the proxy credential and revoke the old credential after Agent convergence
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProxyAccessID'}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      responses:
+        '200':
+          description: New credential. Cache-Control is no-store.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProxyCredential'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /api/v1/forward-rules:
     get:
       operationId: listOwnForwardRules
@@ -850,6 +965,11 @@ paths:
 components:
   parameters:
     ForwardTargetPolicyID:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, format: uuid}
+    ProxyAccessID:
       in: path
       name: id
       required: true
@@ -1061,6 +1181,52 @@ components:
           type: array
           items: {$ref: '#/components/schemas/ForwardTargetPolicy'}
         next_cursor: {type: ['string', 'null']}
+    NewProxyAccess:
+      type: object
+      additionalProperties: false
+      required: [name, line_id]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        line_id: {type: string, format: uuid}
+        enabled: {type: boolean, default: true}
+    ProxyAccessPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        enabled: {type: boolean}
+    ProxyAccess:
+      type: object
+      required: [id, user_id, line_id, name, enabled, apply_status, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        line_id: {type: string, format: uuid}
+        name: {type: string}
+        enabled: {type: boolean}
+        apply_status: {type: string, enum: [pending, active, apply_failed, disabled]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ProxyAccessList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ProxyAccess'}
+        next_cursor: {type: ['string', 'null']}
+    ProxyAccessCreated:
+      type: object
+      required: [access, credential]
+      properties:
+        access: {$ref: '#/components/schemas/ProxyAccess'}
+        credential: {type: string, description: High entropy generated Trojan password.}
+    ProxyCredential:
+      type: object
+      required: [credential]
+      properties:
+        credential: {type: string}
     NewForwardRule:
       type: object
       required: [name, ingress_node_id, ingress_port, target_port, protocol]

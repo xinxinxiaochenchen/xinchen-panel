@@ -52,6 +52,28 @@ func NewHandlerWithForwardPolicies(logger *slog.Logger, checker ReadyChecker, se
 }
 
 func NewHandlerWithAgentTokens(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, catalog CatalogStore, entitlements EntitlementStore, accounts AccountStore, lines LineStore, forward ForwardStore, policies ForwardPolicyStore, agentTokens AgentTokenStore) http.Handler {
+	return NewHandlerWithStores(logger, checker, sessions, RouteStores{Catalog: catalog, Entitlements: entitlements,
+		Accounts: accounts, Lines: lines, Forward: forward, Policies: policies, AgentTokens: agentTokens})
+}
+
+type RouteStores struct {
+	Catalog      CatalogStore
+	Entitlements EntitlementStore
+	Accounts     AccountStore
+	Lines        LineStore
+	Forward      ForwardStore
+	Policies     ForwardPolicyStore
+	AgentTokens  AgentTokenStore
+	ProxyAccess  ProxyAccessStore
+}
+
+func NewHandlerWithProxyAccess(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, proxy ProxyAccessStore) http.Handler {
+	return NewHandlerWithStores(logger, checker, sessions, RouteStores{ProxyAccess: proxy})
+}
+
+func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, stores RouteStores) http.Handler {
+	catalog, entitlements, accounts, lines := stores.Catalog, stores.Entitlements, stores.Accounts, stores.Lines
+	forward, policies, agentTokens := stores.Forward, stores.Policies, stores.AgentTokens
 	mux := http.NewServeMux()
 	live := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -100,6 +122,9 @@ func NewHandlerWithAgentTokens(logger *slog.Logger, checker ReadyChecker, sessio
 		}
 		if agentTokens != nil {
 			registerAgentTokenRoutes(mux, sessions, agentTokens)
+		}
+		if stores.ProxyAccess != nil {
+			registerProxyAccessRoutes(mux, sessions, stores.ProxyAccess)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

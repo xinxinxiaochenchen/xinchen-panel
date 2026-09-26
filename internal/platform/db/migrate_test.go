@@ -82,3 +82,15 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 		t.Fatalf("expected proxy access migration after Agent presence; found %d migrations", len(migrations))
 	}
 }
+
+func TestProxyAccessMigrationGrantsUserPermissions(t *testing.T) {
+	contents, err := os.ReadFile("../../../migrations/000008_proxy_accesses.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"proxy_accesses.read", "proxy_accesses.write"} {
+		if !strings.Contains(string(contents), code) {
+			t.Fatalf("migration 8 does not grant %s", code)
+		}
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/db"
 	"controlplane/internal/platform/httpapi"
+	"controlplane/internal/proxyaccess"
 )
 
 func main() {
@@ -49,6 +50,7 @@ func main() {
 	var forwardStore httpapi.ForwardStore
 	var forwardPolicyStore httpapi.ForwardPolicyStore
 	var agentTokenStore httpapi.AgentTokenStore
+	var proxyAccessStore httpapi.ProxyAccessStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
@@ -60,11 +62,20 @@ func main() {
 		forwardStore = forwardRepository
 		forwardPolicyStore = forwardRepository
 		entitlementStore = entitlement.NewPostgresRepository(pool)
+		credentialCipher, err := proxyaccess.NewCredentialCipher(cfg.ProxyCredentialKey)
+		if err != nil {
+			logger.Error("proxy credential encryption unavailable", "error", err)
+			os.Exit(2)
+		}
+		proxyAccessStore = proxyaccess.NewPostgresRepository(pool, credentialCipher)
 		if cfg.AgentTLSAddr != "" {
 			agentTokenStore = agentidentity.NewEnrollmentService(pool, nil)
 		}
 	}
-	handler := httpapi.NewHandlerWithAgentTokens(logger, db.HealthCheck{Database: pool}, sessions, catalogStore, entitlementStore, accountStore, lineStore, forwardStore, forwardPolicyStore, agentTokenStore)
+	handler := httpapi.NewHandlerWithStores(logger, db.HealthCheck{Database: pool}, sessions, httpapi.RouteStores{
+		Catalog: catalogStore, Entitlements: entitlementStore, Accounts: accountStore, Lines: lineStore,
+		Forward: forwardStore, Policies: forwardPolicyStore, AgentTokens: agentTokenStore, ProxyAccess: proxyAccessStore,
+	})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {
 			logger.Error("web bundle unavailable", "error", err)

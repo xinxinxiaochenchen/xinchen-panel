@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net"
@@ -16,6 +17,7 @@ type Config struct {
 	LogLevel           slog.Level
 	DatabaseURL        string
 	BrowserAuthEnabled bool
+	ProxyCredentialKey []byte
 	WebDir             string
 	AgentTLSAddr       string
 	AgentTLSCertFile   string
@@ -58,6 +60,26 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 			return Config{}, fmt.Errorf("CONTROL_BROWSER_AUTH_ENABLED: expected true or false")
 		}
 		cfg.BrowserAuthEnabled = enabled
+	}
+	if cfg.BrowserAuthEnabled {
+		path, ok := lookup("CONTROL_PROXY_CREDENTIAL_KEY_FILE")
+		if !ok || !filepath.IsAbs(path) {
+			return Config{}, fmt.Errorf("CONTROL_PROXY_CREDENTIAL_KEY_FILE: absolute file path required when browser authentication is enabled")
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+			return Config{}, fmt.Errorf("CONTROL_PROXY_CREDENTIAL_KEY_FILE: private regular file required")
+		}
+		encoded, err := os.ReadFile(path)
+		if err != nil {
+			return Config{}, fmt.Errorf("CONTROL_PROXY_CREDENTIAL_KEY_FILE: unreadable: %w", err)
+		}
+		keyText := strings.TrimSpace(string(encoded))
+		decoded, err := base64.RawURLEncoding.DecodeString(keyText)
+		if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != keyText {
+			return Config{}, fmt.Errorf("CONTROL_PROXY_CREDENTIAL_KEY_FILE: expected 32 base64url-encoded bytes")
+		}
+		cfg.ProxyCredentialKey = decoded
 	}
 	if value, ok := lookup("CONTROL_LOG_LEVEL"); ok {
 		switch strings.ToLower(value) {
