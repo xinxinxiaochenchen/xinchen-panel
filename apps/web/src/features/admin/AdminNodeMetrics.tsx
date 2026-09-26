@@ -11,6 +11,7 @@ export function AdminNodeMetrics({ nodeID }: { nodeID: string }) {
 
   useEffect(() => {
     const controller = new AbortController()
+    let timer: number | undefined
     setData(null)
     setError('')
     setLoading(true)
@@ -22,11 +23,12 @@ export function AdminNodeMetrics({ nodeID }: { nodeID: string }) {
         if (!controller.signal.aborted) { setData(value); setError(''); setLoading(false) }
       } catch (caught) {
         if (!controller.signal.aborted) { setError(caught instanceof Error ? caught.message : '指标暂不可用。'); setLoading(false) }
+      } finally {
+        if (!controller.signal.aborted) timer = window.setTimeout(() => void load(), 15000)
       }
     }
     void load()
-    const timer = window.setInterval(() => void load(), 15000)
-    return () => { controller.abort(); window.clearInterval(timer) }
+    return () => { controller.abort(); window.clearTimeout(timer) }
   }, [nodeID, generation])
 
   const metrics = data?.metrics

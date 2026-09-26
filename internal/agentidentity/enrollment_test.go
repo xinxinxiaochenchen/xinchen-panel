@@ -115,6 +115,36 @@ AND after_json::text NOT LIKE '%' || $3 || '%'`, fixture.actorID, fixture.nodeID
 	}
 }
 
+func TestReenrollmentClearsPreviousAgentMetrics(t *testing.T) {
+	fixture := newEnrollmentFixture(t)
+	ctx := context.Background()
+	first, err := fixture.service.CreateToken(ctx, fixture.nodeID, fixture.actorID, "metrics-first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.Enroll(ctx, first.Token, testCSR(t), "v1.0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.pool.Exec(ctx, `INSERT INTO agent_metrics(node_id,uptime_seconds,cpu_pct,memory_used_bytes,rx_bytes,tx_bytes,connections,engine_status)
+VALUES ($1,100,25,1024,2048,4096,3,'running')`, fixture.nodeID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := fixture.service.CreateToken(ctx, fixture.nodeID, fixture.actorID, "metrics-second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.Enroll(ctx, second.Token, testCSR(t), "v2.0"); err != nil {
+		t.Fatal(err)
+	}
+	var remaining int
+	if err := fixture.pool.QueryRow(ctx, `SELECT count(*) FROM agent_metrics WHERE node_id=$1`, fixture.nodeID).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
+		t.Fatalf("old Agent metrics survived reenrollment: %d", remaining)
+	}
+}
+
 func TestEnrollmentReplacesOldTokenAndRejectsExpiredOrDisabledNode(t *testing.T) {
 	fixture := newEnrollmentFixture(t)
 	ctx := context.Background()

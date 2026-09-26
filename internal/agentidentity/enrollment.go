@@ -151,6 +151,9 @@ cert_expires_at=EXCLUDED.cert_expires_at,version=EXCLUDED.version,status='pendin
 last_seen_at=NULL,applied_revision=0`, nodeID, issued.Fingerprint, issued.ExpiresAt, version); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("store Agent certificate identity: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_metrics WHERE node_id=$1`, nodeID); err != nil {
+		return EnrollmentResult{}, fmt.Errorf("clear previous Agent metrics: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `UPDATE agent_enrollment_tokens SET consumed_at=now() WHERE token_hash=$1`, hash[:]); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("consume Agent enrollment token: %w", err)
 	}
