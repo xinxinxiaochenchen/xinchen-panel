@@ -52,7 +52,26 @@ func startConfiguredAgentServer(ctx context.Context, cfg config.Config, pool *pg
 		return nil, err
 	}
 	go sweepOfflineAgents(ctx, presence, logger)
+	go sweepAgentCertificates(ctx, service, logger)
 	return listener, nil
+}
+
+func sweepAgentCertificates(ctx context.Context, service *agentidentity.EnrollmentService, logger *slog.Logger) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, err := service.SweepExpiredGrants(queryCtx)
+			cancel()
+			if err != nil {
+				logger.Warn("Agent certificate grant sweep failed", "error", err)
+			}
+		}
+	}
 }
 
 func sweepOfflineAgents(ctx context.Context, presence *orchestration.AgentPresenceRepository, logger *slog.Logger) {

@@ -58,8 +58,10 @@ func (service *EnrollmentService) AuthenticateCertificate(ctx context.Context, c
 	var allowed bool
 	if err := service.pool.QueryRow(ctx, `SELECT EXISTS (
 SELECT 1 FROM agents a JOIN nodes n ON n.id=a.node_id
-WHERE a.node_id=$1 AND a.cert_fingerprint=$2 AND a.cert_expires_at > now()
-AND a.status <> 'revoked' AND n.enabled)`, nodeID, hex.EncodeToString(fingerprint[:])).Scan(&allowed); err != nil {
+WHERE a.node_id=$1 AND a.status <> 'revoked' AND n.enabled
+AND ((a.cert_fingerprint=$2 AND a.cert_expires_at > clock_timestamp()) OR EXISTS
+(SELECT 1 FROM agent_certificate_grants g WHERE g.node_id=a.node_id AND g.fingerprint=$2
+AND g.expires_at > clock_timestamp())))`, nodeID, hex.EncodeToString(fingerprint[:])).Scan(&allowed); err != nil {
 		return "", fmt.Errorf("check Agent certificate authorization: %w", err)
 	}
 	if !allowed {

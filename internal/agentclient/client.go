@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -35,6 +36,8 @@ type Config struct {
 	Version           string
 	RootCAs           *x509.CertPool
 	Certificate       tls.Certificate
+	CertFile          string
+	KeyFile           string
 	HeartbeatInterval time.Duration
 	ReconnectMin      time.Duration
 	ReconnectMax      time.Duration
@@ -70,13 +73,30 @@ func New(config Config, newRuntime func() Runtime, state StateStore) (*Client, e
 	if config.ReconnectMax < config.ReconnectMin {
 		return nil, errors.New("invalid Agent reconnect interval")
 	}
+	if (config.CertFile == "") != (config.KeyFile == "") ||
+		(config.CertFile != "" && (!filepath.IsAbs(config.CertFile) || !filepath.IsAbs(config.KeyFile))) {
+		return nil, errors.New("invalid Agent certificate file paths")
+	}
+	getCertificate := func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		if config.CertFile == "" {
+			return &config.Certificate, nil
+		}
+		pair, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("reload Agent certificate: %w", err)
+		}
+		return &pair, nil
+	}
 	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13,
-		RootCAs: config.RootCAs, Certificates: []tls.Certificate{config.Certificate}}}
+		RootCAs: config.RootCAs, GetClientCertificate: getCertificate}}
 	return &Client{config: config, newRuntime: newRuntime, state: state,
 		httpClient: &http.Client{Transport: transport}, metrics: agentmetrics.NewCollector(nil)}, nil
 }
 
 func (c *Client) Run(ctx context.Context) error {
+	if c.config.CertFile != "" {
+		go c.renewLoop(ctx)
+	}
 	backoff := c.config.ReconnectMin
 	for {
 		if err := ctx.Err(); err != nil {

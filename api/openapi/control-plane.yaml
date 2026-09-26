@@ -82,6 +82,41 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/agent/renew:
+    post:
+      operationId: renewAgentCertificate
+      summary: Renew an Agent client certificate using the current mTLS identity
+      description: Dedicated Agent TLS listener only. Requires a CA-verified, database-authorized Agent certificate with at most six hours remaining. The signed Ed25519 CSR must use the current certificate key. Retries using the same parent certificate return the same certificate. Re-enrollment or revocation invalidates renewal grants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [csr_pem, version]
+              properties:
+                csr_pem: {type: string, description: PEM encoded same-key Ed25519 CSR.}
+                version: {type: string, description: Agent software version.}
+      responses:
+        '200':
+          description: New Agent certificate with 24 hour validity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [node_id, certificate_pem, ca_certificate_pem, expires_at]
+                properties:
+                  node_id: {type: string, format: uuid}
+                  certificate_pem: {type: string}
+                  ca_certificate_pem: {type: string}
+                  expires_at: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
   /api/v1/agent/stream:
     get:
       operationId: connectAgentStream

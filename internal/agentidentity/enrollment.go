@@ -154,6 +154,9 @@ last_seen_at=NULL,applied_revision=0`, nodeID, issued.Fingerprint, issued.Expire
 	if _, err := tx.Exec(ctx, `DELETE FROM agent_metrics WHERE node_id=$1`, nodeID); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("clear previous Agent metrics: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_certificate_grants WHERE node_id=$1`, nodeID); err != nil {
+		return EnrollmentResult{}, fmt.Errorf("revoke prior Agent renewal grants: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `UPDATE agent_enrollment_tokens SET consumed_at=now() WHERE token_hash=$1`, hash[:]); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("consume Agent enrollment token: %w", err)
 	}

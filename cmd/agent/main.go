@@ -97,7 +97,8 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 		proxyTLS = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{proxyPair}}
 	}
 	client, err := agentclient.New(agentclient.Config{URL: cfg.StreamURL, NodeID: cfg.NodeID,
-		Version: cfg.Version, RootCAs: roots, Certificate: pair, ProxyReady: proxyTLS != nil, UsageOutbox: usage, LeaseStore: leases},
+		Version: cfg.Version, RootCAs: roots, Certificate: pair, CertFile: cfg.CertFile, KeyFile: cfg.KeyFile,
+		ProxyReady: proxyTLS != nil, UsageOutbox: usage, LeaseStore: leases},
 		func() agentclient.Runtime {
 			return agentruntime.New(agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS, RequireMetering: true})
 		}, state)

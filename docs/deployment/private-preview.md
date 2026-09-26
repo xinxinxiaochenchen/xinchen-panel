@@ -72,7 +72,7 @@ CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
 
 ## 同机 Agent Compose overlay
 
-发布包还包含 `compose.agent-local.yaml` 和 `Dockerfile.agent`。它们默认不参与启动；只有在节点已经创建、Agent 证书已登记、目录中存在 `agent-ca.crt`、`agent.crt`、`agent.key` 且权限正确时才启用。overlay 使用 host network，让 Agent 连接 `wss://127.0.0.1:18443/api/v1/agent/stream` 并在服务器上绑定节点端口；状态目录保存配置快照、额度租约和用量 outbox，容器本身保持只读文件系统。
+发布包还包含 `compose.agent-local.yaml` 和 `Dockerfile.agent`。它们默认不参与启动；只有在节点已经创建、Agent 证书已登记、目录中存在 `agent-ca.crt`、`agent.crt`、`agent.key` 且权限正确时才启用。overlay 使用 host network，让 Agent 连接 `wss://127.0.0.1:18443/api/v1/agent/stream` 并在服务器上绑定节点端口；状态目录保存配置快照、额度租约和用量 outbox，容器本身保持只读文件系统。凭据目录需由 UID 65532 拥有并可写，供 Agent 在证书到期前六小时自动原子替换 `agent.crt`；`agent.key` 仍为 0600 且不轮换。
 
 ```sh
 install -d -m 0700 /opt/network-control-plane/secrets/agent-credentials
