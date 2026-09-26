@@ -87,3 +87,9 @@
 - 管理员入口按权限显示，接入用户、套餐、套餐授权、资源域和节点 API；套餐创建需要明确勾选资源域和共享线路，避免默认扩大授权。账户页显示角色与权限并提供 CSRF 自助改密；密码不进入浏览器存储。
 - 请求映射测试先失败后通过；本地模拟安全会话下用 Edge/Playwright 检查桌面与手机页面。手机套餐弹窗授权列表原被压缩，修复后实测高度 62px。上线的 HTTP IP 入口仍保持只读预览；真实管理员操作需待 HTTPS 启用后验收。
 - 管理员与账户页提交 `36322b0` 已通过 Termark 发布到 `/opt/network-control-plane/releases/release-36322b0`。发布包 SHA-256 在本地与服务器一致，服务器 `.env` 权限 0600，Compose 配置校验通过。切换时首个 HTTP 请求短暂连接重置，随后 API/DB 均 healthy、API 重启 0；公网首页与 ready 返回 200、登录返回 404，正式库迁移保持 15，既有 Nginx Proxy Manager 正常运行。浏览器认证仍未开启，真实写操作尚未在服务器验收。
+
+## 2026-09-26 Surge 订阅与格式切换
+
+- 提交 `abac794` 新增 Surge 文本配置导出，支持 Trojan TCP、线路选择组、Domain/IP/CIDR/GeoIP 规则与 fallback；对配置分隔符、密码和 IPv6 地址进行校验。订阅页新增 Mihomo、sing-box、Surge 格式切换，地址查看、Token 重置与预览使用当前格式。
+- 完整 Go 测试、vet、15 项前端测试、TypeScript 类型检查、生产构建、OpenAPI YAML 解析及 diff 检查通过。Surge 原生客户端二进制兼容性尚未验证。
+- 通过 Termark 发布到 `/opt/network-control-plane/releases/release-abac794`。发布包 SHA-256 为 `7936b81d18854eaff78bef9be51cc82e84bbdc23458d98913182cb10229b87d0`；正式库备份 `/opt/network-control-plane/backups/ncp-before-abac794.dump` 权限 0600，迁移保持 15。API/DB 均 healthy、重启次数 0，公网首页与 ready 200、登录 404；原有 Nginx Proxy Manager 继续运行。浏览器认证、Agent TLS 和真实节点端到端验收仍待完成。

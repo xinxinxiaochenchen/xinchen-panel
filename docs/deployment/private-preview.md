@@ -1,13 +1,13 @@
 # 纯 IP 预览部署（`us dmit`）
 
-本部署包含节点、线路、转发、代理连接、订阅，以及账期、用量账本、额度租约和周期 worker。公网仍是纯 IP 只读预览；Agent 用量协议和本地额度执行尚未接通，真实代理未开放。
+本部署包含节点、单跳线路、转发、代理连接、订阅、分流、账期、用量账本、额度租约、周期 worker，以及管理员和账户页面。公网仍是纯 IP 只读预览；浏览器认证与 Agent TLS 入口未启用，真实代理流量尚未在服务器验收。
 
 ## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `2e87597`，目录 `/opt/network-control-plane/releases/2e87597`。
+- 已在 `us dmit` 部署提交 `abac794`，目录 `/opt/network-control-plane/releases/release-abac794`。本次增加 Surge 订阅导出和前端格式切换。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/` 返回 200 HTML，浏览器渲染七项导航、浅深色主题、手机布局及真实就绪状态；`/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1–12；正式库升级前备份 `/opt/network-control-plane/backups/pre-billing-2e87597.dump`，权限 `0600`。
+- 迁移记录版本 1–15；本次升级前备份 `/opt/network-control-plane/backups/ncp-before-abac794.dump`，权限 `0600`。
 - 运行容器中 `CONTROL_BROWSER_AUTH_ENABLED=false`（Compose 默认值），浏览器认证关闭。公网 `/api/v1/auth/login` 返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
@@ -42,4 +42,4 @@
 
 ## 公网接入
 
-当前按用户要求开放 18080 用于纯 IP 页面与连通性测试；页面为只读预览，没有可操作的账户控制台。不要在明文 HTTP 上测试带 Cookie 的登录功能。域名和证书就绪后，在现有 Nginx Proxy Manager 中创建 HTTPS 代理主机，并将 `CONTROL_BIND_IP` 恢复为 `127.0.0.1`，再关闭公网 18080 访问。
+当前按用户要求开放 18080 用于纯 IP 页面与连通性测试；页面只显示预览内容，登录后的操作页尚未对公网开放。不要在明文 HTTP 上测试带 Cookie 的登录功能。域名和证书就绪后，在现有 Nginx Proxy Manager 中创建 HTTPS 代理主机，并将 `CONTROL_BIND_IP` 恢复为 `127.0.0.1`，再关闭公网 18080 访问。
