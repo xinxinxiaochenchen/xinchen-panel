@@ -119,6 +119,92 @@ WHERE request_id IN ('create-user-request','change-password-request')`).Scan(&au
 	}
 }
 
+func TestPostgresMemberStatusRevokesSessionsAndQueuesConvergence(t *testing.T) {
+	databaseURL := testDatabaseURL()
+	if databaseURL == "" {
+		t.Skip("test PostgreSQL database is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	admin, err := BootstrapAdmin(ctx, pool, "status-admin@example.invalid", "long-admin-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, admin.ID); err != nil {
+			t.Errorf("cleanup status administrator: %v", err)
+		}
+	})
+	repo := NewPostgresRepository(pool)
+	member, err := repo.CreateMember(ctx, MemberInput{Email: "status-member@example.invalid", Password: "long-member-password", Timezone: "UTC"}, admin.ID, "status-create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, item := range []struct {
+			query string
+			args  []any
+		}{
+			{`DELETE FROM outbox_events WHERE kind='user.changed' AND aggregate_id=$1`, []any{member.ID}},
+			{`DELETE FROM audit_logs WHERE actor_user_id=$1 OR object_id=$2`, []any{admin.ID, member.ID}},
+			{`DELETE FROM browser_sessions WHERE user_id=$1`, []any{member.ID}},
+			{`DELETE FROM users WHERE id=$1`, []any{member.ID}},
+		} {
+			if _, err := pool.Exec(context.Background(), item.query, item.args...); err != nil {
+				t.Errorf("cleanup account status fixture: %v", err)
+			}
+		}
+	})
+	service := NewService(repo)
+	initial, err := service.Login(ctx, member.Email, "long-member-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := repo.SetUserStatus(ctx, member.ID, "disabled", admin.ID, "status-disable")
+	if err != nil || disabled.Status != "disabled" {
+		t.Fatalf("disable member = %+v, %v", disabled, err)
+	}
+	if _, err := service.Authenticate(ctx, initial.Token); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("disabled session remains valid: %v", err)
+	}
+	if _, err := service.Login(ctx, member.Email, "long-member-password"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("disabled member login: %v", err)
+	}
+	var events, audits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE kind='user.changed' AND aggregate_id=$1`, member.ID).Scan(&events); err != nil || events != 1 {
+		t.Fatalf("disable events = %d, %v", events, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE object_id=$1 AND request_id='status-disable'`, member.ID).Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("disable audits = %d, %v", audits, err)
+	}
+	if _, err := repo.SetUserStatus(ctx, member.ID, "disabled", admin.ID, "status-idempotent"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE kind='user.changed' AND aggregate_id=$1`, member.ID).Scan(&events); err != nil || events != 1 {
+		t.Fatalf("idempotent disable events = %d, %v", events, err)
+	}
+	if _, err := repo.SetUserStatus(ctx, admin.ID, "disabled", admin.ID, "status-self"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("administrator disabled own account: %v", err)
+	}
+	if _, err := repo.SetUserStatus(ctx, admin.ID, "disabled", member.ID, "status-last-admin"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("last administrator disabled: %v", err)
+	}
+	restored, err := repo.SetUserStatus(ctx, member.ID, "active", admin.ID, "status-restore")
+	if err != nil || restored.Status != "active" {
+		t.Fatalf("restore member = %+v, %v", restored, err)
+	}
+	if _, err := service.Authenticate(ctx, initial.Token); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("old session revived after restore: %v", err)
+	}
+	if _, err := service.Login(ctx, member.Email, "long-member-password"); err != nil {
+		t.Fatalf("restored member cannot log in: %v", err)
+	}
+}
+
 func TestPostgresLoginWaitsForPasswordRotationLock(t *testing.T) {
 	databaseURL := testDatabaseURL()
 	if databaseURL == "" {

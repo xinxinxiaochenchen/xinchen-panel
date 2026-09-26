@@ -39,6 +39,9 @@ type accountStub struct {
 	changedFor string
 	changeErr  error
 	changes    int
+	statusFor  string
+	statusTo   string
+	statusBy   string
 }
 
 func (s *accountStub) CreateMember(_ context.Context, input identity.MemberInput, actorID, _ string) (identity.PublicUser, error) {
@@ -53,6 +56,35 @@ func (s *accountStub) ChangePassword(_ context.Context, userID, _, _, _ string) 
 	s.changedFor = userID
 	s.changes++
 	return s.changeErr
+}
+func (s *accountStub) SetUserStatus(_ context.Context, userID, status, actorID, _ string) (identity.PublicUser, error) {
+	s.statusFor, s.statusTo, s.statusBy = userID, status, actorID
+	return identity.PublicUser{ID: userID, Status: status, Roles: []string{"user"}}, nil
+}
+
+func TestAdminMemberStatusRequiresPermissionCSRFAndValidState(t *testing.T) {
+	store := &accountStub{}
+	handler := NewHandlerWithAccounts(testLogger(), nil, accountSessions{}, nil, nil, store)
+	const path = "/api/v1/admin/users/11111111-1111-7111-8111-111111111111"
+	for _, test := range []struct {
+		token, csrf, body string
+		status            int
+	}{
+		{"", "", `{"status":"disabled"}`, 401},
+		{"member-token", "valid-csrf", `{"status":"disabled"}`, 403},
+		{"admin-token", "", `{"status":"disabled"}`, 403},
+		{"admin-token", "valid-csrf", `{"status":"suspended"}`, 422},
+		{"admin-token", "valid-csrf", `{"status":"disabled"}`, 200},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodPatch, path, test.token, test.csrf, test.body))
+		if response.Code != test.status {
+			t.Fatalf("status change %s = %d %s", test.body, response.Code, response.Body.String())
+		}
+	}
+	if store.statusFor != "11111111-1111-7111-8111-111111111111" || store.statusTo != "disabled" || store.statusBy != "admin-id" {
+		t.Fatalf("status mutation = %+v", store)
+	}
 }
 
 func TestAdminUserCreationRequiresSessionPermissionAndCSRF(t *testing.T) {

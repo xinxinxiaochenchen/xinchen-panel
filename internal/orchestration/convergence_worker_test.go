@@ -123,12 +123,77 @@ func TestConvergenceWorkerConsumesRuleAndPolicyEvents(t *testing.T) {
 	if _, err := revisions.Desired(ctx, fixture.nodes[1]); err != nil {
 		t.Fatalf("policy did not reconcile second Agent: %v", err)
 	}
+	userEvent := fixture.addEvent(t, "user.changed", `{}`)
+	processed, err = worker.ProcessOne(ctx)
+	if err != nil || !processed {
+		t.Fatalf("user event = %t, %v", processed, err)
+	}
+	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at FROM outbox_events WHERE id=$1`, userEvent).Scan(&processedAt); err != nil || processedAt == nil {
+		t.Fatalf("user event not marked processed: %v, %v", processedAt, err)
+	}
 	processed, err = worker.ProcessOne(ctx)
 	if err != nil || processed {
 		t.Fatalf("processed unrelated or replayed event: %t, %v", processed, err)
 	}
 	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at FROM outbox_events WHERE id=$1`, unrelated).Scan(&processedAt); err != nil || processedAt != nil {
 		t.Fatalf("unrelated event consumed: %v, %v", processedAt, err)
+	}
+}
+
+func TestConvergenceWorkerRevokesDisabledUserForwardRule(t *testing.T) {
+	fixture := newConvergenceFixture(t, 1)
+	ctx := context.Background()
+	insertID := func(query string, args ...any) string {
+		t.Helper()
+		var value string
+		if err := fixture.pool.QueryRow(ctx, query, args...).Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	userID := insertID(`INSERT INTO users(id,email,password_hash,status)
+VALUES (gen_random_uuid(),gen_random_uuid()::text || '@example.invalid','hash','active') RETURNING id::text`)
+	planID := insertID(`INSERT INTO plans(id,name,quota_bytes)
+VALUES (gen_random_uuid(),gen_random_uuid()::text,1000000) RETURNING id::text`)
+	policyID := insertID(`INSERT INTO forward_target_policies(id,kind,protocol,port_start,port_end)
+VALUES (gen_random_uuid(),'public_host','TCP',443,443) RETURNING id::text`)
+	if _, err := fixture.pool.Exec(ctx, `INSERT INTO memberships(id,user_id,plan_id,starts_at,ends_at,status,anchor_day,timezone,snapshot_json)
+VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','active',1,'UTC',
+jsonb_build_object('resource_group_ids',jsonb_build_array($3::text),'limits',jsonb_build_object('max_forward_rules_per_node',1)))`,
+		userID, planID, fixture.groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.pool.Exec(ctx, `INSERT INTO forward_rules(id,user_id,name,ingress_node_id,ingress_port,target_host,target_port,protocol)
+VALUES (gen_random_uuid(),$1,'User status rule',$2,24100,'example.org',443,'TCP')`, userID, fixture.nodes[0]); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM forward_rules WHERE user_id=$1`, userID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM memberships WHERE user_id=$1`, userID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM forward_target_policies WHERE id=$1`, policyID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM plans WHERE id=$1`, planID)
+	})
+	revisions := NewRevisionRepository(fixture.pool)
+	initial, _, err := revisions.Reconcile(ctx, fixture.nodes[0])
+	if err != nil || len(initial.Snapshot.Rules) != 1 {
+		t.Fatalf("initial rule = %+v, %v", initial, err)
+	}
+	if _, err := fixture.pool.Exec(ctx, `UPDATE users SET status='disabled' WHERE id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	eventID := fixture.addEvent(t, "user.changed", fmt.Sprintf(`{"user_id":%q}`, userID))
+	processed, err := NewConvergenceWorker(fixture.pool, revisions).ProcessOne(ctx)
+	if err != nil || !processed {
+		t.Fatalf("user event = %t, %v", processed, err)
+	}
+	var processedAt *time.Time
+	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at FROM outbox_events WHERE id=$1`, eventID).Scan(&processedAt); err != nil || processedAt == nil {
+		t.Fatalf("user event remains pending: %v, %v", processedAt, err)
+	}
+	updated, err := revisions.Desired(ctx, fixture.nodes[0])
+	if err != nil || updated.Revision <= initial.Revision || len(updated.Snapshot.Rules) != 0 {
+		t.Fatalf("disabled user rule remains configured: %+v, %v", updated, err)
 	}
 }
 

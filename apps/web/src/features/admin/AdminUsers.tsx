@@ -18,6 +18,7 @@ export function UserPanel({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [statusBusy, setStatusBusy] = useState("");
   const [error, setError] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -38,10 +39,24 @@ export function UserPanel({
       onRefresh();
     }
   }
+  async function toggleStatus(item: User) {
+    setStatusBusy(item.id);
+    setError("");
+    const next = item.status === "active" ? "disabled" : "active";
+    const result = await mutateCatalog<User>(
+      `/api/v1/admin/users/${item.id}`,
+      "PATCH",
+      { status: next },
+      csrfToken(),
+    );
+    setStatusBusy("");
+    if (result.kind === "error") setError(result.message);
+    else onRefresh();
+  }
   return (
     <AdminSection
       title="用户"
-      description="创建普通用户并查看账户状态。"
+      description="创建普通用户，停用或恢复账户。"
       action={
         canWrite ? (
           <button
@@ -63,13 +78,20 @@ export function UserPanel({
             </span>
             <strong>{item.email}</strong>
             <span>{item.roles.join(" · ")}</span>
-            <em>{item.status}</em>
+            <em>{item.status === "active" ? "正常" : "已停用"}</em>
+            {canWrite && item.roles.includes("user") && !item.roles.includes("admin") && (
+              <button className="catalog-toggle admin-status-toggle" type="button" disabled={statusBusy !== ""}
+                onClick={() => void toggleStatus(item)}>
+                {statusBusy === item.id ? "处理中…" : item.status === "active" ? "停用" : "恢复"}
+              </button>
+            )}
           </div>
         ))}
         {users.length === 0 && (
           <div className="catalog-state">暂无用户数据。</div>
         )}
       </div>
+      {error && !open && <div className="catalog-state catalog-error" role="alert">{error}</div>}
       {open && (
         <div className="catalog-dialog-backdrop" role="presentation">
           <form

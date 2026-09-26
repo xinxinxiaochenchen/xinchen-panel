@@ -7,12 +7,14 @@ import (
 	"strconv"
 	"time"
 
+	"controlplane/internal/catalog"
 	"controlplane/internal/identity"
 )
 
 type AccountStore interface {
 	CreateMember(context.Context, identity.MemberInput, string, string) (identity.PublicUser, error)
 	ListUsers(context.Context, int, string) ([]identity.PublicUser, error)
+	SetUserStatus(context.Context, string, string, string, string) (identity.PublicUser, error)
 	ChangePassword(context.Context, string, string, string, string) error
 }
 
@@ -57,6 +59,33 @@ func registerAccountRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 		default:
 			WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 		}
+	})
+	mux.HandleFunc("PATCH /api/v1/admin/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		actor, ok := catalogPrincipal(w, r, sessions, "users.write", true)
+		if !ok {
+			return
+		}
+		userID := r.PathValue("id")
+		if !catalog.ValidID(userID) {
+			WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+			return
+		}
+		var input struct {
+			Status string `json:"status"`
+		}
+		if !decodeCatalogJSON(w, r, &input) {
+			return
+		}
+		if input.Status != "active" && input.Status != "disabled" {
+			WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid account status")
+			return
+		}
+		user, err := store.SetUserStatus(r.Context(), userID, input.Status, actor.ID, requestID(r))
+		if err != nil {
+			writeAccountError(w, r, err)
+			return
+		}
+		writeCatalogJSON(w, http.StatusOK, user)
 	})
 	mux.HandleFunc("/api/v1/me/password", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

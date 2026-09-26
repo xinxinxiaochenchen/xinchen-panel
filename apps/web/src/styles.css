@@ -349,6 +349,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .admin-row strong { min-width: 0; overflow-wrap: anywhere; }
 .admin-row span:not(.catalog-icon) { color: var(--muted); margin-left: auto; }
 .admin-row em { font-style: normal; color: var(--accent); }
+.admin-status-toggle { margin-top: 0; flex-shrink: 0; }
 .admin-policy-row { flex-wrap: wrap; }
 .admin-policy-row .refresh-button { padding: 7px 10px; font-size: 10px; }
 .admin-node-entry { display: flex; flex-direction: column; gap: 8px; }

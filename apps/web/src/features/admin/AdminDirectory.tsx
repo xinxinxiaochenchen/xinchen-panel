@@ -166,7 +166,7 @@ export function AdminDirectory({ user }: { user: User }) {
         !failed.includes("users") &&
         !failed.includes("plans") && (
           <AdminMembershipForm
-            users={data.users}
+            users={data.users.filter((item) => item.status === "active" && item.roles.includes("user"))}
             plans={data.plans}
             onSaved={refresh}
           />
