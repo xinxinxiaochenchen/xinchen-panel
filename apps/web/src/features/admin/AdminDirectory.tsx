@@ -14,6 +14,7 @@ import { AdminMembershipForm } from "./AdminMembershipForm";
 import { AdminForwardPolicies } from "./AdminForwardPolicies";
 import { GeoRuleSetPanel } from "./AdminGeoRuleSets";
 import { AdminRoles } from "./AdminRoles";
+import { AdminAudit } from "./AdminAudit";
 
 type AdminData = {
   users: User[];
@@ -199,6 +200,7 @@ export function AdminDirectory({ user }: { user: User }) {
       {!loading && can("routing_rulesets.read") && !failed.includes("geoRuleSets") && (
         <GeoRuleSetPanel sets={data.geoRuleSets} canWrite={can("routing_rulesets.write")} onRefresh={refresh} />
       )}
+      {can("audit.read") && <AdminAudit />}
     </div>
   );
 }

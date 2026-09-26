@@ -46,6 +46,7 @@ test("membership dates use UTC instants and a bounded anchor day", () => {
 
 test("administrator access follows permissions instead of role label", () => {
   assert.equal(hasAdminAccess(["nodes.write"]), true);
+  assert.equal(hasAdminAccess(["audit.read"]), true);
   assert.equal(hasAdminAccess(["dashboard.read", "nodes.read"]), false);
 });
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"controlplane/internal/agentidentity"
+	"controlplane/internal/audit"
 	"controlplane/internal/billing"
 	"controlplane/internal/catalog"
 	"controlplane/internal/entitlement"
@@ -60,11 +61,13 @@ func main() {
 	var routingStore httpapi.RoutingStore
 	var geoRuleSetStore httpapi.GeoRuleSetStore
 	var roleStore httpapi.RoleStore
+	var auditStore httpapi.AuditStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
 		accountStore = identityRepository
 		roleStore = identityRepository
+		auditStore = audit.NewPostgresRepository(pool)
 		catalogRepository := catalog.NewPostgresRepository(pool)
 		catalogStore = catalogRepository
 		lineStore = catalogRepository
@@ -93,6 +96,7 @@ func main() {
 		Routing:     routingStore,
 		GeoRuleSets: geoRuleSetStore,
 		Roles:       roleStore,
+		Audit:       auditStore,
 	})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {

@@ -40,6 +40,16 @@ export type GeoRuleSetRecord = {
 export type RoleRecord = { id: string; code: string; description: string; system: boolean; permissions: string[]; member_count: number };
 export type PermissionRecord = { code: string; description: string };
 export type RoleDirectory = { roles: RoleRecord[]; permissions: PermissionRecord[] };
+export type AuditRecord = {
+  id: string;
+  actor_user_id: string;
+  actor_email: string;
+  action: string;
+  object_type: string;
+  object_id: string;
+  request_id: string;
+  created_at: string;
+};
 
 export function customRolePermissions(permissions: PermissionRecord[]): PermissionRecord[] {
   return permissions.filter((permission) => permission.code !== 'roles.write');
@@ -113,6 +123,7 @@ const adminPermissions = [
   "forward_policies.write",
   "routing_rulesets.read",
   "routing_rulesets.write",
+  "audit.read",
 ];
 
 export function hasAdminAccess(permissions: string[]): boolean {

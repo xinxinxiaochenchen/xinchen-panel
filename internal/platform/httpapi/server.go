@@ -72,6 +72,7 @@ type RouteStores struct {
 	Routing       RoutingStore
 	GeoRuleSets   GeoRuleSetStore
 	Roles         RoleStore
+	Audit         AuditStore
 }
 
 func NewHandlerWithProxyAccess(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, proxy ProxyAccessStore) http.Handler {
@@ -147,6 +148,9 @@ func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions Id
 		}
 		if stores.Roles != nil {
 			registerRoleRoutes(mux, sessions, stores.Roles)
+		}
+		if stores.Audit != nil {
+			registerAuditRoutes(mux, sessions, stores.Audit)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

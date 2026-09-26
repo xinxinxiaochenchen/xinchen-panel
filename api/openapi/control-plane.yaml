@@ -1493,6 +1493,20 @@ paths:
       operationId: validateRoutingProfile
       security: [{browserSession: []}]
       responses: {'200': {description: Validation result, content: {application/json: {schema: {type: object, required: [valid], properties: {valid: {type: boolean}}}}}}}
+  /api/v1/admin/audit:
+    get:
+      operationId: listAuditLogs
+      summary: List recent administrator audit records
+      description: Requires audit.read. Results are ordered by creation time and ID descending. The response contains metadata only; before_json and after_json snapshots are never returned.
+      security: [{browserSession: []}]
+      parameters:
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
+        - {in: query, name: cursor, schema: {type: string, description: Opaque pagination cursor}}
+      responses:
+        '200': {description: Audit page, content: {application/json: {schema: {$ref: '#/components/schemas/AuditPage'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/v1/admin/routing-rule-sets:
     get:
       operationId: listManagedRuleSets
@@ -1688,6 +1702,24 @@ components:
       required: [items, next_cursor]
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/ManagedRuleSet'}}
+        next_cursor: {type: ['string', 'null']}
+    AuditRecord:
+      type: object
+      required: [id, actor_user_id, actor_email, action, object_type, object_id, request_id, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        actor_user_id: {type: string, format: uuid}
+        actor_email: {type: string, format: email}
+        action: {type: string}
+        object_type: {type: string}
+        object_id: {type: string, format: uuid}
+        request_id: {type: string}
+        created_at: {type: string, format: date-time}
+    AuditPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AuditRecord'}}
         next_cursor: {type: ['string', 'null']}
     NewRoutingProfile:
       type: object

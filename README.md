@@ -64,6 +64,8 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 `cmd/agent` 提供独立 Agent 进程和 `enroll` 命令。入网命令从标准输入读取一次性令牌，在 Agent 本机生成 Ed25519 私钥，经受信任 HTTPS 换取证书，并仅新建权限为 `0600` 的证书和私钥文件。运行进程主动建立 mTLS WebSocket，发送 hello 与 15 秒心跳，接收完整转发快照，由 `agentruntime` 原子应用并回传 ACK/NACK；异常断线会关闭转发监听并重连。证书续签后通过同一控制流的 `certificate_update`/`certificate_update_ack` 交接在线身份，避免正常旧证书到期关闭数据运行时，详见 [Agent 证书交接协议](docs/agent-certificate-handover.md)。心跳采集 Linux `/proc` 的 CPU、内存、网卡字节及本机活动转发连接数。控制面数据库保存最新指标，45 秒无心跳会转为离线。迁移 `000007_agent_presence` 增加指标表。`cmd/agent-token` 可在受限服务器本机为现有管理员和节点签发令牌到新建的私有文件；命令不在标准输出打印令牌。发布包提供可选 `compose.agent-local.yaml`，使用 host network 连接回环 mTLS 并持久化额度租约/用量 outbox；它不会默认启动。多节点实际部署仍待完成；公网 Agent TLS 入口已有显式开关和可选部署文件，但当前纯 IP HTTP 预览继续关闭浏览器登录，Agent TLS 仅在服务器回环地址开放，尚未进行真实节点验收。
 
+管理员审计页通过 `GET /api/v1/admin/audit` 按时间与 ID 倒序分页查看操作元数据，需 `audit.read` 权限；API 不返回审计记录中的前后状态快照。迁移 `000019_audit_pagination` 为该查询增加排序索引。
+
 ## 用户生命周期开发状态
 
 管理员可通过 `POST /api/v1/admin/users` 创建普通用户，通过 `GET /api/v1/admin/users` 分页查看用户，并通过 `PATCH /api/v1/admin/users/{id}` 停用或恢复普通用户。停用事务撤销现有浏览器会话、记录审计并触发 Agent 配置收敛；恢复不会复活旧会话。创建请求的初始密码仅用于生成 bcrypt 哈希，不进入响应或审计记录。用户通过 `POST /api/v1/me/password` 提交旧密码和新密码，成功后所有浏览器会话在同一数据库事务中撤销，当前 Cookie 也会清除。登录会话创建与密码轮换使用用户行锁避免旧密码并发登录；改密尝试每账户限 5 次/5 分钟。创建与改密接口需要 HTTPS、有效会话与 CSRF 令牌；当前公网纯 HTTP 预览保持关闭。
