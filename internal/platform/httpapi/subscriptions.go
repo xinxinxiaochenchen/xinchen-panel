@@ -105,7 +105,7 @@ func registerSubscriptionRoutes(mux *http.ServeMux, sessions IdentitySessions, s
 					return
 				}
 				format := r.URL.Query().Get("format")
-				if format != "mihomo" && format != "sing-box" {
+				if format != "mihomo" && format != "sing-box" && format != "surge" {
 					WriteError(w, r, 400, "INVALID_FORMAT", "unsupported format")
 					return
 				}
@@ -181,7 +181,7 @@ func registerSubscriptionRoutes(mux *http.ServeMux, sessions IdentitySessions, s
 		}
 		path := strings.TrimPrefix(r.URL.Path, "/sub/")
 		token, format, ok := strings.Cut(path, "/")
-		if !ok || strings.Contains(format, "/") || format != "mihomo" && format != "sing-box" {
+		if !ok || strings.Contains(format, "/") || format != "mihomo" && format != "sing-box" && format != "surge" {
 			WriteError(w, r, 404, "NOT_FOUND", "resource not found")
 			return
 		}

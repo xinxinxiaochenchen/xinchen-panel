@@ -1164,7 +1164,7 @@ paths:
       security: [{browserSession: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
-        - {in: query, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box]}}
+        - {in: query, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box, surge]}}
       responses:
         '200':
           description: Subscription path; use the current configured HTTPS origin.
@@ -1173,15 +1173,15 @@ paths:
   /api/v1/subscriptions/{id}/preview:
     get:
       operationId: previewSubscription
-      description: Requires subscriptions.read. Exports only currently authorized targets with online Agents and matching applied credentials. A bound routing profile must be enabled and every line action must have an available exported target. Mihomo supports domain, domain suffix, IP, CIDR and GeoIP; sing-box supports domain, domain suffix, IP and CIDR. GeoSite requires a managed rule-set and is rejected by both formats until one is configured. No-store response.
+      description: Requires subscriptions.read. Exports only currently authorized targets with online Agents and matching applied credentials. A bound routing profile must be enabled and every line action must have an available exported target. Mihomo and Surge support domain, domain suffix, IP, CIDR and GeoIP; sing-box supports domain, domain suffix, IP and CIDR. GeoSite requires a managed rule-set and is rejected until one is configured. No-store response.
       security: [{browserSession: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
-        - {in: query, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box]}}
+        - {in: query, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box, surge]}}
       responses:
         '200':
-          description: Mihomo YAML or sing-box 1.12+ JSON profile.
-          content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}}
+          description: Mihomo YAML, sing-box 1.12+ JSON or Surge text profile.
+          content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}, text/plain: {schema: {type: string}}}
         '404': {$ref: '#/components/responses/NotFound'}
         '503': {description: SUBSCRIPTION_UNAVAILABLE; no eligible targets.}
   /sub/{token}/{format}:
@@ -1192,11 +1192,11 @@ paths:
       security: []
       parameters:
         - {in: path, name: token, required: true, schema: {type: string, minLength: 43, maxLength: 43}}
-        - {in: path, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box]}}
+        - {in: path, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box, surge]}}
       responses:
         '200':
-          description: Profile with local 127.0.0.1 mixed listener, Trojan TCP and certificate verification.
-          content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}}
+          description: Profile with local loopback listener, Trojan TCP and certificate verification.
+          content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}, text/plain: {schema: {type: string}}}
         '404': {$ref: '#/components/responses/NotFound'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {description: SUBSCRIPTION_UNAVAILABLE; no eligible configured targets.}

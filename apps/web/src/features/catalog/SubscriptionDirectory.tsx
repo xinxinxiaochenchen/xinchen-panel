@@ -5,6 +5,7 @@ import { loadAllCatalogPages, mutateCatalog, type ProxyAccessRecord, type Routin
 import type { User } from '../../lib/dashboard'
 import { csrfToken } from './CreateLine'
 import { ProxyAccessPanel } from './ProxyAccessPanel'
+import { subscriptionFormats, subscriptionPreviewPath, subscriptionTokenPath, subscriptionURLPath, type SubscriptionFormat } from './subscriptionFormats'
 
 type State = 'loading' | 'ready' | 'empty' | 'error'
 
@@ -49,6 +50,7 @@ export function SubscriptionDirectory({ section, user }: { section: Section; use
   const [generation, setGeneration] = useState(0)
   const [error, setError] = useState('')
   const [revealed, setRevealed] = useState<Record<string, string>>({})
+  const [format, setFormat] = useState<SubscriptionFormat>('mihomo')
   useEffect(() => {
     let active = true
     setState('loading'); setError('')
@@ -68,21 +70,21 @@ export function SubscriptionDirectory({ section, user }: { section: Section; use
     if (!window.confirm(`重置「${item.name}」的 Token？旧订阅地址会立即失效。`)) return
     const result = await mutateCatalog<{ token: string }>(`/api/v1/subscriptions/${item.id}/token-rotation`, 'POST', {}, csrfToken())
     if (result.kind === 'error') setError(result.message)
-    else if (result.data?.token) setRevealed((current) => ({ ...current, [item.id]: `/sub/${result.data.token}/mihomo` }))
+    else if (result.data?.token) setRevealed((current) => ({ ...current, [item.id]: subscriptionTokenPath(result.data.token, format) }))
   }
   async function reveal(item: SubscriptionRecord) {
     try {
-      const response = await fetch(`/api/v1/subscriptions/${item.id}/url?format=mihomo`, { credentials: 'same-origin', cache: 'no-store' })
+      const response = await fetch(subscriptionURLPath(item.id, format), { credentials: 'same-origin', cache: 'no-store' })
       const data = await response.json() as { path?: string; error?: { message?: string } }
       if (!response.ok) { setError(data.error?.message || `请求失败（${response.status}）`); return }
-      if (!data.path?.startsWith('/sub/') || data.path.includes('//')) { setError('订阅地址格式无效。'); return }
+      if (!data.path?.startsWith('/sub/') || data.path.includes('//') || !data.path.endsWith(`/${format}`)) { setError('订阅地址格式无效。'); return }
       setRevealed((current) => ({ ...current, [item.id]: data.path! }))
     } catch { setError('订阅地址暂不可用。') }
   }
-  return <div className="catalog-page"><div className="catalog-title"><div><span className="section-overline">{section.eyebrow}</span><h1>{section.title}</h1><p>{section.description}</p></div><div className="catalog-title-actions"><button className="refresh-button" type="button" onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={16} />刷新列表</button>{user.permissions.includes('subscriptions.write') && <SubscriptionForm accesses={accesses} profiles={profiles} onSaved={() => setGeneration((value) => value + 1)} />}</div></div>
+  return <div className="catalog-page"><div className="catalog-title"><div><span className="section-overline">{section.eyebrow}</span><h1>{section.title}</h1><p>{section.description}</p></div><div className="catalog-title-actions"><label className="catalog-format-picker" htmlFor="subscription-format">订阅格式 <select id="subscription-format" value={format} onChange={(event) => { setFormat(event.target.value as SubscriptionFormat); setRevealed({}) }}>{subscriptionFormats.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button className="refresh-button" type="button" onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={16} />刷新列表</button>{user.permissions.includes('subscriptions.write') && <SubscriptionForm accesses={accesses} profiles={profiles} onSaved={() => setGeneration((value) => value + 1)} />}</div></div>
     {user.permissions.includes('proxy_accesses.read') && <ProxyAccessPanel accesses={accesses} lines={lines} onSaved={() => setGeneration((value) => value + 1)} canWrite={user.permissions.includes('proxy_accesses.write')} />}
     {state === 'loading' && <div className="catalog-state" role="status">正在加载订阅…</div>}{state === 'error' && <div className="catalog-state catalog-error">{error}</div>}{state === 'empty' && <div className="catalog-state"><Layers3 size={24} /><span>还没有订阅配置。</span></div>}
-    {state === 'ready' && <div className="subscription-grid">{items.map((item) => <article className="catalog-card subscription-card" key={item.id}><div className="catalog-card-head"><span className="catalog-icon"><Layers3 size={18} /></span><span className={`status-chip ${item.enabled ? 'status-online' : 'status-offline'}`}><i />{item.enabled ? '启用' : '停用'}</span></div><div className="catalog-card-name"><strong>{item.name}</strong><span>{item.proxy_access_ids.length} 个代理连接 · {item.routing_profile_id ? '已绑定分流' : '默认路由'}</span></div>{revealed[item.id] && <div className="subscription-url"><code>{revealed[item.id]}</code><button type="button" aria-label="复制订阅地址" onClick={() => void navigator.clipboard?.writeText(`${window.location.origin}${revealed[item.id]}`)}><Copy size={14} /></button></div>}<div className="catalog-card-foot"><span><SlidersHorizontal size={13} /> {item.name_template}</span><span>{new Date(item.updated_at).toLocaleDateString('zh-CN')}</span></div><div className="subscription-actions"><button type="button" onClick={() => void reveal(item)}><Eye size={14} />地址</button>{user.permissions.includes('subscriptions.write') && <><button type="button" onClick={() => void rotate(item)}><RotateCw size={14} />重置 Token</button><button type="button" onClick={() => void toggle(item)}><KeyRound size={14} />{item.enabled ? '停用' : '启用'}</button></>}</div></article>)}</div>}
+    {state === 'ready' && <div className="subscription-grid">{items.map((item) => <article className="catalog-card subscription-card" key={item.id}><div className="catalog-card-head"><span className="catalog-icon"><Layers3 size={18} /></span><span className={`status-chip ${item.enabled ? 'status-online' : 'status-offline'}`}><i />{item.enabled ? '启用' : '停用'}</span></div><div className="catalog-card-name"><strong>{item.name}</strong><span>{item.proxy_access_ids.length} 个代理连接 · {item.routing_profile_id ? '已绑定分流' : '默认路由'}</span></div>{revealed[item.id]?.endsWith(`/${format}`) && <div className="subscription-url"><code>{revealed[item.id]}</code><button type="button" aria-label="复制订阅地址" onClick={() => void navigator.clipboard?.writeText(`${window.location.origin}${revealed[item.id]}`)}><Copy size={14} /></button></div>}<div className="catalog-card-foot"><span><SlidersHorizontal size={13} /> {item.name_template}</span><span>{new Date(item.updated_at).toLocaleDateString('zh-CN')}</span></div><div className="subscription-actions"><button type="button" onClick={() => void reveal(item)}><Eye size={14} />地址</button><a href={subscriptionPreviewPath(item.id, format)} target="_blank" rel="noopener noreferrer"><Eye size={14} />预览</a>{user.permissions.includes('subscriptions.write') && <><button type="button" onClick={() => void rotate(item)}><RotateCw size={14} />重置 Token</button><button type="button" onClick={() => void toggle(item)}><KeyRound size={14} />{item.enabled ? '停用' : '启用'}</button></>}</div></article>)}</div>}
     {error && state === 'ready' && <p className="catalog-page-error" role="alert">{error}</p>}
   </div>
 }

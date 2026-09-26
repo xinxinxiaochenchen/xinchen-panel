@@ -34,6 +34,7 @@ func (s subscriptionSessions) VerifyCSRF(ctx context.Context, token, csrf string
 type subscriptionStub struct {
 	allowAll        bool
 	owner, exported string
+	exportFormat    string
 	exportErr       error
 }
 
@@ -68,11 +69,29 @@ func (s *subscriptionStub) ResolveToken(_ context.Context, token string) (subscr
 func (s *subscriptionStub) ExportOwn(_ context.Context, owner, id, format string) ([]byte, string, error) {
 	s.owner = owner
 	s.exported = "owner-preview"
+	s.exportFormat = format
 	return []byte("test profile"), "application/yaml", nil
 }
 func (s *subscriptionStub) Export(_ context.Context, token, format string) ([]byte, string, error) {
 	s.exported = token
+	s.exportFormat = format
 	return []byte("test profile"), "application/yaml", s.exportErr
+}
+
+func TestSurgeSubscriptionFormatRoutes(t *testing.T) {
+	store := &subscriptionStub{}
+	h := NewHandlerWithStores(testLogger(), nil, subscriptionSessions{}, RouteStores{Subscriptions: store})
+	token := strings.Repeat("A", 43)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/sub/"+token+"/surge", nil))
+	if w.Code != 200 || store.exportFormat != "surge" {
+		t.Fatalf("surge export=%d format=%s", w.Code, store.exportFormat)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, catalogRequest("GET", "/api/v1/subscriptions/"+testProxyID+"/url?format=surge", "member-token", "", ""))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "/surge") {
+		t.Fatalf("surge URL=%d %s", w.Code, w.Body.String())
+	}
 }
 func TestSubscriptionManagementAuthAndCSRF(t *testing.T) {
 	store := &subscriptionStub{}

@@ -79,7 +79,7 @@ func Render(format, template string, targets []Target) ([]byte, string, error) {
 }
 
 func RenderWithRouting(format, template string, targets []Target, policy *RoutingPolicy) ([]byte, string, error) {
-	if format != "mihomo" && format != "sing-box" {
+	if format != "mihomo" && format != "sing-box" && format != "surge" {
 		return nil, "", fmt.Errorf("unsupported subscription format %q", format)
 	}
 	if template == "" {
@@ -92,7 +92,7 @@ func RenderWithRouting(format, template string, targets []Target, policy *Routin
 		return nil, "", errors.New("subscription has no targets")
 	}
 	names := make([]string, len(targets))
-	used := map[string]bool{"PROXY": true, "DIRECT": true}
+	used := map[string]bool{"PROXY": true, "DIRECT": true, "REJECT": true}
 	if policy != nil {
 		for _, target := range targets {
 			used[strings.ToUpper(lineTag(target.LineID))] = true
@@ -129,6 +129,13 @@ func RenderWithRouting(format, template string, targets []Target, policy *Routin
 	}
 	if format == "mihomo" {
 		return renderMihomo(targets, names, policy), "application/yaml", nil
+	}
+	if format == "surge" {
+		data, err := renderSurge(targets, names, policy)
+		if err != nil {
+			return nil, "", err
+		}
+		return data, "text/plain; charset=utf-8", nil
 	}
 	data, err := renderSingBox(targets, names, policy)
 	if err != nil {

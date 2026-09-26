@@ -269,6 +269,8 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .load-more-button:disabled { opacity: .55; cursor: wait; }
 .catalog-page-error { text-align: center; font-size: 12px; margin-top: 18px; }
 .catalog-title-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+.catalog-format-picker { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.catalog-format-picker select { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface); color: var(--text); font: inherit; }
 .catalog-create-button { min-height: 40px; padding: 0 14px; gap: 7px; font-size: 12px; }
 .catalog-toggle { align-self: flex-start; margin-top: 18px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--surface); font: inherit; font-size: 10px; font-weight: 700; }
 .catalog-toggle:hover { border-color: var(--accent); color: var(--accent); }
@@ -300,8 +302,8 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .subscription-card .catalog-card-name { margin-bottom: 12px; }
 .subscription-url { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 9px; background: var(--surface-soft); }
 .subscription-url code { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 10px; }
-.subscription-url button, .subscription-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 9px; color: var(--muted); background: var(--surface); font: inherit; font-size: 10px; font-weight: 700; }
-.subscription-url button:hover, .subscription-actions button:hover { color: var(--accent); border-color: var(--accent); }
+.subscription-url button, .subscription-actions button, .subscription-actions a { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 9px; color: var(--muted); background: var(--surface); font: inherit; font-size: 10px; font-weight: 700; text-decoration: none; }
+.subscription-url button:hover, .subscription-actions button:hover, .subscription-actions a:hover { color: var(--accent); border-color: var(--accent); }
 .subscription-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
 .catalog-form-label { margin-top: 7px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .catalog-check-list { max-height: 170px; min-height: 44px; flex-shrink: 0; overflow: auto; display: flex; flex-direction: column; gap: 5px; padding: 7px; border: 1px solid var(--border); border-radius: 9px; }
