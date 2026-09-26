@@ -26,7 +26,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表；`000005_config_revisions.up.sql` 增加按 Agent 节点保存的期望配置版本；`000006_agent_enrollment.up.sql` 增加一次性入网令牌和证书到期字段；`000007_agent_presence.up.sql` 增加 Agent 最新心跳指标。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 7 已在独立 PostgreSQL 16 测试库验证，并于 2026-09-26 随提交 `231744f` 应用于纯 IP 预览的正式库。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费及证书续签。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。当前纯 IP 预览的正式库已应用至版本 16。
 
 ## 资源目录开发状态
 
@@ -42,17 +42,17 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 直达转发规则开发状态
 
-普通用户可通过 `GET/POST /api/v1/forward-rules` 和 `GET/PATCH/DELETE /api/v1/forward-rules/{id}` 创建、查看、改名、启停及删除自有的直达转发规则。入口节点必须具备 `forward` 能力且属于有效订购授权的资源组；目标可为授权节点或公网地址。管理员通过 `/api/v1/admin/forward-target-policies` 批准目标类型、节点组、协议和目标端口范围；管理页面提供策略创建、列表和启停。默认无授权，普通用户不能自行放开。TCP、UDP 与 BOTH 分别原子占用对应端口，每节点规则数受订购快照约束；停用保留端口，删除释放端口。多跳线路尚未开放，端口与目标变更需删除后重建。写入审计和 outbox 后，状态仍为待下发；Agent 执行链路未接入前不会有实际转发。公网纯 HTTP 预览保持关闭这些路由。
+普通用户可通过 `GET/POST /api/v1/forward-rules` 和 `GET/PATCH/DELETE /api/v1/forward-rules/{id}` 创建、查看、改名、启停及删除自有的直达转发规则。入口节点必须具备 `forward` 能力且属于有效订购授权的资源组；目标可为授权节点或公网地址。管理员通过 `/api/v1/admin/forward-target-policies` 批准目标类型、节点组、协议和目标端口范围；管理页面提供策略创建、列表和启停。默认无授权，普通用户不能自行放开。TCP、UDP 与 BOTH 分别原子占用对应端口，每节点规则数受订购快照约束；停用保留端口，删除释放端口。多跳线路尚未开放，端口与目标变更需删除后重建。写入审计和 outbox 后由 Agent 配置流下发；服务器尚无已入网 Agent，因此正式环境没有实际转发。公网纯 HTTP 预览保持关闭这些路由。
 
 ## Trojan 代理连接开发状态
 
-开发分支新增 `proxy_accesses` 迁移 8、每连接随机凭据、Trojan SHA-224 摘要和 AES-256-GCM 加密存储。创建与启用时复核当前有效订购、单跳线路、出口节点和资源组授权；用户只能查询和管理自己的连接，凭据只经专门的授权响应返回。创建、轮换、更新和删除写审计及待收敛事件。启用浏览器身份认证前必须提供权限为 `0600` 的绝对路径 `CONTROL_PROXY_CREDENTIAL_KEY_FILE`，文件内容为 32 字节密钥的无填充 base64url 编码。缺少密钥时启动会拒绝开启浏览器身份路由。迁移 8 和仓储生命周期已在独立 PostgreSQL 16 测试库验证；正式库当前仍为迁移 7，纯 IP 预览未包含此分支改动。控制面能按节点和授权生成哈希凭据配置，经 mTLS 下发给 Agent；Agent 使用单独的 TLS 服务端证书执行 Trojan TCP CONNECT，仅允许公网目标，凭据轮换和停用可断开旧连接。订阅、用量计费和额度租约仍待实现，因此暂不在公网部署真实代理。
+`proxy_accesses` 迁移 8 提供每连接随机凭据、Trojan SHA-224 摘要和 AES-256-GCM 加密存储。创建与启用时复核当前有效订购、单跳线路、出口节点和资源组授权；用户只能查询和管理自己的连接，凭据只经专门的授权响应返回。创建、轮换、更新和删除写审计及待收敛事件。启用浏览器身份认证前必须提供权限为 `0600` 的绝对路径 `CONTROL_PROXY_CREDENTIAL_KEY_FILE`，文件内容为 32 字节密钥的无填充 base64url 编码。缺少密钥时启动会拒绝开启浏览器身份路由。控制面能按节点和授权生成哈希凭据配置，经 mTLS 下发给 Agent；Agent 使用单独的 TLS 服务端证书执行 Trojan TCP CONNECT，仅允许公网目标，凭据轮换和停用可断开旧连接。订阅、用量计费和额度租约已有实现；正式环境仍需节点入网及真实流量验收。
 
 Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_PROXY_KEY_FILE` 指定，必须是绝对路径，私钥权限不超过 `0600`。Agent 收到代理配置但没有 TLS 服务端证书时会 NACK 并保留旧配置。控制面每分钟续期五分钟的执行配置租约；断线或租约到期时 Agent 关闭监听，套餐到期也会关闭相应连接。该租约不代表流量额度控制。
 
 ## Agent 转发运行时开发状态
 
-`internal/agentruntime` 实现独立的 TCP/UDP 直达转发执行器。调用方传入带递增版本号的完整规则快照；运行时先验证目标和端口、预绑定所有新增监听，失败时保留上一个版本。TCP 与 UDP 在连接时解析目标并拒绝私网、回环和保留地址；TCP 连接数、UDP 待处理包与客户端关联数均有上限。停用规则或更换目标会撤销旧 TCP 连接及 UDP 关联；UDP 关联按客户端活动时间过期。运行时支持注入 DNS/拨号器以进行真实套接字测试。Agent 进程现已接入此运行时与 mTLS 配置流，但线上 `us dmit` 尚未配置 Agent TLS、部署 Agent 或执行真实转发。当前纯 IP HTTP 预览提供只读页面与健康检查。
+`internal/agentruntime` 实现独立的 TCP/UDP 直达转发执行器。调用方传入带递增版本号的完整规则快照；运行时先验证目标和端口、预绑定所有新增监听，失败时保留上一个版本。TCP 与 UDP 在连接时解析目标并拒绝私网、回环和保留地址；TCP 连接数、UDP 待处理包与客户端关联数均有上限。停用规则或更换目标会撤销旧 TCP 连接及 UDP 关联；UDP 关联按客户端活动时间过期。运行时支持注入 DNS/拨号器以进行真实套接字测试。Agent 进程已接入运行时与 mTLS 配置流；线上 `us dmit` 的 Agent TLS 只在回环地址开放，尚未部署 Agent 或执行正式转发。当前纯 IP HTTP 预览提供只读页面与健康检查。
 
 `internal/orchestration` 可从 PostgreSQL 的一致性只读快照中编译单节点转发配置。编译时重新检查账户、有效订购快照、资源组、节点能力和目标策略，剔除失效规则；非法目标、损坏的订购快照或监听冲突会被单独排除并返回诊断，避免阻断其他规则的撤销。节点停用时直接生成空配置。输出规则顺序固定。每节点规则数是创建上限；正数上限下调不自动删减已有规则，降为零则撤销该套餐的转发能力。
 
@@ -76,7 +76,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 后续阶段
 
-按模块继续增加：用户状态与角色管理、套餐编辑与账期、Agent 证书轮换与实际节点部署、代理连接、订阅与分流、流量计费以及可操作的前端控制台。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+下一阶段重点是受信任 HTTPS 管理入口、正式管理员及节点入网、真实 TCP/UDP/Trojan 流量与计费验收。GeoSite 数据源、可执行多跳、线路权重切换和自定义 RBAC 属于后续迭代。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前基础服务的纯 IP 只读预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 
