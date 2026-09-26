@@ -273,6 +273,8 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .catalog-format-picker select { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface); color: var(--text); font: inherit; }
 .catalog-create-button { min-height: 40px; padding: 0 14px; gap: 7px; font-size: 12px; }
 .catalog-toggle { align-self: flex-start; margin-top: 18px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--surface); font: inherit; font-size: 10px; font-weight: 700; }
+.catalog-card-actions { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.catalog-card-actions .catalog-toggle { display: inline-flex; align-items: center; gap: 5px; }
 .catalog-toggle:hover { border-color: var(--accent); color: var(--accent); }
 .catalog-toggle:disabled { opacity: .55; cursor: wait; }
 .catalog-dialog-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px; background: rgba(10, 22, 17, .42); }

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAllCatalogPages, loadCatalogPage, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
-import { lineTogglePath } from '../src/features/catalog/lineAccess.ts'
+import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 
 test('catalog page sends opaque cursor without exposing another resource path', async () => {
   const calls: string[] = []
@@ -56,4 +56,28 @@ test('line toggle uses shared administrator route and owner scoped route', () =>
   assert.equal(lineTogglePath(shared, member), null)
   assert.equal(lineTogglePath({ id: 'foreign-id', owner_user_id: 'other-id' }, admin), null)
   assert.equal(lineTogglePath({ id: 'line/a', owner_user_id: null }, admin), '/api/v1/admin/lines/line%2Fa')
+})
+
+test('line edit uses the same permission scope as toggle', () => {
+  const shared = { id: 'shared-id', owner_user_id: null }
+  const own = { id: 'own-id', owner_user_id: 'member-id' }
+  const admin = { id: 'admin-id', permissions: ['lines.write', 'lines.write.self'] }
+  const member = { id: 'member-id', permissions: ['lines.write.self'] }
+  assert.equal(lineEditPath(shared, admin), '/api/v1/admin/lines/shared-id')
+  assert.equal(lineEditPath(own, member), '/api/v1/lines/own-id')
+  assert.equal(lineEditPath(shared, member), null)
+  assert.equal(lineEditPath({ id: 'foreign-id', owner_user_id: 'other-id' }, admin), null)
+})
+
+test('line edit payload omits billing multiplier for member-owned lines', () => {
+  const draft = { name: ' Japan daily ', priority: 20, weight: 4, tags: 'jp, daily, jp', multiplier_milli: 1250 }
+  assert.deepEqual(lineEditPayload(draft, true), {
+    name: 'Japan daily', priority: 20, weight: 4, tags: ['jp', 'daily'], multiplier_milli: 1250,
+  })
+  assert.deepEqual(lineEditPayload(draft, false), {
+    name: 'Japan daily', priority: 20, weight: 4, tags: ['jp', 'daily'],
+  })
+  assert.deepEqual(lineEditPayload({ ...draft, multiplier_milli: null }, true), {
+    name: 'Japan daily', priority: 20, weight: 4, tags: ['jp', 'daily'],
+  })
 })

@@ -10,3 +10,13 @@ export function lineTogglePath(line: ToggleLine, actor: LineActor): string | nul
   }
   return null
 }
+
+export const lineEditPath = lineTogglePath
+
+export type LineEditDraft = { name: string; priority: number; weight: number; tags: string; multiplier_milli: number | null }
+
+export function lineEditPayload(draft: LineEditDraft, shared: boolean) {
+  const tags = [...new Set(draft.tags.split(',').map((tag) => tag.trim()).filter(Boolean))]
+  const common = { name: draft.name.trim(), priority: draft.priority, weight: draft.weight, tags }
+  return shared && draft.multiplier_milli !== null ? { ...common, multiplier_milli: draft.multiplier_milli } : common
+}
