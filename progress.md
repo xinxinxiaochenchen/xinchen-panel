@@ -80,3 +80,9 @@
 - 订阅页接入代理连接、分流 Profile 和订阅管理；支持创建代理连接、凭据查看/轮换/启停、创建订阅、绑定 Profile、地址查看、Token 重置和订阅启停。凭据与 Token 仅在明确操作后显示，不写入浏览器存储。
 - 分流页接入 Profile 和规则创建/查看，支持 fallback、优先级、domain/domain_suffix/IP/CIDR/GeoIP/GeoSite；最终格式支持边界仍由服务端校验。
 - 新增前端分页、CSRF、权限/空状态测试；前端测试、类型检查和生产构建通过。纯 IP 预览已更新到 `/opt/network-control-plane/releases/subscriptions-ui-20260926`，迁移保持版本 15，公网首页/就绪 200，登录 404，API/DB healthy 且重启 0。
+- 控制台操作页提交 `36ea4e4` 已通过 Termark 发布到 `/opt/network-control-plane/releases/release-36ea4e4`。发布包不含 `.env` 或 `.git`；沿用服务器原有 0600 `.env`，Compose 配置校验通过。公网纯 IP 首页与 ready 均为 200，登录为 404；正式库迁移保持版本 15，API/DB healthy、重启次数 0，现有 Nginx Proxy Manager 继续运行。当前 HTTP 入口仍只提供只读预览；登录后可操作页须待 HTTPS 和浏览器认证启用后验收。
+
+## 2026-09-26 管理员与账户页面
+
+- 管理员入口按权限显示，接入用户、套餐、套餐授权、资源域和节点 API；套餐创建需要明确勾选资源域和共享线路，避免默认扩大授权。账户页显示角色与权限并提供 CSRF 自助改密；密码不进入浏览器存储。
+- 请求映射测试先失败后通过；本地模拟安全会话下用 Edge/Playwright 检查桌面与手机页面。手机套餐弹窗授权列表原被压缩，修复后实测高度 62px。上线的 HTTP IP 入口仍保持只读预览；真实管理员操作需待 HTTPS 启用后验收。
