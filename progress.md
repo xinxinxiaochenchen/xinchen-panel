@@ -104,3 +104,9 @@
 - 2026-09-26：快速重连旧指标问题再次用独立 PostgreSQL 测试库先复现后修复，提交 `0e01dec`。指标只在采集时间不早于本次 Agent 上线/心跳时间时标记实时。通过 Termark 发布到 `/opt/network-control-plane/releases/release-0e01dec`，包 SHA-256 `42c23d6a68d7b82fbec08dadd6b3a4e6865e8a0a2526fd50b1c3740fc8201d9a`。正式库备份 `/opt/network-control-plane/backups/ncp-before-0e01dec.dump` 权限 0600；迁移版本 15，公网 IP 首页和探针 200、登录 404，API/DB healthy、重启 0，正式库仍无节点及 Agent。
 - 2026-09-26：节点启停提交 `011d97a` 并经 Termark 发布到 `us dmit`。本地完整 Go 测试、vet、前端 20 项测试、类型检查、构建和 OpenAPI 解析通过。正式库备份 `ncp-before-011d97a.dump` 为 0600；发布包 SHA-256 `24347f9861ccf3b68daf04c42ce4acb8a7744378888b5cbb863308c702a43fcd`。公网首页/live/ready 200、登录 404，API/DB healthy 且重启 0，迁移 15，节点/Agent 均 0。首个真实节点位置待用户确认。
 - 2026-09-26：提交 `1f98d29` 新增显式 Agent TLS IP 监听开关与可选 Compose 覆盖文件；完整 Go 测试、vet、前端 20 项测试、类型检查、构建通过，服务器 Compose 合并配置验证默认主机回环映射。发布到 `us dmit` 的 `release-1f98d29`，升级前备份 `ncp-before-1f98d29.dump` 权限 0600。专用 Ed25519 CA 与服务器证书在服务器受限目录生成，CA/IP 校验和回环 HTTPS Agent 入网路由验证通过；18443 仅监听 127.0.0.1。公网首页/live/ready 200、登录 404，API/DB healthy、重启 0，迁移 15，节点/Agent 仍为 0。首个真实节点位置待确认。
+# 2026-09-27 Agent 证书续签
+
+- 提交 `0313ce5` 增加 mTLS 证书续签、同密钥 CSR 校验、有限重叠授权、父证书幂等重试、过期清理和 Agent 自动落盘。服务端先验证数据库指纹与节点状态，再判断六小时续签窗口；Agent 新连接从证书文件重新加载身份。
+- Go 全量测试、vet、前端 20 项测试/类型检查/生产构建、OpenAPI YAML 解析通过；独立 PostgreSQL 16 库验证身份全套集成测试、迁移 16 down/up。TLS 客户端测试覆盖同密钥 CSR、响应身份和证书替换。独立库已清理。
+- 经 Termark 发布到 `us dmit` 的 `release-0313ce5`，正式库备份权限 0600，迁移版本 16，API/DB healthy、API 重启 0。公网首页/ready 200，HTTP 登录和续签 404，回环 mTLS 无证书续签 401；正式库用户、节点和 Agent 数均为 0。
+- 仍待 HTTPS 浏览器管理入口、正式管理员/节点授权入网和真实 TCP/UDP/Trojan/计费端到端验收。现有控制流到期重连会关闭数据运行时，活跃连接中断；无中断交接需单独实现。
