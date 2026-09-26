@@ -14,9 +14,9 @@
 
 **Files:** `internal/proxyaccess/credential_test.go`, `internal/proxyaccess/credential.go`, `migrations/000008_proxy_accesses.up.sql`, `migrations/000008_proxy_accesses.down.sql`, `internal/platform/db/migrate_test.go`.
 
-- [ ] Test generated token uniqueness/length, AES-GCM round trip, wrong-key/tamper rejection, Trojan SHA-224 digest, and key parsing.
-- [ ] Implement an injectable random source and strict 32-byte key parser. Ciphertext uses a fresh 12-byte nonce and authenticated context (`access_id`, `user_id`).
-- [ ] Add owner/line foreign keys, unique per-owner name, bounded status, credential hash uniqueness, ciphertext, audit-friendly timestamps and owner pagination index. Verify migration up/down in a fresh PostgreSQL 16 database.
+- [x] Test generated token uniqueness/length, AES-GCM round trip, wrong-key/tamper rejection, Trojan SHA-224 digest, and key parsing.
+- [x] Implement a strict 32-byte key parser and authenticated encryption with a fresh nonce per ciphertext. Ciphertext binds `access_id` and `user_id`.
+- [x] Add owner/line foreign keys, unique per-owner name, bounded status, credential hash uniqueness, ciphertext, audit-friendly timestamps and owner pagination index. Verify migration up/down in a fresh PostgreSQL 16 database.
 
 ### Task 2: Access domain and repository
 
