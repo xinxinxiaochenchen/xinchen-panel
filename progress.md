@@ -93,3 +93,9 @@
 - 提交 `abac794` 新增 Surge 文本配置导出，支持 Trojan TCP、线路选择组、Domain/IP/CIDR/GeoIP 规则与 fallback；对配置分隔符、密码和 IPv6 地址进行校验。订阅页新增 Mihomo、sing-box、Surge 格式切换，地址查看、Token 重置与预览使用当前格式。
 - 完整 Go 测试、vet、15 项前端测试、TypeScript 类型检查、生产构建、OpenAPI YAML 解析及 diff 检查通过。Surge 原生客户端二进制兼容性尚未验证。
 - 通过 Termark 发布到 `/opt/network-control-plane/releases/release-abac794`。发布包 SHA-256 为 `7936b81d18854eaff78bef9be51cc82e84bbdc23458d98913182cb10229b87d0`；正式库备份 `/opt/network-control-plane/backups/ncp-before-abac794.dump` 权限 0600，迁移保持 15。API/DB 均 healthy、重启次数 0，公网首页与 ready 200、登录 404；原有 Nginx Proxy Manager 继续运行。浏览器认证、Agent TLS 和真实节点端到端验收仍待完成。
+
+## 2026-09-26 管理员转发目标策略
+
+- 提交 `5c297c2` 将已有管理员转发目标策略 API 接入页面，支持按目标类型、资源域、TCP/UDP 和端口范围创建，列出策略并启停。只有 `forward_policies.write` 的管理员可以读取资源域以选择节点目标，仍不能创建资源域。
+- Go 全量测试、vet、16 项前端测试、TypeScript 类型检查、生产构建、OpenAPI YAML 解析及差异检查通过。本地模拟管理员会话使用 Edge/Playwright 检查桌面策略卡片和手机创建弹窗，临时浏览器及服务器已关闭。
+- 通过 Termark 发布到 `/opt/network-control-plane/releases/release-5c297c2`，发布包 SHA-256 为 `a824694b884dc620bde1086037f899e5637837d3da9439396662c06cb934e621`。正式库备份 `/opt/network-control-plane/backups/ncp-before-5c297c2.dump` 权限 0600，迁移保持版本 15。API/DB 均 healthy、重启 0，公网首页和 ready 200、登录 404，现有 Nginx Proxy Manager 正常。策略写操作仅在 HTTPS 和浏览器认证启用后可用；真实节点入网及代理流量仍未验收。
