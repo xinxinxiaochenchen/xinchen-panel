@@ -3,6 +3,7 @@ WORKDIR /app
 COPY bin/control-plane /usr/local/bin/control-plane
 COPY bin/migrate /usr/local/bin/migrate
 COPY bin/admin-bootstrap /usr/local/bin/admin-bootstrap
+COPY bin/node-bootstrap /usr/local/bin/node-bootstrap
 COPY bin/agent-token /usr/local/bin/agent-token
 COPY migrations /app/migrations
 COPY apps/web/dist /app/web
