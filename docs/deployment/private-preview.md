@@ -2,12 +2,12 @@
 
 本部署包含节点、单跳线路、转发、代理连接、订阅、分流、账期、用量账本、额度租约、周期 worker，以及管理员和账户页面。公网仍是纯 IP 只读预览；浏览器认证关闭，Agent TLS 仅在服务器回环地址开放，真实代理流量尚未在服务器验收。
 
-## 当前状态（2026-09-26）
+## 当前状态（2026-09-27）
 
-- 已在 `us dmit` 部署提交 `1f98d29`，目录 `/opt/network-control-plane/releases/release-1f98d29`。当前版本包含管理员节点启停、跨入口配置收敛、节点实时指标 API/UI 和一次性 Agent 入网令牌弹窗。
+- 已在 `us dmit` 部署提交 `15f7a55`，目录 `/opt/network-control-plane/releases/release-15f7a55`。当前版本增加受限的本机节点引导命令，可事务化创建资源组与节点，重复执行返回同一节点。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/` 返回 200 HTML，浏览器渲染七项导航、浅深色主题、手机布局及真实就绪状态；`/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1–15；本次升级前备份 `/opt/network-control-plane/backups/ncp-before-1f98d29.dump`，权限 `0600`。
+- 迁移记录版本 1–15；本次升级前备份 `/opt/network-control-plane/backups/ncp-before-15f7a55.dump`，权限 `0600`。
 - 运行容器中 `CONTROL_BROWSER_AUTH_ENABLED=false`（Compose 默认值），浏览器认证关闭。公网 `/api/v1/auth/login` 返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
@@ -23,6 +23,7 @@
 - 2026-09-26 发布 `011d97a`：管理员可启停节点；事务内写审计和 outbox，节点状态变化重算全部已入网 Agent 的配置，以撤销指向停用目标节点的其他入口转发。完整 Go 测试、vet、前端 20 项测试、类型检查、生产构建与 OpenAPI 解析通过。发布包 SHA-256 为 `24347f9861ccf3b68daf04c42ce4acb8a7744378888b5cbb863308c702a43fcd`，正式库升级前备份权限 0600。公网 IP 首页、live、ready 均 200，登录 404；API/DB healthy、重启次数 0；迁移版本 15，节点和 Agent 数均为 0。
 
 - 2026-09-26 发布 `1f98d29`：增加显式 Agent TLS IP 监听开关和可选 Compose 覆盖配置。发布包 SHA-256 `192a79387a8cb1d7534b43ba0a5605182964f34304a74f5db17ac96a8db40af2`，升级前正式库备份 `ncp-before-1f98d29.dump` 为 0600。服务器生成专用 Ed25519 CA 与服务器证书，证书匹配回环和公网 IP，私钥权限 0600；证书有效至 2027-09-26。覆盖配置仅将 18443 映射到主机 `127.0.0.1`；可信 CA 的 TLS 请求到 Agent 入网路径返回 405，证明握手和路由可用。公网首页/live/ready 200、登录 404，API/DB healthy、重启 0，迁移 15，节点/Agent 仍为 0。
+- 2026-09-27 发布 `15f7a55`：新增本机 `node-bootstrap`。发布包 SHA-256 `43c3a7427bc61f221f03f74223cb765a5838d34704c3583ddedbdd23d815ae2c`；正式库升级前备份 `/opt/network-control-plane/backups/ncp-before-15f7a55.dump`，权限 0600。独立 PostgreSQL 16 测试库通过幂等、禁用资源组拒绝和审计失败回滚测试，测试库已删除。正式 API/DB healthy、API 重启 0，迁移 15；公网首页/live/ready 为 200，登录 404；Agent TLS 回环入网路径返回 405。正式库用户、资源组、节点、Agent 均为 0，尚未进行真实入网或数据面验收。
 
 ## 布局与边界
 
@@ -34,7 +35,7 @@
 
 ## 部署
 
-1. 在开发机用 `GO_BIN=/path/to/go sh scripts/build-linux-amd64.sh` 构建 React 静态资源及 Linux amd64 的 `bin/control-plane`、`bin/migrate`、`bin/admin-bootstrap`、`bin/agent` 和 `bin/agent-token`。将 `apps/web/dist`、二进制、迁移、基础 Compose 文件及可选 `compose.agent-tls.yaml` 打包，通过 Termark 上传到 `/opt/network-control-plane/release-<commit>.tar.gz` 并解压到独立 release 目录。服务器只需从预编译文件构建小镜像。上传前确认包不含 `.git` 或 `.env`。
+1. 在开发机用 `GO_BIN=/path/to/go sh scripts/build-linux-amd64.sh` 构建 React 静态资源及 Linux amd64 的 `bin/control-plane`、`bin/migrate`、`bin/admin-bootstrap`、`bin/node-bootstrap`、`bin/agent` 和 `bin/agent-token`。将 `apps/web/dist`、二进制、迁移、基础 Compose 文件及可选 `compose.agent-tls.yaml` 打包，通过 Termark 上传到 `/opt/network-control-plane/release-<commit>.tar.gz` 并解压到独立 release 目录。服务器只需从预编译文件构建小镜像。上传前确认包不含 `.git` 或 `.env`。
 2. 在 `deployments/compose/.env` 写入随机的 URL 安全数据库密码，文件权限设为 `0600`；不要把密码写进 Git 或终端输出。
 3. 在 `deployments/compose` 运行 `docker compose config --quiet`，确认配置可解析，并根据 `CONTROL_BIND_IP` 核对实际映射地址。临时纯 IP 预览设置 `CONTROL_BIND_IP=0.0.0.0`。
 4. 运行 `docker compose up -d --build`。预编译镜像从 `scratch` 构建；Compose 等 PostgreSQL 健康后执行一次 `migrate up`，成功后启动 API。
