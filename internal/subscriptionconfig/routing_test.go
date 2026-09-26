@@ -86,6 +86,9 @@ func TestRenderManagedGeoRulesExpandToPortableClientRules(t *testing.T) {
 				t.Fatalf("%s missing expanded entry %q in %s", format, want, text)
 			}
 		}
+		if format == "mihomo" && !strings.Contains(text, "IP-CIDR6,240e::/16,DIRECT") {
+			t.Fatalf("mihomo must use IPv6 CIDR rule type: %s", text)
+		}
 	}
 }
 
@@ -114,7 +117,7 @@ func TestRenderRoutingBlockAndExactIPv6(t *testing.T) {
 	a.LineID = "line-jp"
 	policy := &RoutingPolicy{Fallback: Action{Kind: "block"}, Rules: []Rule{{MatchType: "ip", MatchValue: "2001:db8::1", Action: Action{Kind: "direct"}}}}
 	mihomo, _, err := RenderWithRouting("mihomo", "{name}", []Target{a}, policy)
-	if err != nil || !strings.Contains(string(mihomo), "IP-CIDR,2001:db8::1/128,DIRECT") || !strings.Contains(string(mihomo), "MATCH,REJECT") {
+	if err != nil || !strings.Contains(string(mihomo), "IP-CIDR6,2001:db8::1/128,DIRECT") || !strings.Contains(string(mihomo), "MATCH,REJECT") {
 		t.Fatalf("mihomo block/IP rule: %v %s", err, mihomo)
 	}
 	sing, _, err := RenderWithRouting("sing-box", "{name}", []Target{a}, policy)

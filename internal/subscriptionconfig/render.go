@@ -505,7 +505,13 @@ func matchValue(r Rule) string {
 }
 func mihomoRule(r Rule) string {
 	kind := map[string]string{"domain": "DOMAIN", "domain_suffix": "DOMAIN-SUFFIX", "ip": "IP-CIDR", "cidr": "IP-CIDR", "geoip": "GEOIP"}[r.MatchType]
-	return kind + "," + matchValue(r) + "," + mihomoAction(r.Action)
+	value := matchValue(r)
+	if r.MatchType == "ip" || r.MatchType == "cidr" {
+		if prefix, err := netip.ParsePrefix(value); err == nil && prefix.Addr().Is6() {
+			kind = "IP-CIDR6"
+		}
+	}
+	return kind + "," + value + "," + mihomoAction(r.Action)
 }
 func singBoxRule(r Rule) map[string]any {
 	key := map[string]string{"domain": "domain", "domain_suffix": "domain_suffix", "ip": "ip_cidr", "cidr": "ip_cidr"}[r.MatchType]
