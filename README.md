@@ -26,7 +26,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表；`000005_config_revisions.up.sql` 增加按 Agent 节点保存的期望配置版本；`000006_agent_enrollment.up.sql` 增加一次性入网令牌和证书到期字段。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 6 已在独立 PostgreSQL 16 测试库验证；纯 IP 预览的正式库仍为版本 5，发布新版本时才应用迁移 6。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表；`000005_config_revisions.up.sql` 增加按 Agent 节点保存的期望配置版本；`000006_agent_enrollment.up.sql` 增加一次性入网令牌和证书到期字段。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 6 已在独立 PostgreSQL 16 测试库验证，并于 2026-09-26 部署到纯 IP 预览的正式库。
 
 ## 资源目录开发状态
 
