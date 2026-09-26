@@ -353,7 +353,7 @@ paths:
     put:
       operationId: replaceUserCustomRoles
       summary: Replace a normal user's custom roles while preserving the system user role
-      description: Requires roles.write and CSRF. Administrator accounts and the acting user's own account cannot be changed. Existing sessions observe the new permission union on their next request.
+      description: Requires the system administrator role, roles.write and CSRF. Administrator accounts and the acting user's own account cannot be changed. Existing sessions observe the new permission union on their next request.
       security: [{browserSession: []}]
       parameters:
         - in: path
@@ -386,6 +386,7 @@ paths:
     get:
       operationId: listRolesAndPermissions
       summary: List system and custom roles and the permission catalog
+      description: Requires roles.read.
       security: [{browserSession: []}]
       responses:
         '200':
@@ -398,6 +399,7 @@ paths:
     post:
       operationId: createCustomRole
       summary: Create a custom role
+      description: Requires the system administrator role, roles.write and CSRF. A custom role cannot contain roles.write.
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -421,6 +423,7 @@ paths:
     patch:
       operationId: updateCustomRole
       summary: Replace a custom role's permission set or description
+      description: Requires the system administrator role, roles.write and CSRF. System roles cannot be changed and custom roles cannot contain roles.write.
       security: [{browserSession: []}]
       parameters:
         - {in: path, name: code, required: true, schema: {type: string}}
@@ -444,6 +447,7 @@ paths:
     delete:
       operationId: deleteCustomRole
       summary: Delete an unassigned custom role
+      description: Requires the system administrator role, roles.write and CSRF. System roles and assigned custom roles cannot be deleted.
       security: [{browserSession: []}]
       parameters:
         - {in: path, name: code, required: true, schema: {type: string}}

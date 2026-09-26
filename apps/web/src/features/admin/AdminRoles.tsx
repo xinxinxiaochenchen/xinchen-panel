@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ShieldPlus } from 'lucide-react';
 import type { User } from '../../lib/dashboard';
-import { loadRoleDirectory, type PermissionRecord, type RoleRecord } from '../../lib/admin';
+import { customRolePermissions, loadRoleDirectory, type PermissionRecord, type RoleRecord } from '../../lib/admin';
 import { mutateCatalog } from '../../lib/catalog';
 import { csrfToken } from '../catalog/CreateLine';
 import { AdminSection } from './AdminSection';
@@ -90,7 +90,7 @@ export function AdminRoles({ users, canWrite, canAssign, onRefresh }: { users: U
       <div className="catalog-dialog-head"><span className="section-overline">RBAC</span><h2>{editing ? '编辑角色' : '创建角色'}</h2><p>权限变更会在下一次请求立即生效。</p></div>
       <label htmlFor="role-code">角色代码</label><input id="role-code" required disabled={!!editing} maxLength={32} value={code} onChange={(event) => setCode(event.target.value)} />
       <label htmlFor="role-description">说明</label><input id="role-description" required maxLength={200} value={description} onChange={(event) => setDescription(event.target.value)} />
-      <label>权限集合</label><PermissionChoices available={permissions} selected={selected} setSelected={setSelected} />
+      <label>权限集合</label><PermissionChoices available={customRolePermissions(permissions)} selected={selected} setSelected={setSelected} />
       {error && <div className="auth-error" role="alert">{error}</div>}
       <div className="catalog-form-actions"><button className="refresh-button" type="button" onClick={() => setEditing(undefined)}>取消</button><button className="primary-button" type="submit" disabled={busy}>{busy ? '保存中…' : '保存角色'}</button></div>
     </form></div>}

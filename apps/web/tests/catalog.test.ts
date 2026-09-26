@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAllCatalogPages, loadCatalogPage, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
-import { loadRoleDirectory } from '../src/lib/admin.ts'
+import { customRolePermissions, loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 
 test('catalog page sends opaque cursor without exposing another resource path', async () => {
@@ -47,6 +47,13 @@ test('role directory loads custom RBAC permissions and role assignment can use P
   })
   assert.equal(method, 'PUT')
   assert.equal(result.kind, 'ready')
+})
+
+test('custom role permission choices exclude system role management', () => {
+  assert.deepEqual(customRolePermissions([
+    { code: 'roles.write', description: 'Manage roles' },
+    { code: 'usage.read', description: 'Read usage' },
+  ]), [{ code: 'usage.read', description: 'Read usage' }])
 })
 
 test('catalog option loader follows all cursor pages', async () => {

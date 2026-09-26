@@ -41,6 +41,10 @@ export type RoleRecord = { id: string; code: string; description: string; system
 export type PermissionRecord = { code: string; description: string };
 export type RoleDirectory = { roles: RoleRecord[]; permissions: PermissionRecord[] };
 
+export function customRolePermissions(permissions: PermissionRecord[]): PermissionRecord[] {
+  return permissions.filter((permission) => permission.code !== 'roles.write');
+}
+
 export async function loadRoleDirectory(request: typeof fetch = fetch): Promise<{ kind: 'ready'; data: RoleDirectory } | { kind: 'error'; message: string }> {
   try {
     const response = await request('/api/v1/admin/roles', { credentials: 'same-origin', cache: 'no-store' });
