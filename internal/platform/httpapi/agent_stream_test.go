@@ -37,13 +37,19 @@ import (
 type streamAuthenticator struct {
 	mu      sync.Mutex
 	revoked bool
+	roots   *x509.CertPool
 }
 
 func (s *streamAuthenticator) AuthenticateCertificate(_ context.Context, cert *x509.Certificate) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.revoked || cert.Subject.CommonName != certificateTestNodeID {
+	if s.revoked || cert.Subject.CommonName != certificateTestNodeID || !time.Now().Before(cert.NotAfter) {
 		return "", agentidentity.ErrAgentUnauthorized
+	}
+	if s.roots != nil {
+		if _, err := cert.Verify(x509.VerifyOptions{Roots: s.roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+			return "", agentidentity.ErrAgentUnauthorized
+		}
 	}
 	return certificateTestNodeID, nil
 }

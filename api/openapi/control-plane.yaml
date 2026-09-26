@@ -121,7 +121,7 @@ paths:
     get:
       operationId: connectAgentStream
       summary: Upgrade an authenticated Agent connection to WebSocket
-      description: Dedicated TLS listener only. Requires a CA-verified client certificate whose node URI and current database fingerprint match. The first JSON frame must be a node-bound hello; subsequent frames are heartbeat or config_result. The control plane sends complete config_snapshot frames and rechecks certificate authorization during the connection. Frames are limited to 1 MiB. The public HTTP preview does not expose this endpoint.
+      description: Dedicated TLS listener only. Requires a CA-verified client certificate whose node URI and current database fingerprint match. The first JSON frame must be a node-bound hello. Subsequent Agent frames include heartbeat, config_result, usage, quota and certificate_update. A certificate_update contains a same-key renewed certificate authorized for the same node; the server replies with certificate_update_ack containing its SHA-256 fingerprint and then uses it for periodic authorization checks on this connection. The control plane sends complete config_snapshot frames. Frames are limited to 1 MiB. The public HTTP preview does not expose this endpoint.
       responses:
         '101':
           description: Agent WebSocket connection established.

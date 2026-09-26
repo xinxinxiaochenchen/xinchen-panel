@@ -4,7 +4,7 @@
 
 ## 当前状态（2026-09-27）
 
-- 已发布 `0313ce5` 至 `/opt/network-control-plane/releases/release-0313ce5`，增加 Agent 证书自动续签和迁移 16。发布包 SHA-256 为 `433132344f74c2ede7c6f9573d62f698720e56c404e573a07536c21dc1169219`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-0313ce5.dump` 权限 0600。独立 PostgreSQL 16 测试库通过 Agent 身份全套集成测试及迁移 16 down/up，测试库已清理。正式 API/DB healthy、API 重启 0，迁移 16；公网首页和 ready 为 200，明文登录与 Agent 续签均为 404；Agent TLS 回环无证书续签返回 401。正式库用户、节点、Agent 仍均为 0，Agent overlay 未启动。当前续签保证身份继续可用，但旧控制流到期重连时仍会中断活跃数据连接。
+- 已发布 `0313ce5` 至 `/opt/network-control-plane/releases/release-0313ce5`，增加 Agent 证书自动续签和迁移 16。发布包 SHA-256 为 `433132344f74c2ede7c6f9573d62f698720e56c404e573a07536c21dc1169219`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-0313ce5.dump` 权限 0600。独立 PostgreSQL 16 测试库通过 Agent 身份全套集成测试及迁移 16 down/up，测试库已清理。正式 API/DB healthy、API 重启 0，迁移 16；公网首页和 ready 为 200，明文登录与 Agent 续签均为 404；Agent TLS 回环无证书续签返回 401。正式库用户、节点、Agent 仍均为 0，Agent overlay 未启动。后续开发的在线证书交接尚未包含在此版本。
 - 已在 `us dmit` 部署提交 `15f7a55`，目录 `/opt/network-control-plane/releases/release-15f7a55`。当前版本增加受限的本机节点引导命令，可事务化创建资源组与节点，重复执行返回同一节点。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/` 返回 200 HTML，浏览器渲染七项导航、浅深色主题、手机布局及真实就绪状态；`/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。

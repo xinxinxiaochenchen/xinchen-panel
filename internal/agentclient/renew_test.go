@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -15,7 +17,92 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"controlplane/internal/agentproto"
+	"github.com/coder/websocket"
 )
+
+func TestAgentClientSendsCertificateUpdateOnExistingStream(t *testing.T) {
+	pair := testClientCertificate(t)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: pair.Certificate[0]})
+	updates := make(chan string, 1)
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		readCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, _, err := conn.Read(readCtx); err != nil {
+			t.Error(err)
+			return
+		} // hello
+		_, raw, err := conn.Read(readCtx)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		message, err := agentproto.Decode(raw)
+		if err != nil || message.Type != agentproto.TypeCertificateUpdate {
+			t.Errorf("update message: %+v %v", message, err)
+			return
+		}
+		update, err := agentproto.DecodeCertificateUpdate(message.Payload)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		updates <- update.CertificatePEM
+		wrongPayload, _ := json.Marshal(agentproto.CertificateUpdateAck{Fingerprint: strings.Repeat("0", 64)})
+		wrongAck, _ := agentproto.Encode(agentproto.Envelope{ProtocolVersion: 1, MessageID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e427", NodeID: testNodeID,
+			Type: agentproto.TypeCertificateUpdateAck, SentAt: time.Now(), Payload: wrongPayload})
+		if err := conn.Write(readCtx, websocket.MessageText, wrongAck); err != nil {
+			t.Error(err)
+			return
+		}
+		sum := sha256.Sum256(pair.Certificate[0])
+		ackPayload, _ := json.Marshal(agentproto.CertificateUpdateAck{Fingerprint: hex.EncodeToString(sum[:])})
+		ack, _ := agentproto.Encode(agentproto.Envelope{ProtocolVersion: 1, MessageID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", NodeID: testNodeID,
+			Type: agentproto.TypeCertificateUpdateAck, SentAt: time.Now(), Payload: ackPayload})
+		if err := conn.Write(readCtx, websocket.MessageText, ack); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := conn.Write(readCtx, websocket.MessageText, ack); err != nil {
+			t.Error(err)
+			return
+		}
+		<-readCtx.Done()
+	}))
+	server.TLS = &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAnyClientCert}
+	server.StartTLS()
+	defer server.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	client, err := New(Config{URL: "wss" + strings.TrimPrefix(server.URL, "https") + "/api/v1/agent/stream",
+		NodeID: testNodeID, Version: "v1", RootCAs: roots, Certificate: pair}, func() Runtime { return &fakeRuntime{} }, &fakeStateStore{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.certificateUpdates <- certPEM
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_ = client.RunOnce(ctx)
+	if time.Since(started) < 250*time.Millisecond {
+		t.Fatal("duplicate certificate confirmation ended the control stream")
+	}
+	select {
+	case got := <-updates:
+		if got != string(certPEM) {
+			t.Fatal("wrong certificate update")
+		}
+	default:
+		t.Fatal("certificate update not sent")
+	}
+}
 
 func TestAgentClientReloadsCertificateAfterRenewal(t *testing.T) {
 	issuer, caPEM := testEnrollmentIssuer(t)

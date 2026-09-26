@@ -47,11 +47,12 @@ type Config struct {
 }
 
 type Client struct {
-	config     Config
-	newRuntime func() Runtime
-	state      StateStore
-	httpClient *http.Client
-	metrics    *agentmetrics.Collector
+	config             Config
+	newRuntime         func() Runtime
+	state              StateStore
+	httpClient         *http.Client
+	metrics            *agentmetrics.Collector
+	certificateUpdates chan []byte
 }
 
 func New(config Config, newRuntime func() Runtime, state StateStore) (*Client, error) {
@@ -90,7 +91,8 @@ func New(config Config, newRuntime func() Runtime, state StateStore) (*Client, e
 	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13,
 		RootCAs: config.RootCAs, GetClientCertificate: getCertificate}}
 	return &Client{config: config, newRuntime: newRuntime, state: state,
-		httpClient: &http.Client{Transport: transport}, metrics: agentmetrics.NewCollector(nil)}, nil
+		httpClient: &http.Client{Transport: transport}, metrics: agentmetrics.NewCollector(nil),
+		certificateUpdates: make(chan []byte, 1)}, nil
 }
 
 func (c *Client) Run(ctx context.Context) error {

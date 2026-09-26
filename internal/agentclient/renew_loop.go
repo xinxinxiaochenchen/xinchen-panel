@@ -69,5 +69,14 @@ func (c *Client) renewIfNeeded(ctx context.Context) error {
 		return err
 	}
 	c.httpClient.Transport.(*http.Transport).CloseIdleConnections()
+	select {
+	case c.certificateUpdates <- renewed.CertPEM:
+	default:
+		select {
+		case <-c.certificateUpdates:
+		default:
+		}
+		c.certificateUpdates <- renewed.CertPEM
+	}
 	return nil
 }

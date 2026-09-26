@@ -2,6 +2,9 @@ package agentclient
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"time"
@@ -50,6 +53,20 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 	var pending *agentproto.ConfigSnapshot
 	var inFlight *agentproto.UsageBatch
 	var usageSentAt time.Time
+	var pendingCertificate []byte
+	var pendingFingerprint string
+	var confirmedFingerprint string
+	var certificateSentAt time.Time
+	sendCertificateUpdate := func() error {
+		if len(pendingCertificate) == 0 {
+			return nil
+		}
+		if err := send(agentproto.TypeCertificateUpdate, agentproto.CertificateUpdate{CertificatePEM: string(pendingCertificate)}); err != nil {
+			return err
+		}
+		certificateSentAt = time.Now()
+		return nil
+	}
 	recoveryDone := c.config.LeaseStore == nil
 	recoveryStarted := false
 	recoveryResult := make(chan error, 1)
@@ -107,6 +124,11 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 			}
 			recoveryDone = true
 		case <-ticker.C:
+			if len(pendingCertificate) != 0 && time.Since(certificateSentAt) >= 10*time.Second {
+				if err := sendCertificateUpdate(); err != nil {
+					return err
+				}
+			}
 			if inFlight != nil && time.Since(usageSentAt) >= 10*time.Second {
 				return errors.New("Agent usage acknowledgement timed out")
 			}
@@ -114,6 +136,17 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 				return err
 			}
 			startRecovery()
+		case certificatePEM := <-c.certificateUpdates:
+			block, rest := pem.Decode(certificatePEM)
+			if block == nil || block.Type != "CERTIFICATE" || len(rest) != 0 {
+				return errors.New("invalid pending Agent certificate")
+			}
+			sum := sha256.Sum256(block.Bytes)
+			pendingCertificate = certificatePEM
+			pendingFingerprint = hex.EncodeToString(sum[:])
+			if err := sendCertificateUpdate(); err != nil {
+				return err
+			}
 		case item := <-incoming:
 			if item.err != nil {
 				return item.err
@@ -123,6 +156,18 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 				return errors.New("invalid control plane message")
 			}
 			switch message.Type {
+			case agentproto.TypeCertificateUpdateAck:
+				ack, err := agentproto.DecodeCertificateUpdateAck(message.Payload)
+				if err != nil {
+					break
+				}
+				if pendingFingerprint != "" && ack.Fingerprint == pendingFingerprint {
+					confirmedFingerprint = ack.Fingerprint
+					pendingCertificate = nil
+					pendingFingerprint = ""
+				} else if ack.Fingerprint != confirmedFingerprint {
+					break
+				}
 			case agentproto.TypeQuotaGrant:
 				grant, err := agentproto.DecodeQuotaGrant(message.Payload)
 				if err != nil {

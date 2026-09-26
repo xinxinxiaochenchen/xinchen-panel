@@ -178,6 +178,7 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 		}
 	}()
 	appliedRevision := hello.AppliedRevision
+	activeCertificate := certificate
 	lastSent := int64(0)
 	var lastRenewed time.Time
 	if err := s.sendDesired(ctx, connection, nodeID, hello.Capabilities, appliedRevision, &lastSent, &lastRenewed); err != nil {
@@ -224,6 +225,15 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 				return errors.New("Agent stream identity or timestamp mismatch")
 			}
 			switch envelope.Type {
+			case agentproto.TypeCertificateUpdate:
+				updated, fingerprint, err := s.acceptCertificateUpdate(ctx, nodeID, certificate, activeCertificate, envelope.Payload)
+				if err != nil {
+					return err
+				}
+				activeCertificate = updated
+				if err := s.sendCertificateUpdateAck(ctx, connection, nodeID, fingerprint); err != nil {
+					return err
+				}
 			case agentproto.TypeHeartbeat:
 				value, err := agentproto.DecodeHeartbeat(envelope.Payload)
 				if err != nil {
@@ -273,7 +283,7 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 			}
 		case <-recheck.C:
 			authCtx, authCancel := context.WithTimeout(ctx, 3*time.Second)
-			currentID, err := s.auth.AuthenticateCertificate(authCtx, certificate)
+			currentID, err := s.auth.AuthenticateCertificate(authCtx, activeCertificate)
 			authCancel()
 			if err != nil || currentID != nodeID {
 				return errors.New("Agent certificate revoked during stream")
