@@ -4,6 +4,7 @@
 
 ## 当前状态（2026-09-27）
 
+- 已发布 `72d9c73` 至 `/opt/network-control-plane/releases/release-72d9c73`，新增 Agent 证书在线交接。发布包 SHA-256 为 `539a91746336e77e7ef3cb518537c7467fa5ecafed37cf16df1ff5290fa0a9d6`；升级前备份 `/opt/network-control-plane/backups/ncp-before-72d9c73.dump` 权限 0600。API/DB 均 healthy，API 重启 0，迁移保持 16。服务器回环首页和 ready 为 200，HTTP 登录为 404，无证书 mTLS 续签为 401。正式库用户、节点、Agent 仍均为 0。Agent overlay 未启动，真实节点会话仍待验收。
 - 已发布 `0313ce5` 至 `/opt/network-control-plane/releases/release-0313ce5`，增加 Agent 证书自动续签和迁移 16。发布包 SHA-256 为 `433132344f74c2ede7c6f9573d62f698720e56c404e573a07536c21dc1169219`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-0313ce5.dump` 权限 0600。独立 PostgreSQL 16 测试库通过 Agent 身份全套集成测试及迁移 16 down/up，测试库已清理。正式 API/DB healthy、API 重启 0，迁移 16；公网首页和 ready 为 200，明文登录与 Agent 续签均为 404；Agent TLS 回环无证书续签返回 401。正式库用户、节点、Agent 仍均为 0，Agent overlay 未启动。后续开发的在线证书交接尚未包含在此版本。
 - 已在 `us dmit` 部署提交 `15f7a55`，目录 `/opt/network-control-plane/releases/release-15f7a55`。当前版本增加受限的本机节点引导命令，可事务化创建资源组与节点，重复执行返回同一节点。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
