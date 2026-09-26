@@ -4,10 +4,10 @@
 
 ## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `e4b5e56`，目录 `/opt/network-control-plane/releases/e4b5e56`。
+- 已在 `us dmit` 部署提交 `a40cd29`，目录 `/opt/network-control-plane/releases/a40cd29`。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/` 返回 200 HTML，浏览器渲染七项导航、浅深色主题、手机布局及真实就绪状态；`/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1–9；正式库升级前备份位于 `/opt/network-control-plane/backups/pre-proxy-e4b5e56.dump`，权限 `0600`。
+- 迁移记录版本 1–10；正式库升级前备份位于 `/opt/network-control-plane/backups/pre-subscriptions-a40cd29.dump`，权限 `0600`。
 - 运行容器中 `CONTROL_BROWSER_AUTH_ENABLED=false`（Compose 默认值），浏览器认证关闭。公网 `/api/v1/auth/login` 返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
@@ -16,6 +16,7 @@
 - 2026-09-26 发布 `74fc614`：Agent 入网身份基础、审计和限流已纳入镜像，但相关 TLS/浏览器入口仍关闭。迁移 6 在独立 PostgreSQL 16 测试库通过 up/down；正式库升级前备份为 `/opt/network-control-plane/backups/pre-agent-74fc614.dump`，权限 `0600`。正式库迁移至版本 6，Agent 数为 0。公网纯 IP 首页及就绪接口返回 200，登录与 Agent 入网入口返回 404；实际 Agent 通道和转发仍未部署。
 - 2026-09-26 发布 `231744f`：Agent mTLS WebSocket、配置快照与回执、心跳指标及本机 Agent 二进制纳入发布包。迁移 7 在独立 PostgreSQL 16 测试库通过 up/down 和指标集成测试；正式库升级前备份为 `/opt/network-control-plane/backups/pre-agent-stream-231744f.dump`，权限 `0600`。正式库已迁移至版本 7，Agent 数为 0。公网 `http://179.255.145.149:18080/` 首页和就绪接口返回 200，登录、入网和配置流返回 404。Agent TLS 未配置，实际转发尚未在服务器运行；Nginx Proxy Manager 未改动。
 - 2026-09-26 发布 `e4b5e56`：代理连接 REST、Trojan TLS Agent 执行、配置租约、能力协商与迁移 8/9 已纳入镜像。独立 PostgreSQL 16 测试库通过迁移 8/9 up/down 和代理版本生命周期；正式库升级前备份为 `/opt/network-control-plane/backups/pre-proxy-e4b5e56.dump`，权限 `0600`。正式库已迁移至版本 9，Agent 数为 0。公网首页与健康探针 200，登录和 Agent 入网 404；API/DB healthy，API 重启次数 0。当前尚无流量额度执行、订阅和真实 Agent，因此代理服务未开放。
+- 2026-09-26 发布 `a40cd29`：Mihomo/sing-box 订阅生成、Token 管理、当前授权与已应用凭据过滤、REST/OpenAPI 及迁移 10 纳入镜像。独立 PostgreSQL 16 测试库通过迁移 10 up/down/up 与生命周期、并发限额、轮换和撤销测试；正式库升级前备份 `pre-subscriptions-a40cd29.dump` 权限 0600。正式库升级至版本 10，Agent 数 0，API/DB healthy、API 重启次数 0。公网首页与健康接口 200，登录/订阅管理/公开订阅及 Agent 入网入口 404；订阅路径 404 响应 no-store。80/443 的现有 Nginx Proxy Manager 未变。真实代理、流量额度、分流和可操作控制台仍待完成。
 
 ## 布局与边界
 

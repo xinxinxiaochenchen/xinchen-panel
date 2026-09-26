@@ -80,7 +80,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 当前基础服务的纯 IP 只读预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 
-## 订阅（开发分支）
+## 订阅（已纳入只读预览镜像，公网入口关闭）
 
 用户通过 `/api/v1/subscriptions` 创建绑定已有代理连接的订阅；支持多订阅、名称模板、启停、删除及 Token 重置。套餐 `max_subscriptions` 包含停用订阅。Token 使用随机 256 位值，数据库只保存 SHA-256 哈希与带订阅/所有者上下文的 AES-GCM 密文；元数据和审计不包含 Token。
 

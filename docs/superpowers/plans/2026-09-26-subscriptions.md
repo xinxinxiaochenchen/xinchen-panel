@@ -48,6 +48,6 @@ Create `internal/platform/httpapi/subscriptions.go` and tests; update `server.go
 ## Task 4: Verify and release
 
 - [x] Run full Go suite, targeted race, vet, OpenAPI parse, frontend build, diff check and code review. Build Linux release and test database migration in isolated remote DB.
-- [ ] Back up formal DB, deploy using Termark, confirm health and public HTTP subscription/auth routes remain closed. Record deployment and remaining routing/quota/UI gaps.
+- [x] Back up formal DB, deploy using Termark, confirm health and public HTTP subscription/auth routes remain closed. Record deployment and remaining routing/quota/UI gaps.
 
 Commands use `/private/tmp/network-control-plane-go/go/bin/go` with `GOCACHE=/private/tmp/network-control-plane-gocache GOPATH=/private/tmp/network-control-plane-gopath`. Socket tests require elevated local execution. Remote execution uses the saved Termark asset `yYnZwRDjhzeD2Fv3`; no SSH/scp.
