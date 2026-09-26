@@ -1,5 +1,7 @@
 # TCP Multi-Hop Lines Implementation Plan
 
+Status: Draft. Implementation begins after the multi-hop transport design is confirmed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add authorized TCP multi-hop line compilation and Agent-to-Agent relay execution while preserving existing single-hop forwarding and proxy behavior.
@@ -96,4 +98,3 @@
 - [ ] Run migrations 1–19 up/down/up in an isolated PostgreSQL 16 database.
 - [ ] Run a three-Agent TCP integration test with one ingress, one relay, and one egress and assert ingress-only usage accounting.
 - [ ] Build and deploy through Termark only after all verification passes; retain a database backup and verify public HTTP remains read-only.
-

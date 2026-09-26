@@ -1,5 +1,7 @@
 # 多跳线路与权重切换设计
 
+状态：设计草案，待用户确认 Agent 间 mTLS 中继方案后实施。
+
 ## 范围与现状
 
 控制面已有 `lines`、有序 `line_hops`、`priority`、`weight`、套餐 `max_hops` 与 Agent 完整快照。当前创建接口、代理连接、订阅导出和编译器只执行单跳；Agent 证书仅有 ClientAuth 用途。此设计先交付 TCP 多跳与权重选择，再单独交付 UDP 多跳。原有单跳行为和公网纯 IP 只读入口保持兼容。
