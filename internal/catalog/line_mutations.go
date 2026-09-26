@@ -77,7 +77,7 @@ WHERE user_id=$1 AND status='active' AND starts_at<=clock_timestamp() AND ends_a
 		if err := tx.QueryRow(ctx, `SELECT group_id::text FROM nodes WHERE id=$1 FOR SHARE`, before.Hops[0].NodeID).Scan(&groupID); err != nil {
 			return Line{}, fmt.Errorf("load line node group: %w", err)
 		}
-		if !snapshot.Limits.AllowCustomLines || snapshot.Limits.MaxHops != 1 || !slices.Contains(snapshot.ResourceGroupIDs, groupID) {
+		if !snapshot.Limits.AllowCustomLines || snapshot.Limits.MaxHops < 1 || !slices.Contains(snapshot.ResourceGroupIDs, groupID) {
 			return Line{}, ErrNotFound
 		}
 	}

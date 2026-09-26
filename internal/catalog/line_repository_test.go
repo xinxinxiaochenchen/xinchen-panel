@@ -110,9 +110,12 @@ VALUES (gen_random_uuid(),$1,$2,'JP',$3,$4,ARRAY[$5]::text[]) RETURNING id::text
 VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','active',1,'UTC',$3)`, memberID, planID, snapshot); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE memberships SET snapshot_json=jsonb_set(snapshot_json,'{limits,max_hops}','2') WHERE user_id=$1`, memberID); err != nil {
+		t.Fatal(err)
+	}
 	owned, err := repo.CreateCustomLine(ctx, memberInput, memberID, "own-line")
 	if err != nil || owned.OwnerUserID == nil || *owned.OwnerUserID != memberID {
-		t.Fatalf("custom line = %+v, %v", owned, err)
+		t.Fatalf("single-hop line within max_hops=2 = %+v, %v", owned, err)
 	}
 	if _, err := repo.CreateCustomLine(ctx, LineInput{Name: "Own Second", NodeID: proxyID, Enabled: true, Priority: 100, Weight: 1, Tags: []string{}}, memberID, "limit-line"); !errors.Is(err, ErrLimitReached) {
 		t.Fatalf("custom line beyond limit = %v", err)

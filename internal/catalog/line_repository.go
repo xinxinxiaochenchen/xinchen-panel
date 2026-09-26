@@ -93,7 +93,7 @@ WHERE user_id=$1 AND status='active' AND starts_at<=clock_timestamp() AND ends_a
 		if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
 			return Line{}, fmt.Errorf("decode line entitlement: %w", err)
 		}
-		if !snapshot.Limits.AllowCustomLines || snapshot.Limits.MaxHops != 1 {
+		if !snapshot.Limits.AllowCustomLines || snapshot.Limits.MaxHops < 1 {
 			return Line{}, ErrNotFound
 		}
 	}
