@@ -441,18 +441,22 @@ VALUES(gen_random_uuid(),gen_random_uuid()::text,'Handover test','US') RETURNING
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM agents WHERE node_id=$1`, certificateTestNodeID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM nodes WHERE id=$1`, certificateTestNodeID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM resource_groups WHERE id=$1`, groupID)
 	})
 	if _, err := pool.Exec(ctx, `INSERT INTO nodes(id,group_id,name,region,host,capabilities)
 VALUES($1,$2,'Handover test node','US','handover.example.org',ARRAY['forward'])`, certificateTestNodeID, groupID); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM nodes WHERE id=$1`, certificateTestNodeID)
+	})
 	if _, err := pool.Exec(ctx, `INSERT INTO agents(id,node_id,cert_fingerprint,cert_expires_at,status)
 VALUES(gen_random_uuid(),$1,$2,$3,'online')`, certificateTestNodeID, hex.EncodeToString(oldFingerprint[:]), oldCert.NotAfter); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM agents WHERE node_id=$1`, certificateTestNodeID)
+	})
 	message, err := json.Marshal(agentproto.CertificateUpdate{CertificatePEM: string(renewedPEM)})
 	if err != nil {
 		t.Fatal(err)
