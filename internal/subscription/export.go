@@ -25,7 +25,7 @@ func (r *PostgresRepository) ExportOwn(ctx context.Context, owner, subID, format
 	return r.export(ctx, owner, subID, "", format)
 }
 func (r *PostgresRepository) export(ctx context.Context, owner, subID, hash, format string) ([]byte, string, error) {
-	if format != "mihomo" && format != "sing-box" && format != "surge" {
+	if format != "clash" && format != "mihomo" && format != "sing-box" && format != "surge" {
 		return nil, "", ValidationError{"format", "unsupported format"}
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})

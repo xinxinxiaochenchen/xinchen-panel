@@ -79,7 +79,7 @@ func Render(format, template string, targets []Target) ([]byte, string, error) {
 }
 
 func RenderWithRouting(format, template string, targets []Target, policy *RoutingPolicy) ([]byte, string, error) {
-	if format != "mihomo" && format != "sing-box" && format != "surge" {
+	if format != "clash" && format != "mihomo" && format != "sing-box" && format != "surge" {
 		return nil, "", fmt.Errorf("unsupported subscription format %q", format)
 	}
 	if template == "" {
@@ -129,6 +129,13 @@ func RenderWithRouting(format, template string, targets []Target, policy *Routin
 	}
 	if format == "mihomo" {
 		return renderMihomo(targets, names, policy), "application/yaml", nil
+	}
+	if format == "clash" {
+		data, err := renderClash(targets, names, policy)
+		if err != nil {
+			return nil, "", err
+		}
+		return data, "application/yaml", nil
 	}
 	if format == "surge" {
 		data, err := renderSurge(targets, names, policy)

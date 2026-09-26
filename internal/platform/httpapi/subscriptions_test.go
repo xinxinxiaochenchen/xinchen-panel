@@ -78,19 +78,26 @@ func (s *subscriptionStub) Export(_ context.Context, token, format string) ([]by
 	return []byte("test profile"), "application/yaml", s.exportErr
 }
 
-func TestSurgeSubscriptionFormatRoutes(t *testing.T) {
+func TestTextAndYAMLSubscriptionFormatRoutes(t *testing.T) {
 	store := &subscriptionStub{}
 	h := NewHandlerWithStores(testLogger(), nil, subscriptionSessions{}, RouteStores{Subscriptions: store})
 	token := strings.Repeat("A", 43)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/sub/"+token+"/surge", nil))
-	if w.Code != 200 || store.exportFormat != "surge" {
-		t.Fatalf("surge export=%d format=%s", w.Code, store.exportFormat)
-	}
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, catalogRequest("GET", "/api/v1/subscriptions/"+testProxyID+"/url?format=surge", "member-token", "", ""))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "/surge") {
-		t.Fatalf("surge URL=%d %s", w.Code, w.Body.String())
+	for _, format := range []string{"clash", "surge"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/sub/"+token+"/"+format, nil))
+		if w.Code != 200 || store.exportFormat != format {
+			t.Fatalf("%s export=%d format=%s", format, w.Code, store.exportFormat)
+		}
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, catalogRequest("GET", "/api/v1/subscriptions/"+testProxyID+"/url?format="+format, "member-token", "", ""))
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "/"+format) {
+			t.Fatalf("%s URL=%d %s", format, w.Code, w.Body.String())
+		}
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, catalogRequest("GET", "/api/v1/subscriptions/"+testProxyID+"/preview?format="+format, "member-token", "", ""))
+		if w.Code != 200 || store.exportFormat != format {
+			t.Fatalf("%s preview=%d format=%s", format, w.Code, store.exportFormat)
+		}
 	}
 }
 func TestSubscriptionManagementAuthAndCSRF(t *testing.T) {

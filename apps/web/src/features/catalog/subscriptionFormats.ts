@@ -1,6 +1,7 @@
-export type SubscriptionFormat = 'mihomo' | 'sing-box' | 'surge'
+export type SubscriptionFormat = 'clash' | 'mihomo' | 'sing-box' | 'surge'
 
 export const subscriptionFormats: { value: SubscriptionFormat; label: string }[] = [
+  { value: 'clash', label: 'Clash' },
   { value: 'mihomo', label: 'Mihomo' },
   { value: 'sing-box', label: 'sing-box' },
   { value: 'surge', label: 'Surge' },
