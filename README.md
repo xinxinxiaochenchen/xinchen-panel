@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。纯 IP 预览继续关闭浏览器认证；Agent TLS 已在服务器回环地址启用，真实节点数据面仍需在 Agent 入网后验收。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。纯 IP 预览继续关闭浏览器认证；Agent TLS 已在服务器回环地址启用。独立测试库已验证真实 TCP/UDP 转发、Trojan TLS 代理和计费入账；正式库仍未创建管理员、节点或 Agent。
 
 ## 本地运行
 
@@ -76,7 +76,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 后续阶段
 
-下一阶段重点是受信任 HTTPS 管理入口、正式管理员及节点入网、真实 TCP/UDP/Trojan 流量与计费验收。GeoSite 数据源、可执行多跳、线路权重切换和自定义 RBAC 属于后续迭代。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+下一阶段重点是受信任 HTTPS 管理入口、正式管理员及节点入网，以及在正式节点上复核配置撤销和真实流量。隔离数据库和临时 Agent 已通过 TCP/UDP/Trojan TLS 及计费入账验收。GeoSite 数据源、可执行多跳、线路权重切换和自定义 RBAC 属于后续迭代。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前基础服务的纯 IP 只读预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 

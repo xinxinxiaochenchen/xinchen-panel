@@ -125,3 +125,7 @@
 - 经 Termark 发布到 `us dmit` 的 `release-34f44bc`，发布包 SHA-256 `8ccc8bbe1ce891fe2f5c64fed4e1bd44a8a93ff180cd683e20ba9e9609861580`。升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-34f44bc.dump` 权限 0600；迁移版本 16，API/DB healthy 且重启 0。公网 IP 首页、live、ready 均为 200，明文登录 404，回环 mTLS 续签在无证书时为 401；现有 Nginx Proxy Manager 仍运行。
 - 公网纯 IP 入口仍关闭浏览器认证；正式管理员、节点与 Agent 尚未创建，真实数据面和计费闭环不能在正式环境验收。
 - 在服务器上使用独立 PostgreSQL 测试库完成真实 Agent 冒烟：创建临时管理员和 forward 节点，签发一次性令牌，完成 mTLS 证书登记；Agent WebSocket 上线并成功应用配置版本 1。测试数据库、临时 Agent 控制面容器、证书和脚本均已删除；正式库用户、节点和 Agent 计数仍为 0。
+- 继续在 `us dmit` 的独立 PostgreSQL 16 测试库完成真实 TCP 数据面验收：临时 Agent 应用含转发规则的配置版本 1；访问 `127.0.0.1:24010` 得到目标 `179.255.145.149:18080` 的 `{"status":"ok"}`；用量账本记录上传 98、下载 172、计费 270 字节。随后删除临时 API 容器、测试库、Agent 证书及脚本，正式库用户、节点、Agent 计数仍均为 0，正式 API/DB 保持 healthy。
+- 隔离 UDP 验收先确认数据报回环成功；考虑 UDP 关联默认 60 秒空闲结算后重跑，账本落库 1 条事件，上传 13、下载 13 字节。Termark 单次命令 60 秒超时只影响脚本等待返回，不影响已核对的数据库结果；随后删除临时数据库、容器、工作目录和脚本，正式库计数仍为 0。
+- 本地验证：在受限沙箱中运行 Go 全量测试会因回环监听权限失败；使用允许回环网络的执行环境后 `go test ./... -count=1` 全部通过。前端 `npm --prefix apps/web test` 20 项通过，`npm --prefix apps/web run build` 成功，`go vet ./...` 成功。
+- 独立 PostgreSQL 16 测试库中的 Trojan TLS 代理验收通过：临时 proxy 节点及共享单跳线路下发配置版本 1；Trojan TCP CONNECT 到服务器 HTTP ready 接口得到 200；用量账本上传 79、下载 191、计费 270 字节。临时 API 容器、测试库、Agent 凭据和脚本已删除，正式库仍为 0 用户、0 节点、0 Agent。
