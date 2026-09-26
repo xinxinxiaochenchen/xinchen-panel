@@ -122,4 +122,5 @@
 
 - 新增管理员用户状态操作：事务内停用普通用户、撤销浏览器会话、写审计与 `user.changed` outbox；恢复不会复活旧会话。配置收敛 worker 消费事件后重算 Agent 快照，撤销停用用户的转发与代理配置。前端增加停用/恢复操作，并在新订购表单中排除停用账户。
 - 在服务器独立 PostgreSQL 16 测试库通过账户状态和 Agent 转发撤销集成测试；临时库与测试二进制已清理，正式库仍为 0 用户、0 节点、0 Agent。Go 全量测试、相关包 race 测试、vet、前端 20 项测试、生产构建和 OpenAPI YAML 解析通过。
-- 公网纯 IP 入口仍关闭浏览器认证；正式管理员、节点与 Agent 尚未创建，真实数据面和计费闭环不能在正式环境验收。发布状态见后续记录。
+- 经 Termark 发布到 `us dmit` 的 `release-34f44bc`，发布包 SHA-256 `8ccc8bbe1ce891fe2f5c64fed4e1bd44a8a93ff180cd683e20ba9e9609861580`。升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-34f44bc.dump` 权限 0600；迁移版本 16，API/DB healthy 且重启 0。公网 IP 首页、live、ready 均为 200，明文登录 404，回环 mTLS 续签在无证书时为 401；现有 Nginx Proxy Manager 仍运行。
+- 公网纯 IP 入口仍关闭浏览器认证；正式管理员、节点与 Agent 尚未创建，真实数据面和计费闭环不能在正式环境验收。
