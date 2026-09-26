@@ -4,10 +4,10 @@
 
 ## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `cc34192`，目录 `/opt/network-control-plane/releases/release-cc34192`。当前版本还包含管理员节点实时指标 API/UI 和一次性 Agent 入网令牌弹窗。
+- 已在 `us dmit` 部署提交 `d8149f1`，目录 `/opt/network-control-plane/releases/release-d8149f1`。当前版本还包含管理员节点实时指标 API/UI 和一次性 Agent 入网令牌弹窗，并修复重新入网的旧指标残留及前端轮询重叠。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/` 返回 200 HTML，浏览器渲染七项导航、浅深色主题、手机布局及真实就绪状态；`/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1–15；本次升级前备份 `/opt/network-control-plane/backups/ncp-before-cc34192.dump`，权限 `0600`。
+- 迁移记录版本 1–15；本次升级前备份 `/opt/network-control-plane/backups/ncp-before-d8149f1.dump`，权限 `0600`。
 - 运行容器中 `CONTROL_BROWSER_AUTH_ENABLED=false`（Compose 默认值），浏览器认证关闭。公网 `/api/v1/auth/login` 返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
