@@ -118,15 +118,24 @@ func (r *PostgresRepository) RecordUsage(ctx context.Context, agentID string, re
 		return UsageEvent{}, err
 	}
 	var periodID, userID, nodeID string
-	var lineID *string
+	var lineID, resourceKind *string
 	var multiplier, lastSequence int64
 	var before Counters
 	var startedAt, periodEndsAt time.Time
 	var lastObservedAt *time.Time
-	err = tx.QueryRow(ctx, `SELECT s.billing_period_id::text,s.user_id::text,s.ingress_node_id::text,s.line_id::text,s.multiplier_milli,s.last_sequence,s.uploaded_bytes,s.downloaded_bytes,s.started_at,s.last_observed_at,p.ends_at
- FROM usage_sessions s JOIN billing_periods p ON p.id=s.billing_period_id WHERE s.id=$1 AND s.agent_id=$2 FOR UPDATE OF s`, report.ConnectionID, agentID).Scan(&periodID, &userID, &nodeID, &lineID, &multiplier, &lastSequence, &before.UploadedBytes, &before.DownloadedBytes, &startedAt, &lastObservedAt, &periodEndsAt)
+	err = tx.QueryRow(ctx, `SELECT s.billing_period_id::text,s.user_id::text,s.ingress_node_id::text,s.line_id::text,s.resource_kind,s.multiplier_milli,s.last_sequence,s.uploaded_bytes,s.downloaded_bytes,s.started_at,s.last_observed_at,p.ends_at
+ FROM usage_sessions s JOIN billing_periods p ON p.id=s.billing_period_id WHERE s.id=$1 AND s.agent_id=$2 FOR UPDATE OF s`, report.ConnectionID, agentID).Scan(&periodID, &userID, &nodeID, &lineID, &resourceKind, &multiplier, &lastSequence, &before.UploadedBytes, &before.DownloadedBytes, &startedAt, &lastObservedAt, &periodEndsAt)
 	if err != nil {
 		return UsageEvent{}, fmt.Errorf("load usage connection: %w", databaseError(err))
+	}
+	if resourceKind != nil {
+		var belongs bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM connection_lease_bindings WHERE connection_id=$1 AND lease_id=$2)`, report.ConnectionID, report.LeaseID).Scan(&belongs); err != nil {
+			return UsageEvent{}, databaseError(err)
+		}
+		if !belongs {
+			return UsageEvent{}, ErrNotFound
+		}
 	}
 	if !validUsageObservation(startedAt, periodEndsAt, report.ObservedAt) {
 		return UsageEvent{}, ErrInvalidMeter

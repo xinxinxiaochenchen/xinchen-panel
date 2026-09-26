@@ -22,6 +22,12 @@ const (
 	TypeConfigResult   MessageType = "config_result"
 	TypeUsageBatch     MessageType = "usage_batch"
 	TypeUsageAck       MessageType = "usage_ack"
+	TypeConnectionOpen MessageType = "connection_open"
+	TypeQuotaRequest   MessageType = "quota_request"
+	TypeQuotaGrant     MessageType = "quota_grant"
+	TypeQuotaDenied    MessageType = "quota_denied"
+	TypeQuotaSettle    MessageType = "quota_settle"
+	TypeQuotaSettled   MessageType = "quota_settled"
 )
 
 type Envelope struct {
@@ -43,7 +49,8 @@ func (value Envelope) validate() error {
 		return errors.New("message_id and node_id must be UUIDs")
 	}
 	switch value.Type {
-	case TypeHello, TypeHeartbeat, TypeConfigSnapshot, TypeConfigResult, TypeUsageBatch, TypeUsageAck:
+	case TypeHello, TypeHeartbeat, TypeConfigSnapshot, TypeConfigResult, TypeUsageBatch, TypeUsageAck,
+		TypeConnectionOpen, TypeQuotaRequest, TypeQuotaGrant, TypeQuotaDenied, TypeQuotaSettle, TypeQuotaSettled:
 	default:
 		return fmt.Errorf("unsupported Agent message type %q", value.Type)
 	}

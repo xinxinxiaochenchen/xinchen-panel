@@ -78,8 +78,8 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 12 {
-		t.Fatalf("expected quota lease migration 12; found %d migrations", len(migrations))
+	if len(migrations) != 13 {
+		t.Fatalf("expected metered admission migration 13; found %d migrations", len(migrations))
 	}
 	for i, migration := range migrations {
 		if migration.Version != int64(i+1) {

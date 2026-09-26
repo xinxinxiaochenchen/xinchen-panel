@@ -15,6 +15,7 @@ import (
 	"controlplane/internal/agentidentity"
 	"controlplane/internal/agentproto"
 	"controlplane/internal/agentruntime"
+	"controlplane/internal/billing"
 	"controlplane/internal/orchestration"
 	"controlplane/internal/platform/id"
 	"github.com/coder/websocket"
@@ -42,6 +43,14 @@ type AgentStreamUsage interface {
 	RecordBatch(context.Context, string, agentproto.UsageBatch) error
 }
 
+// AgentStreamQuota uses the authenticated node identity from the mTLS stream.
+// The Agent cannot supply user, period or multiplier values.
+type AgentStreamQuota interface {
+	OpenConnection(context.Context, string, billing.OpenRequest) (billing.AdmissionGrant, error)
+	RenewConnectionLease(context.Context, string, billing.RenewRequest) (billing.AdmissionGrant, error)
+	SettleConnectionLease(context.Context, string, string, string, int64) (billing.Lease, error)
+}
+
 type AgentStreamHandler struct {
 	parent       context.Context
 	logger       *slog.Logger
@@ -49,12 +58,16 @@ type AgentStreamHandler struct {
 	revisions    AgentStreamRevisions
 	presence     AgentStreamPresence
 	usage        AgentStreamUsage
+	quota        AgentStreamQuota
 	mu           sync.Mutex
 	active       map[string]*websocket.Conn
 	pollEvery    time.Duration
 	renewEvery   time.Duration
 	recheckEvery time.Duration
 }
+
+// SetQuotaService must be called before the handler starts serving requests.
+func (s *AgentStreamHandler) SetQuotaService(quota AgentStreamQuota) { s.quota = quota }
 
 func NewAgentStreamHandler(parent context.Context, logger *slog.Logger, auth AgentCertificateAuthenticator,
 	revisions AgentStreamRevisions, presence AgentStreamPresence, usage ...AgentStreamUsage) *AgentStreamHandler {
@@ -245,6 +258,10 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 					return err
 				}
 				if err := s.sendUsageAck(ctx, connection, nodeID, batch); err != nil {
+					return err
+				}
+			case agentproto.TypeConnectionOpen, agentproto.TypeQuotaRequest, agentproto.TypeQuotaSettle:
+				if err := s.handleQuotaMessage(ctx, connection, nodeID, envelope); err != nil {
 					return err
 				}
 			default:
