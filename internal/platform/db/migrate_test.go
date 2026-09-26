@@ -78,8 +78,13 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 10 || migrations[0].Version != 1 || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[3].Version != 4 || migrations[4].Version != 5 || migrations[5].Version != 6 || migrations[6].Version != 7 || migrations[7].Version != 8 || migrations[8].Version != 9 || migrations[9].Version != 10 {
-		t.Fatalf("expected subscriptions migration after Agent capabilities; found %d migrations", len(migrations))
+	if len(migrations) != 11 {
+		t.Fatalf("expected billing ledger migration 11; found %d migrations", len(migrations))
+	}
+	for i, migration := range migrations {
+		if migration.Version != int64(i+1) {
+			t.Fatalf("expected contiguous migration version %d, got %d", i+1, migration.Version)
+		}
 	}
 }
 

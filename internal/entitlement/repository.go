@@ -236,10 +236,10 @@ WHERE user_id=$1 AND status='active')`, input.UserID).Scan(&exists); err != nil 
 		return Membership{}, err
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO memberships(id,user_id,plan_id,starts_at,ends_at,status,
-anchor_day,timezone,snapshot_json) VALUES ($1,$2,$3,$4,$5,'active',$6,$7,$8)
+anchor_day,timezone,snapshot_json,period_months) VALUES ($1,$2,$3,$4,$5,'active',$6,$7,$8,$9)
 RETURNING created_at`, membership.ID, membership.UserID, membership.PlanID,
 		membership.StartsAt, membership.EndsAt, membership.AnchorDay,
-		membership.Timezone, string(snapshotJSON)).Scan(&membership.CreatedAt)
+		membership.Timezone, string(snapshotJSON), plan.PeriodMonths).Scan(&membership.CreatedAt)
 	if err != nil {
 		return Membership{}, fmt.Errorf("insert membership: %w", entitlementError(err))
 	}
