@@ -109,7 +109,7 @@ export async function loadAllCatalogPages<T>(path: string, request: typeof fetch
   return { kind: 'error', message: '资源列表分页超过安全上限。' }
 }
 
-export async function mutateCatalog<T>(path: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown, csrf: string, request: typeof fetch = fetch): Promise<MutationResource<T>> {
+export async function mutateCatalog<T>(path: string, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body: unknown, csrf: string, request: typeof fetch = fetch): Promise<MutationResource<T>> {
   if (!csrf) return { kind: 'error', message: '安全令牌不可用，请刷新页面后重试。' }
   try {
     const response = await request(path, { method, credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: method === 'DELETE' ? undefined : JSON.stringify(body) })

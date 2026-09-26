@@ -59,10 +59,12 @@ func main() {
 	var usageStore httpapi.UsageStore
 	var routingStore httpapi.RoutingStore
 	var geoRuleSetStore httpapi.GeoRuleSetStore
+	var roleStore httpapi.RoleStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
 		accountStore = identityRepository
+		roleStore = identityRepository
 		catalogRepository := catalog.NewPostgresRepository(pool)
 		catalogStore = catalogRepository
 		lineStore = catalogRepository
@@ -90,6 +92,7 @@ func main() {
 		Usage:       usageStore,
 		Routing:     routingStore,
 		GeoRuleSets: geoRuleSetStore,
+		Roles:       roleStore,
 	})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {

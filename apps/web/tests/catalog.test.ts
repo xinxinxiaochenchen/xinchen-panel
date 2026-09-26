@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAllCatalogPages, loadCatalogPage, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
+import { loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 
 test('catalog page sends opaque cursor without exposing another resource path', async () => {
@@ -33,6 +34,19 @@ test('catalog mutation requires CSRF and reports server validation', async () =>
   })
   assert.equal(header, 'csrf-123')
   assert.deepEqual(result, { kind: 'error', message: 'node_id: expected UUID' })
+})
+
+test('role directory loads custom RBAC permissions and role assignment can use PUT', async () => {
+  const directory = await loadRoleDirectory(async () => Response.json({ roles: [{ code: 'support' }], permissions: [{ code: 'usage.read' }] }))
+  assert.equal(directory.kind, 'ready')
+  if (directory.kind === 'ready') assert.equal(directory.data.roles[0].code, 'support')
+  let method = ''
+  const result = await mutateCatalog('/api/v1/admin/users/member/roles', 'PUT', { role_codes: ['support'] }, 'csrf', async (_input, init) => {
+    method = init?.method ?? ''
+    return new Response(null, { status: 204 })
+  })
+  assert.equal(method, 'PUT')
+  assert.equal(result.kind, 'ready')
 })
 
 test('catalog option loader follows all cursor pages', async () => {

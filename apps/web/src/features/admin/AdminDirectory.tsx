@@ -13,6 +13,7 @@ import { ResourcePanel } from "./AdminResources";
 import { AdminMembershipForm } from "./AdminMembershipForm";
 import { AdminForwardPolicies } from "./AdminForwardPolicies";
 import { GeoRuleSetPanel } from "./AdminGeoRuleSets";
+import { AdminRoles } from "./AdminRoles";
 
 type AdminData = {
   users: User[];
@@ -153,6 +154,7 @@ export function AdminDirectory({ user }: { user: User }) {
           onRefresh={refresh}
         />
       )}
+      {can("roles.read") && <AdminRoles users={data.users} canWrite={can("roles.write")} canAssign={can("users.read") && !failed.includes("users")} onRefresh={refresh} />}
       {!loading && can("plans.read") && !failed.includes("plans") && (
         <PlanPanel
           plans={data.plans}

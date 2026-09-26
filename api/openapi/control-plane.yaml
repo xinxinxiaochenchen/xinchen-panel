@@ -349,6 +349,112 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/users/{id}/roles:
+    put:
+      operationId: replaceUserCustomRoles
+      summary: Replace a normal user's custom roles while preserving the system user role
+      description: Requires roles.write and CSRF. Administrator accounts and the acting user's own account cannot be changed. Existing sessions observe the new permission union on their next request.
+      security: [{browserSession: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role_codes]
+              properties:
+                role_codes: {type: array, maxItems: 32, uniqueItems: true, items: {type: string}}
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/roles:
+    get:
+      operationId: listRolesAndPermissions
+      summary: List system and custom roles and the permission catalog
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Role directory
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoleDirectory'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createCustomRole
+      summary: Create a custom role
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewRole'}
+      responses:
+        '201':
+          description: Created role
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Role'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/roles/{code}:
+    patch:
+      operationId: updateCustomRole
+      summary: Replace a custom role's permission set or description
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: code, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RolePatch'}
+      responses:
+        '200':
+          description: Updated role
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Role'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      operationId: deleteCustomRole
+      summary: Delete an unassigned custom role
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: code, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      responses:
+        '204': {description: Role deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /api/v1/admin/plans:
     get:
       operationId: listPlans
@@ -2104,6 +2210,42 @@ components:
           type: array
           items:
             type: string
+    PermissionCatalogItem:
+      type: object
+      required: [code, description]
+      properties:
+        code: {type: string}
+        description: {type: string}
+    Role:
+      type: object
+      required: [id, code, description, system, permissions, member_count]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        description: {type: string}
+        system: {type: boolean}
+        permissions: {type: array, items: {type: string}}
+        member_count: {type: integer, minimum: 0}
+    RoleDirectory:
+      type: object
+      required: [roles, permissions]
+      properties:
+        roles: {type: array, items: {$ref: '#/components/schemas/Role'}}
+        permissions: {type: array, items: {$ref: '#/components/schemas/PermissionCatalogItem'}}
+    NewRole:
+      type: object
+      additionalProperties: false
+      required: [code, description, permissions]
+      properties:
+        code: {type: string, pattern: '^[a-z][a-z0-9_-]{1,31}$'}
+        description: {type: string, minLength: 1, maxLength: 200}
+        permissions: {type: array, maxItems: 64, uniqueItems: true, items: {type: string}}
+    RolePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        description: {type: string, minLength: 1, maxLength: 200}
+        permissions: {type: array, maxItems: 64, uniqueItems: true, items: {type: string}}
     LoginResponse:
       type: object
       required: [user, csrf_token, expires_at]

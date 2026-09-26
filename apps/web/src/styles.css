@@ -315,6 +315,10 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .catalog-check > span { display: flex; flex-direction: column; gap: 2px; }
 .catalog-check strong { color: var(--text); font-size: 11px; }
 .catalog-check small { color: var(--muted); font-size: 9px; }
+.admin-role-permissions { max-height: 220px; overflow: auto; display: grid; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 9px; }
+.admin-role-assignment { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+.admin-role-assignment h3 { margin: 0; font-size: 15px; }
+.admin-role-assignment select { min-height: 42px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--surface); }
 .routing-list { display: grid; grid-template-columns: 1fr; gap: 13px; }
 .routing-card .catalog-card-name { margin-bottom: 5px; }
 .routing-card .catalog-card-foot { align-items: center; justify-content: flex-start; gap: 16px; }

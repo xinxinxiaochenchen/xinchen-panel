@@ -37,6 +37,19 @@ export type GeoRuleSetRecord = {
   created_at: string;
   updated_at: string;
 };
+export type RoleRecord = { id: string; code: string; description: string; system: boolean; permissions: string[]; member_count: number };
+export type PermissionRecord = { code: string; description: string };
+export type RoleDirectory = { roles: RoleRecord[]; permissions: PermissionRecord[] };
+
+export async function loadRoleDirectory(request: typeof fetch = fetch): Promise<{ kind: 'ready'; data: RoleDirectory } | { kind: 'error'; message: string }> {
+  try {
+    const response = await request('/api/v1/admin/roles', { credentials: 'same-origin', cache: 'no-store' });
+    if (!response.ok) return { kind: 'error', message: response.status === 403 ? '当前账户无权查看角色。' : `请求失败（${response.status}）` };
+    const data = await response.json() as RoleDirectory;
+    if (!Array.isArray(data.roles) || !Array.isArray(data.permissions)) return { kind: 'error', message: '服务端返回了无效角色目录。' };
+    return { kind: 'ready', data };
+  } catch { return { kind: 'error', message: '角色目录暂不可用，请稍后重试。' }; }
+}
 
 export function buildForwardPolicyInput(draft: ForwardPolicyDraft) {
   if (draft.kind === "node" && !draft.groupID) throw new Error("节点目标策略必须选择资源域。");
@@ -86,6 +99,8 @@ export type PlanDraft = {
 const adminPermissions = [
   "users.read",
   "users.write",
+  "roles.read",
+  "roles.write",
   "plans.read",
   "plans.write",
   "nodes.write",
