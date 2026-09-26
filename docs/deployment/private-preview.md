@@ -1,6 +1,6 @@
 # 纯 IP 预览部署（`us dmit`）
 
-本部署验证控制面基础、PostgreSQL 迁移和纯 IP 只读控制台预览。资源目录、套餐订购、用户生命周期、单跳线路与直达转发规则 API 已包含在发布版中，但浏览器身份路由关闭，公网无法调用这些业务接口。实际转发执行、订阅、分流、计费和 Agent 尚未完成；公网 18080 是页面与连通性预览，不是可操作的正式控制台。
+本部署验证控制面基础、PostgreSQL 迁移和纯 IP 只读控制台预览。资源目录、套餐订购、用户生命周期、单跳线路与直达转发规则 API 已包含在发布版中，但浏览器身份路由关闭，公网无法调用这些业务接口。Agent 转发执行代码已实现，但尚未在服务器启用；订阅、分流和计费未完成；公网 18080 是页面与连通性预览，不是可操作的正式控制台。
 
 ## 当前状态（2026-09-26）
 
@@ -25,7 +25,7 @@
 
 ## 部署
 
-1. 在开发机用 `GO_BIN=/path/to/go sh scripts/build-linux-amd64.sh` 构建 React 静态资源及 Linux amd64 的 `bin/control-plane`、`bin/migrate`、`bin/admin-bootstrap`。将 `apps/web/dist`、二进制、迁移和 Compose 文件打包，通过 Termark 上传到 `/opt/network-control-plane/release-<commit>.tar.gz` 并解压到独立 release 目录。服务器只需从预编译文件构建小镜像。上传前确认包不含 `.git` 或 `.env`。
+1. 在开发机用 `GO_BIN=/path/to/go sh scripts/build-linux-amd64.sh` 构建 React 静态资源及 Linux amd64 的 `bin/control-plane`、`bin/migrate`、`bin/admin-bootstrap`、`bin/agent` 和 `bin/agent-token`。将 `apps/web/dist`、二进制、迁移和 Compose 文件打包，通过 Termark 上传到 `/opt/network-control-plane/release-<commit>.tar.gz` 并解压到独立 release 目录。服务器只需从预编译文件构建小镜像。上传前确认包不含 `.git` 或 `.env`。
 2. 在 `deployments/compose/.env` 写入随机的 URL 安全数据库密码，文件权限设为 `0600`；不要把密码写进 Git 或终端输出。
 3. 在 `deployments/compose` 运行 `docker compose config --quiet`，确认配置可解析，并根据 `CONTROL_BIND_IP` 核对实际映射地址。临时纯 IP 预览设置 `CONTROL_BIND_IP=0.0.0.0`。
 4. 运行 `docker compose up -d --build`。预编译镜像从 `scratch` 构建；Compose 等 PostgreSQL 健康后执行一次 `migrate up`，成功后启动 API。

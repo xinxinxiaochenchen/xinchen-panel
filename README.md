@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则、套餐和订购授权 API，以及纯 IP 只读预览页。转发的数据面执行、订阅、分流、计费和 Agent 业务 API 尚未实现。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则、套餐和订购授权 API、Agent 入网与配置流，以及纯 IP 只读预览页。代理连接、订阅、分流和计费尚未实现；当前服务器尚未启用 Agent TLS 和实际转发。
 
 ## 本地运行
 
@@ -26,7 +26,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表；`000005_config_revisions.up.sql` 增加按 Agent 节点保存的期望配置版本；`000006_agent_enrollment.up.sql` 增加一次性入网令牌和证书到期字段。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 6 已在独立 PostgreSQL 16 测试库验证，并于 2026-09-26 部署到纯 IP 预览的正式库。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；`000002_identity.up.sql` 增加角色、权限和浏览器会话；`000003_catalog_audit.up.sql` 增加目录操作审计及代理端点唯一索引；`000004_forward_rules.up.sql` 增加转发规则和端口占用表；`000005_config_revisions.up.sql` 增加按 Agent 节点保存的期望配置版本；`000006_agent_enrollment.up.sql` 增加一次性入网令牌和证书到期字段；`000007_agent_presence.up.sql` 增加 Agent 最新心跳指标。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。版本 7 已在独立 PostgreSQL 16 测试库验证；纯 IP 预览的正式库仍为版本 6，发布新版时才应用迁移 7。
 
 ## 资源目录开发状态
 
@@ -46,15 +46,17 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## Agent 转发运行时开发状态
 
-`internal/agentruntime` 实现独立的 TCP/UDP 直达转发执行器。调用方传入带递增版本号的完整规则快照；运行时先验证目标和端口、预绑定所有新增监听，失败时保留上一个版本。TCP 与 UDP 在连接时解析目标并拒绝私网、回环和保留地址；TCP 连接数、UDP 待处理包与客户端关联数均有上限。停用规则或更换目标会撤销旧 TCP 连接及 UDP 关联；UDP 关联按客户端活动时间过期。运行时支持注入 DNS/拨号器以进行真实套接字测试。**这只是本地执行组件**，尚未接入 Agent 身份、mTLS 通道、进程部署和状态 ACK，线上 `us dmit` 仍不会执行转发。当前纯 IP HTTP 预览提供只读页面与健康检查。
+`internal/agentruntime` 实现独立的 TCP/UDP 直达转发执行器。调用方传入带递增版本号的完整规则快照；运行时先验证目标和端口、预绑定所有新增监听，失败时保留上一个版本。TCP 与 UDP 在连接时解析目标并拒绝私网、回环和保留地址；TCP 连接数、UDP 待处理包与客户端关联数均有上限。停用规则或更换目标会撤销旧 TCP 连接及 UDP 关联；UDP 关联按客户端活动时间过期。运行时支持注入 DNS/拨号器以进行真实套接字测试。Agent 进程现已接入此运行时与 mTLS 配置流，但线上 `us dmit` 尚未配置 Agent TLS、部署 Agent 或执行真实转发。当前纯 IP HTTP 预览提供只读页面与健康检查。
 
 `internal/orchestration` 可从 PostgreSQL 的一致性只读快照中编译单节点转发配置。编译时重新检查账户、有效订购快照、资源组、节点能力和目标策略，剔除失效规则；非法目标、损坏的订购快照或监听冲突会被单独排除并返回诊断，避免阻断其他规则的撤销。节点停用时直接生成空配置。输出规则顺序固定。每节点规则数是创建上限；正数上限下调不自动删减已有规则，降为零则撤销该套餐的转发能力。
 
-配置版本仓储在锁定 Agent 后，于同一数据库事务读取当前节点事实并编译完整转发快照。可执行内容的 SHA-256 不变时不新增版本，但会刷新逐规则诊断；变化时递增 `desired_revision`。Agent 回执必须匹配节点、版本和摘要；应用成功才推进 `applied_revision`，失败回执可随重试更新，但已应用版本不会被失败回执覆盖。失败原因有长度和字符限制。收敛 worker 消费转发规则与目标策略的 outbox 事件，并定期扫描 Agent 节点，以处理套餐到期等时间驱动的撤销。**Agent 身份与通信、回执传输仍待实现**；即使生成配置版本，线上也不会因此执行转发。
+配置版本仓储在锁定 Agent 后，于同一数据库事务读取当前节点事实并编译完整转发快照。可执行内容的 SHA-256 不变时不新增版本，但会刷新逐规则诊断；变化时递增 `desired_revision`。Agent 回执必须匹配节点、版本和摘要；应用成功才推进 `applied_revision`，失败回执可随重试更新，但已应用版本不会被失败回执覆盖。失败原因有长度和字符限制。收敛 worker 消费转发规则与目标策略的 outbox 事件，并定期扫描 Agent 节点，以处理套餐到期等时间驱动的撤销。Agent 身份、配置流和回执传输已有实现；线上 Agent TLS 与 Agent 进程尚未启用，故服务器当前不会执行转发。
 
-`internal/agentproto` 定义版本 1 的 JSON 消息封包和直达转发配置/结果负载。封包限制为 1 MiB，拒绝未知版本、字段、重复 JSON 字段和无效身份；Agent 验证快照有效期及与控制面一致的可执行内容摘要后才能应用。协议编解码尚未连接到 mTLS 传输或 Agent 进程。
+`internal/agentproto` 定义版本 1 的 JSON 消息封包和直达转发配置/结果负载。封包限制为 1 MiB，拒绝未知版本、字段、重复 JSON 字段和无效身份；Agent 验证快照有效期及与控制面一致的可执行内容摘要后才能应用。协议已连接到独立 mTLS WebSocket 监听器和 Agent 进程。
 
-`internal/agentidentity` 增加 Agent 入网身份基础：10 分钟一次性令牌只以 SHA-256 存库；Agent 以 Ed25519 CSR 换取绑定节点 URI 的 24 小时客户端证书；签发和令牌消费在同一事务中完成。证书认证会核对 CA、节点 URI、当前数据库指纹、节点启用状态与吊销状态。启用独立 TLS 监听器时，管理员须用当前密码重新认证，并经 `POST /api/v1/admin/nodes/{id}/agent-enrollment` 签发令牌；签发记录审计但不保存明文令牌。Agent 经 TLS `POST /api/v1/agent/enroll` 入网，入口有单进程 IP、令牌及全局速率限制。TLS 监听器需要 `CONTROL_AGENT_TLS_ADDR`、`CONTROL_AGENT_TLS_CERT_FILE`、`CONTROL_AGENT_TLS_KEY_FILE`、`CONTROL_AGENT_CA_CERT_FILE`、`CONTROL_AGENT_CA_KEY_FILE` 全部配置；监听地址目前限回环，私钥文件权限不能对组或其他用户开放。CA 私钥不写入数据库或响应，Agent 私钥不离开节点。当前公网纯 IP 预览不启用这些配置，故没有入网或令牌路由；证书轮换、WebSocket 流、心跳和配置 ACK 仍待完成。
+`internal/agentidentity` 增加 Agent 入网身份基础：10 分钟一次性令牌只以 SHA-256 存库；Agent 以 Ed25519 CSR 换取绑定节点 URI 的 24 小时客户端证书；签发和令牌消费在同一事务中完成。证书认证会核对 CA、节点 URI、当前数据库指纹、节点启用状态与吊销状态。启用独立 TLS 监听器时，管理员须用当前密码重新认证，并经 `POST /api/v1/admin/nodes/{id}/agent-enrollment` 签发令牌；签发记录审计但不保存明文令牌。Agent 经 TLS `POST /api/v1/agent/enroll` 入网，入口有单进程 IP、令牌及全局速率限制。TLS 监听器需要 `CONTROL_AGENT_TLS_ADDR`、`CONTROL_AGENT_TLS_CERT_FILE`、`CONTROL_AGENT_TLS_KEY_FILE`、`CONTROL_AGENT_CA_CERT_FILE`、`CONTROL_AGENT_CA_KEY_FILE` 全部配置；监听地址目前限回环，私钥文件权限不能对组或其他用户开放。CA 私钥不写入数据库或响应，Agent 私钥不离开节点。当前公网纯 IP 预览不启用这些配置，故没有入网或令牌路由。
+
+`cmd/agent` 提供独立 Agent 进程和 `enroll` 命令。入网命令从标准输入读取一次性令牌，在 Agent 本机生成 Ed25519 私钥，经受信任 HTTPS 换取证书，并仅新建权限为 `0600` 的证书和私钥文件。运行进程主动建立 mTLS WebSocket，发送 hello 与 15 秒心跳，接收完整转发快照，由 `agentruntime` 原子应用并回传 ACK/NACK；断线会关闭转发监听并重连。心跳采集 Linux `/proc` 的 CPU、内存、网卡字节及本机活动转发连接数。控制面数据库保存最新指标，45 秒无心跳会转为离线。迁移 `000007_agent_presence` 增加指标表。`cmd/agent-token` 可在受限服务器本机为现有管理员和节点签发令牌到新建的私有文件；命令不在标准输出打印令牌。证书轮换、控制面公网 Agent TLS 接入、多节点部署和代理连接尚未完成，当前纯 IP HTTP 预览继续关闭 Agent TLS 与浏览器登录。
 
 ## 用户生命周期开发状态
 
@@ -68,6 +70,6 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 后续阶段
 
-按模块继续增加：用户状态与角色管理、套餐编辑与账期、Agent 同步、代理连接与转发执行、订阅与分流、流量计费以及可操作的前端控制台。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+按模块继续增加：用户状态与角色管理、套餐编辑与账期、Agent 证书轮换与实际节点部署、代理连接、订阅与分流、流量计费以及可操作的前端控制台。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前基础服务的纯 IP 只读预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。

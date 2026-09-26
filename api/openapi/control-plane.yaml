@@ -82,6 +82,16 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/agent/stream:
+    get:
+      operationId: connectAgentStream
+      summary: Upgrade an authenticated Agent connection to WebSocket
+      description: Dedicated TLS listener only. Requires a CA-verified client certificate whose node URI and current database fingerprint match. The first JSON frame must be a node-bound hello; subsequent frames are heartbeat or config_result. The control plane sends complete config_snapshot frames and rechecks certificate authorization during the connection. Frames are limited to 1 MiB. The public HTTP preview does not expose this endpoint.
+      responses:
+        '101':
+          description: Agent WebSocket connection established.
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
   /api/v1/health/live:
     get:
       operationId: getLiveness

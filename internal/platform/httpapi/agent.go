@@ -23,7 +23,14 @@ type AgentEnrollment interface {
 // NewAgentHandler is mounted only on the dedicated TLS listener. The direct
 // TLS check also protects against accidentally mounting it on the HTTP preview.
 func NewAgentHandler(logger *slog.Logger, service AgentEnrollment) http.Handler {
+	return NewAgentHandlerWithStream(logger, service, nil)
+}
+
+func NewAgentHandlerWithStream(logger *slog.Logger, service AgentEnrollment, stream http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	if stream != nil {
+		mux.Handle("/api/v1/agent/stream", stream)
+	}
 	ipLimiter := newLoginLimiter()
 	tokenLimiter := newLoginLimiter()
 	mux.HandleFunc("/api/v1/agent/enroll", func(w http.ResponseWriter, r *http.Request) {

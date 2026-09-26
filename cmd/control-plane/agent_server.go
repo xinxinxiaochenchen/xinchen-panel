@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"controlplane/internal/agentidentity"
+	"controlplane/internal/orchestration"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/httpapi"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,7 +40,33 @@ func startConfiguredAgentServer(ctx context.Context, cfg config.Config, pool *pg
 		return nil, err
 	}
 	service := agentidentity.NewEnrollmentService(pool, issuer)
-	return serveAgentTLS(ctx, cfg.AgentTLSAddr, tlsConfig, httpapi.NewAgentHandler(logger, service), logger, stop)
+	presence := orchestration.NewAgentPresenceRepository(pool)
+	stream := httpapi.NewAgentStreamHandler(ctx, logger, service, orchestration.NewRevisionRepository(pool), presence)
+	listener, err := serveAgentTLS(ctx, cfg.AgentTLSAddr, tlsConfig,
+		httpapi.NewAgentHandlerWithStream(logger, service, stream), logger, stop)
+	if err != nil {
+		return nil, err
+	}
+	go sweepOfflineAgents(ctx, presence, logger)
+	return listener, nil
+}
+
+func sweepOfflineAgents(ctx context.Context, presence *orchestration.AgentPresenceRepository, logger *slog.Logger) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			_, err := presence.MarkOfflineStale(queryCtx, time.Now().Add(-45*time.Second))
+			cancel()
+			if err != nil {
+				logger.Warn("Agent stale status sweep failed", "error", err)
+			}
+		}
+	}
 }
 
 func serveAgentTLS(ctx context.Context, address string, tlsConfig *tls.Config, handler http.Handler,

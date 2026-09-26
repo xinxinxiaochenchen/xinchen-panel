@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -109,6 +111,20 @@ func NewHandlerWithAgentTokens(logger *slog.Logger, checker ReadyChecker, sessio
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+}
+
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	connection, writer, err := hijacker.Hijack()
+	if err == nil {
+		w.status = http.StatusSwitchingProtocols
+	}
+	return connection, writer, err
 }
 
 func (w *statusWriter) WriteHeader(status int) {
