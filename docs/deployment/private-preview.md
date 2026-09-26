@@ -32,7 +32,7 @@
 
 ## 部署
 
-1. 在开发机用 `GO_BIN=/path/to/go sh scripts/build-linux-amd64.sh` 构建 React 静态资源及 Linux amd64 的 `bin/control-plane`、`bin/migrate`、`bin/admin-bootstrap`、`bin/agent` 和 `bin/agent-token`。将 `apps/web/dist`、二进制、迁移和 Compose 文件打包，通过 Termark 上传到 `/opt/network-control-plane/release-<commit>.tar.gz` 并解压到独立 release 目录。服务器只需从预编译文件构建小镜像。上传前确认包不含 `.git` 或 `.env`。
+1. 在开发机用 `GO_BIN=/path/to/go sh scripts/build-linux-amd64.sh` 构建 React 静态资源及 Linux amd64 的 `bin/control-plane`、`bin/migrate`、`bin/admin-bootstrap`、`bin/agent` 和 `bin/agent-token`。将 `apps/web/dist`、二进制、迁移、基础 Compose 文件及可选 `compose.agent-tls.yaml` 打包，通过 Termark 上传到 `/opt/network-control-plane/release-<commit>.tar.gz` 并解压到独立 release 目录。服务器只需从预编译文件构建小镜像。上传前确认包不含 `.git` 或 `.env`。
 2. 在 `deployments/compose/.env` 写入随机的 URL 安全数据库密码，文件权限设为 `0600`；不要把密码写进 Git 或终端输出。
 3. 在 `deployments/compose` 运行 `docker compose config --quiet`，确认配置可解析，并根据 `CONTROL_BIND_IP` 核对实际映射地址。临时纯 IP 预览设置 `CONTROL_BIND_IP=0.0.0.0`。
 4. 运行 `docker compose up -d --build`。预编译镜像从 `scratch` 构建；Compose 等 PostgreSQL 健康后执行一次 `migrate up`，成功后启动 API。
@@ -45,3 +45,23 @@
 ## 公网接入
 
 当前按用户要求开放 18080 用于纯 IP 页面与连通性测试；页面只显示预览内容，登录后的操作页尚未对公网开放。不要在明文 HTTP 上测试带 Cookie 的登录功能。域名和证书就绪后，在现有 Nginx Proxy Manager 中创建 HTTPS 代理主机，并将 `CONTROL_BIND_IP` 恢复为 `127.0.0.1`，再关闭公网 18080 访问。
+
+## Agent TLS 纯 IP 接入（可选，当前未启用）
+
+Agent 使用独立的 HTTPS/mTLS 入口，与浏览器的 HTTP 预览端口分开。启用前准备一组专用 CA 和服务器证书：服务器证书的 IP SAN 必须覆盖 Agent URL 所用的 IP；Agent 预装该 CA 证书并保持证书校验开启。CA 私钥和服务器私钥仅留在控制面服务器，不能复制到节点。
+
+将 `server.crt`、`server.key`、`agent-ca.crt`、`agent-ca.key` 放入服务器上的绝对路径目录；目录建议由容器用户 UID 65532 拥有、权限 0700，两个私钥为 0600。可选覆盖文件 `deployments/compose/compose.agent-tls.yaml` 将此目录只读挂载到 API 容器，并启用 `CONTROL_AGENT_PUBLIC_TLS_ENABLED=true`。API 容器内监听 18443，主机默认仅绑定 `127.0.0.1:18443`。先在 release 的 `deployments/compose` 目录运行：
+
+```sh
+CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
+  docker compose -f compose.yaml -f compose.agent-tls.yaml config --quiet
+```
+
+同机 Agent 可连接 `wss://127.0.0.1:18443/api/v1/agent/stream`，证书需含回环 IP SAN。若 Agent 在另一台服务器，先确保服务器证书含公网 IP SAN，再将 `CONTROL_AGENT_BIND_IP=0.0.0.0` 用于覆盖文件，并只允许该节点来源访问 18443。启动时同样必须提供证书目录变量：
+
+```sh
+CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
+  docker compose -f compose.yaml -f compose.agent-tls.yaml up -d --build
+```
+
+不指定覆盖文件时，现有预览入口和 Agent TLS 关闭状态保持原样。此覆盖文件只开放 Agent 通道，不开放管理接口；当前纯 IP 预览关闭了浏览器身份路由，且正式库中没有节点。首个节点必须先通过受信任 HTTPS 管理入口创建，或使用后续提供的受限本机引导命令；随后管理员可发一次性令牌并让 Agent 用可信 CA 完成证书登记。仅启用此覆盖文件不能完成入网。

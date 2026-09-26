@@ -207,3 +207,63 @@ func TestLoadFromBrowserAuthRequiresProxyCredentialKey(t *testing.T) {
 		t.Fatalf("valid credential key = %v, length=%d", err, len(cfg.ProxyCredentialKey))
 	}
 }
+
+func TestLoadFromAgentTLSPublicBindNeedsExplicitOptIn(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{"server.crt", "server.key", "agent-ca.crt", "agent-ca.key"} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values := map[string]string{
+		"CONTROL_DATABASE_URL":        "postgres://localhost/control",
+		"CONTROL_AGENT_TLS_ADDR":      "0.0.0.0:18443",
+		"CONTROL_AGENT_TLS_CERT_FILE": filepath.Join(directory, "server.crt"),
+		"CONTROL_AGENT_TLS_KEY_FILE":  filepath.Join(directory, "server.key"),
+		"CONTROL_AGENT_CA_CERT_FILE":  filepath.Join(directory, "agent-ca.crt"),
+		"CONTROL_AGENT_CA_KEY_FILE":   filepath.Join(directory, "agent-ca.key"),
+	}
+	lookup := func(key string) (string, bool) { value, ok := values[key]; return value, ok }
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("public Agent TLS bind accepted without explicit opt-in")
+	}
+	values["CONTROL_AGENT_PUBLIC_TLS_ENABLED"] = "true"
+	cfg, err := LoadFrom(lookup)
+	if err != nil || cfg.AgentTLSAddr != "0.0.0.0:18443" {
+		t.Fatalf("explicit public Agent TLS bind = %+v, %v", cfg, err)
+	}
+	for _, addr := range []string{"179.255.145.149:18443", "[2001:db8::1]:18443"} {
+		values["CONTROL_AGENT_TLS_ADDR"] = addr
+		if _, err := LoadFrom(lookup); err != nil {
+			t.Fatalf("explicit IP listener %q rejected: %v", addr, err)
+		}
+	}
+	values["CONTROL_AGENT_PUBLIC_TLS_ENABLED"] = "false"
+	values["CONTROL_AGENT_TLS_ADDR"] = "0.0.0.0:18443"
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("false public TLS flag accepted wildcard listener")
+	}
+	values["CONTROL_AGENT_PUBLIC_TLS_ENABLED"] = "true"
+	if err := os.Chmod(values["CONTROL_AGENT_TLS_KEY_FILE"], 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("public TLS listener accepted weak server key permissions")
+	}
+	if err := os.Chmod(values["CONTROL_AGENT_TLS_KEY_FILE"], 0600); err != nil {
+		t.Fatal(err)
+	}
+	values["CONTROL_AGENT_PUBLIC_TLS_ENABLED"] = "maybe"
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("malformed public TLS flag accepted")
+	}
+	values["CONTROL_AGENT_PUBLIC_TLS_ENABLED"] = "true"
+	values["CONTROL_AGENT_TLS_ADDR"] = "agent.example.test:18443"
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("hostname Agent TLS bind accepted")
+	}
+	delete(values, "CONTROL_AGENT_TLS_ADDR")
+	if _, err := LoadFrom(lookup); err == nil {
+		t.Fatal("public TLS opt-in accepted without Agent TLS listener")
+	}
+}

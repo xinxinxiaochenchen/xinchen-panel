@@ -1,0 +1,15 @@
+# Add only when enabling the dedicated Agent HTTPS/mTLS listener.
+# The host port remains loopback unless CONTROL_AGENT_BIND_IP is explicitly set.
+services:
+  api:
+    environment:
+      CONTROL_AGENT_PUBLIC_TLS_ENABLED: "true"
+      CONTROL_AGENT_TLS_ADDR: "0.0.0.0:18443"
+      CONTROL_AGENT_TLS_CERT_FILE: /run/agent-tls/server.crt
+      CONTROL_AGENT_TLS_KEY_FILE: /run/agent-tls/server.key
+      CONTROL_AGENT_CA_CERT_FILE: /run/agent-tls/agent-ca.crt
+      CONTROL_AGENT_CA_KEY_FILE: /run/agent-tls/agent-ca.key
+    ports:
+      - "${CONTROL_AGENT_BIND_IP:-127.0.0.1}:18443:18443"
+    volumes:
+      - "${CONTROL_AGENT_TLS_DIR:?set CONTROL_AGENT_TLS_DIR to an absolute private certificate directory}:/run/agent-tls:ro"

@@ -13,17 +13,18 @@ import (
 )
 
 type Config struct {
-	HTTPAddr           string
-	LogLevel           slog.Level
-	DatabaseURL        string
-	BrowserAuthEnabled bool
-	ProxyCredentialKey []byte
-	WebDir             string
-	AgentTLSAddr       string
-	AgentTLSCertFile   string
-	AgentTLSKeyFile    string
-	AgentCACertFile    string
-	AgentCAKeyFile     string
+	HTTPAddr              string
+	LogLevel              slog.Level
+	DatabaseURL           string
+	BrowserAuthEnabled    bool
+	ProxyCredentialKey    []byte
+	WebDir                string
+	AgentTLSAddr          string
+	AgentPublicTLSEnabled bool
+	AgentTLSCertFile      string
+	AgentTLSKeyFile       string
+	AgentCACertFile       string
+	AgentCAKeyFile        string
 }
 
 func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
@@ -95,6 +96,13 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 			return Config{}, fmt.Errorf("CONTROL_LOG_LEVEL: unsupported level %q", value)
 		}
 	}
+	if value, ok := lookup("CONTROL_AGENT_PUBLIC_TLS_ENABLED"); ok {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("CONTROL_AGENT_PUBLIC_TLS_ENABLED: expected true or false")
+		}
+		cfg.AgentPublicTLSEnabled = enabled
+	}
 	agentFields := []struct {
 		key    string
 		target *string
@@ -112,6 +120,9 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 			agentConfigured = true
 		}
 	}
+	if cfg.AgentPublicTLSEnabled && !agentConfigured {
+		return Config{}, fmt.Errorf("CONTROL_AGENT_PUBLIC_TLS_ENABLED: Agent TLS listener is required")
+	}
 	if agentConfigured {
 		for _, field := range agentFields {
 			if *field.target == "" {
@@ -120,8 +131,10 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 		}
 		host, portText, err := net.SplitHostPort(cfg.AgentTLSAddr)
 		port, portErr := strconv.Atoi(portText)
-		if err != nil || portErr != nil || port < 1 || port > 65535 || host != "127.0.0.1" && host != "::1" && host != "localhost" {
-			return Config{}, fmt.Errorf("CONTROL_AGENT_TLS_ADDR: expected a loopback address and valid port")
+		loopback := host == "127.0.0.1" || host == "::1" || host == "localhost"
+		publicIP := cfg.AgentPublicTLSEnabled && net.ParseIP(host) != nil
+		if err != nil || portErr != nil || port < 1 || port > 65535 || !loopback && !publicIP {
+			return Config{}, fmt.Errorf("CONTROL_AGENT_TLS_ADDR: expected a loopback address or explicitly enabled IP listener and valid port")
 		}
 		for _, field := range agentFields[1:] {
 			if !filepath.IsAbs(*field.target) {
