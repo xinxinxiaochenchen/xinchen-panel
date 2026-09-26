@@ -132,3 +132,4 @@
 - 使用 Clash Verge 内置 Mihomo Meta `v1.19.31` 原生 `-t` 校验生成的 Clash 和 Mihomo YAML，两个配置均通过；新增可选 `CONTROL_TEST_MIHOMO_BINARY` 回归测试，未设置时跳过，不影响普通开发环境。
 - 下载并按 GitHub 官方 SHA-256 校验 sing-box `v1.12.0` macOS arm64 发布包；用原生 `sing-box check` 验证默认、分流和阻断 fallback 三种生成 JSON，全部通过。新增可选 `CONTROL_TEST_SING_BOX_BINARY` 回归测试。
 - 修复线路管理页面的权限路径缺口：管理员现在可以在共享线路卡片上启停 `/api/v1/admin/lines/{id}`，普通用户仍只能启停自己的 `/api/v1/lines/{id}`；新增路径选择回归测试。前端 21 项测试和生产构建通过。
+- 已通过 Termark 将 `d14fdbb` 发布到 `us dmit` 的 `/opt/network-control-plane/releases/release-d14fdbb`。发布包 SHA-256 `c44d0bcbde8a3859b021e236cfa954c5b19bb2039eaa8e0ebff0b9d37d0f1094`，升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-d14fdbb.dump` 权限 0600。初次 `docker compose up` 遗漏既有 Agent TLS 覆盖文件，随即用 `compose.agent-tls.yaml` 和原证书目录重建恢复；最终 API/DB healthy、API 重启 0，18443 仅绑定 `127.0.0.1`，公网首页/ready 200、登录 404，迁移 16，正式库用户/节点/Agent 均为 0。临时上传包已删除，磁盘剩余约 1.4GB。
