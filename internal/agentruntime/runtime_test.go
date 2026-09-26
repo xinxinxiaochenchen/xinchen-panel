@@ -21,6 +21,25 @@ func unusedTCPPort(t *testing.T) int {
 	return port
 }
 
+func TestRuntimeRequiresMeteringBeforeOpeningTrafficListeners(t *testing.T) {
+	runtime := New(Options{BindHost: "127.0.0.1", RequireMetering: true})
+	defer runtime.Close()
+	if err := runtime.Apply(context.Background(), Snapshot{Revision: 1}); err != nil {
+		t.Fatalf("empty safe snapshot: %v", err)
+	}
+	port := unusedTCPPort(t)
+	withTraffic := Snapshot{Revision: 2, Rules: []Rule{{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		IngressPort: port, TargetHost: "example.org", TargetPort: 443, Protocol: "TCP", Enabled: true}}}
+	if err := runtime.Apply(context.Background(), withTraffic); err == nil || runtime.Revision() != 1 {
+		t.Fatalf("unmetered listener accepted: revision=%d error=%v", runtime.Revision(), err)
+	}
+	if listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port))); err != nil {
+		t.Fatalf("unmetered listener bound port: %v", err)
+	} else {
+		listener.Close()
+	}
+}
+
 func TestRuntimeApplyRollsBackOnBindFailure(t *testing.T) {
 	firstPort := unusedTCPPort(t)
 	secondPort := unusedTCPPort(t)

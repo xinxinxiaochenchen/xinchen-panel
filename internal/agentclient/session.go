@@ -18,7 +18,7 @@ type controlMessage struct {
 
 // serveMessages uses a single reader and a single state machine for snapshots
 // and usage ACKs: configuration renewals cannot be mistaken for usage replies.
-func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtime Runtime, send func(agentproto.MessageType, any) error) error {
+func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtime Runtime, send func(agentproto.MessageType, any) error, quota *QuotaExchange) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	incoming := make(chan controlMessage, 1)
@@ -102,6 +102,30 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 				return errors.New("invalid control plane message")
 			}
 			switch message.Type {
+			case agentproto.TypeQuotaGrant:
+				grant, err := agentproto.DecodeQuotaGrant(message.Payload)
+				if err != nil {
+					return err
+				}
+				if err := quota.DeliverGrant(grant); err != nil {
+					return err
+				}
+			case agentproto.TypeQuotaDenied:
+				denied, err := agentproto.DecodeQuotaDenied(message.Payload)
+				if err != nil {
+					return err
+				}
+				if err := quota.DeliverDenied(denied); err != nil {
+					return err
+				}
+			case agentproto.TypeQuotaSettled:
+				settled, err := agentproto.DecodeQuotaSettled(message.Payload)
+				if err != nil {
+					return err
+				}
+				if err := quota.DeliverSettled(settled); err != nil {
+					return err
+				}
 			case agentproto.TypeUsageAck:
 				ack, err := agentproto.DecodeUsageAck(message.Payload)
 				if err != nil || inFlight == nil || ack.BatchID != inFlight.BatchID {

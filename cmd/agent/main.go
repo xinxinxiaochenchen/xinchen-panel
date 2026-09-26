@@ -94,7 +94,7 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 	client, err := agentclient.New(agentclient.Config{URL: cfg.StreamURL, NodeID: cfg.NodeID,
 		Version: cfg.Version, RootCAs: roots, Certificate: pair, ProxyReady: proxyTLS != nil, UsageOutbox: usage},
 		func() agentclient.Runtime {
-			return agentruntime.New(agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS})
+			return agentruntime.New(agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS, RequireMetering: true})
 		}, state)
 	if err != nil {
 		return err

@@ -18,6 +18,7 @@ type DialFunc func(context.Context, string) (net.Conn, error)
 
 type Options struct {
 	BindHost             string
+	RequireMetering      bool
 	ProxyTLSConfig       *tls.Config
 	Resolve              Resolver
 	DialTCP              DialFunc
@@ -98,6 +99,9 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 	wanted, err := ValidateSnapshot(snapshot)
 	if err != nil {
 		return err
+	}
+	if r.options.RequireMetering && (len(wanted) > 0 || len(snapshot.ProxyConfig) > 0) {
+		return errors.New("traffic metering is not configured")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -173,7 +173,9 @@ func (c *Client) RunOnce(ctx context.Context) error {
 			}
 		}
 	}()
-	return c.serveMessages(ctx, conn, runtime, send)
+	quota := NewQuotaExchange(send)
+	defer quota.Close()
+	return c.serveMessages(ctx, conn, runtime, send, quota)
 }
 
 func validateReceivedRevision(applied int64, digest string, received int64, receivedDigest string) error {
