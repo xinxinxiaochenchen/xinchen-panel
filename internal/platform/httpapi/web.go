@@ -14,7 +14,7 @@ import (
 // routes, and missing assets are 404 rather than the SPA's HTML fallback.
 func NewWebHandler(api http.Handler, assets fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/sub/") {
 			api.ServeHTTP(w, r)
 			return
 		}

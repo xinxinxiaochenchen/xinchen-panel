@@ -962,6 +962,150 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/subscriptions:
+    get:
+      operationId: listOwnSubscriptions
+      summary: List subscriptions owned by the authenticated user
+      security: [{browserSession: []}]
+      parameters:
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
+        - {in: query, name: cursor, schema: {type: string}}
+      responses:
+        '200':
+          description: Metadata only; never includes token hashes or ciphertext.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Subscription'}}
+                  next_cursor: {type: ['string', 'null']}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createSubscription
+      summary: Create a subscription over existing owned proxy accesses
+      description: Requires subscriptions.write, CSRF and active frozen membership grants. Disabled subscriptions count toward max_subscriptions. The response is no-store.
+      security: [{browserSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewSubscription'}
+      responses:
+        '201':
+          description: Subscription metadata, high-entropy token and origin-relative Mihomo path.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subscription, token, path]
+                properties:
+                  subscription: {$ref: '#/components/schemas/Subscription'}
+                  token: {type: string, minLength: 43, maxLength: 43}
+                  path: {type: string, description: Prefix with the configured HTTPS origin in the client UI.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: CONFLICT or PLAN_LIMIT_EXCEEDED.}
+        '422': {description: Validation error.}
+  /api/v1/subscriptions/{id}:
+    parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+    get:
+      operationId: getOwnSubscription
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Owner-scoped subscription metadata.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Subscription'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateOwnSubscription
+      description: Re-enabling or changing targets requires current membership grants. Metadata edits and disabling remain available after expiry. Targets can disappear when their proxy access is deleted.
+      security: [{browserSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubscriptionPatch'}
+      responses:
+        '200':
+          description: Updated metadata.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Subscription'}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Name conflict.}
+        '422': {description: Validation error.}
+    delete:
+      operationId: deleteOwnSubscription
+      security: [{browserSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      responses:
+        '204': {description: Subscription and its token revoked.}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/subscriptions/{id}/token-rotation:
+    post:
+      operationId: rotateSubscriptionToken
+      description: Atomically replaces token hash and encrypted token. Old token requests after commit return 404. Response is no-store.
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      responses:
+        '200':
+          description: New token and origin-relative Mihomo path.
+          content:
+            application/json:
+              schema: {type: object, required: [token, path], properties: {token: {type: string}, path: {type: string}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/subscriptions/{id}/url:
+    get:
+      operationId: revealSubscriptionURL
+      description: Owner-only no-store token reveal. Returns an origin-relative path, never trusts Host or Forwarded headers to build an absolute URL.
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - {in: query, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box]}}
+      responses:
+        '200':
+          description: Subscription path; use the current configured HTTPS origin.
+          content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/subscriptions/{id}/preview:
+    get:
+      operationId: previewSubscription
+      description: Requires subscriptions.read. Exports only currently authorized targets with online Agents and matching applied credentials. No-store response.
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - {in: query, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box]}}
+      responses:
+        '200':
+          description: Mihomo YAML or sing-box 1.12+ JSON profile.
+          content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {description: SUBSCRIPTION_UNAVAILABLE; no eligible targets.}
+  /sub/{token}/{format}:
+    get:
+      operationId: exportSubscription
+      summary: Export a token-authorized profile without a browser session
+      description: Mounted only when browser authentication is enabled for the deployment. Requires a valid enabled token and active owner membership. Rechecks grants, enabled resources, Agent heartbeat (45 seconds) and the currently applied credential on every request. Token paths are redacted in control-plane logs; configure upstream access logs to redact them too. No-store, no-referrer. Limited to five requests per token per five minutes and sixty globally per minute. Configure per-client IP limits at the trusted HTTPS reverse proxy; forwarded IP headers are not trusted by this service. No empty or direct-only fallback profile is returned.
+      security: []
+      parameters:
+        - {in: path, name: token, required: true, schema: {type: string, minLength: 43, maxLength: 43}}
+        - {in: path, name: format, required: true, schema: {type: string, enum: [mihomo, sing-box]}}
+      responses:
+        '200':
+          description: Profile with local 127.0.0.1 mixed listener, Trojan TCP and certificate verification.
+          content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: SUBSCRIPTION_UNAVAILABLE; no eligible configured targets.}
 components:
   parameters:
     ForwardTargetPolicyID:
@@ -1517,3 +1661,32 @@ components:
               type: string
             request_id:
               type: string
+    NewSubscription:
+      type: object
+      additionalProperties: false
+      required: [name, proxy_access_ids]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        name_template: {type: string, maxLength: 200, default: '{region} · {name}', description: 'Supports {name}, {line}, {region}, {index}.'}
+        enabled: {type: boolean, default: true}
+        proxy_access_ids: {type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: {type: string, format: uuid}}
+    SubscriptionPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        name_template: {type: string, maxLength: 200}
+        enabled: {type: boolean}
+        proxy_access_ids: {type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: {type: string, format: uuid}}
+    Subscription:
+      type: object
+      required: [id, user_id, name, name_template, enabled, proxy_access_ids, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        name: {type: string}
+        name_template: {type: string}
+        enabled: {type: boolean}
+        proxy_access_ids: {type: array, items: {type: string, format: uuid}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}

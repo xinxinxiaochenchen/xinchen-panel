@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -57,14 +59,15 @@ func NewHandlerWithAgentTokens(logger *slog.Logger, checker ReadyChecker, sessio
 }
 
 type RouteStores struct {
-	Catalog      CatalogStore
-	Entitlements EntitlementStore
-	Accounts     AccountStore
-	Lines        LineStore
-	Forward      ForwardStore
-	Policies     ForwardPolicyStore
-	AgentTokens  AgentTokenStore
-	ProxyAccess  ProxyAccessStore
+	Catalog       CatalogStore
+	Entitlements  EntitlementStore
+	Accounts      AccountStore
+	Lines         LineStore
+	Forward       ForwardStore
+	Policies      ForwardPolicyStore
+	AgentTokens   AgentTokenStore
+	ProxyAccess   ProxyAccessStore
+	Subscriptions SubscriptionStore
 }
 
 func NewHandlerWithProxyAccess(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, proxy ProxyAccessStore) http.Handler {
@@ -126,6 +129,9 @@ func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions Id
 		if stores.ProxyAccess != nil {
 			registerProxyAccessRoutes(mux, sessions, stores.ProxyAccess)
 		}
+		if stores.Subscriptions != nil {
+			registerSubscriptionRoutes(mux, sessions, stores.Subscriptions)
+		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
@@ -182,6 +188,11 @@ func withMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", requestID)
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID))
 		writer := &statusWriter{ResponseWriter: w}
+		tokenPath := redactedLogPath(r.URL.Path) == "/sub/<redacted>"
+		if tokenPath {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+		}
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				logger.Error("request panic", "request_id", requestID)
@@ -189,8 +200,19 @@ func withMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 					WriteError(writer, r, http.StatusInternalServerError, "INTERNAL", "internal server error")
 				}
 			}
-			logger.Info("http request", "request_id", requestID, "method", r.Method, "path", r.URL.Path, "status", writer.status, "duration_ms", time.Since(started).Milliseconds())
+			logger.Info("http request", "request_id", requestID, "method", r.Method, "path", redactedLogPath(r.URL.Path), "status", writer.status, "duration_ms", time.Since(started).Milliseconds())
 		}()
+		if tokenPath && (path.Clean(r.URL.Path) != r.URL.Path || !strings.HasPrefix(r.URL.Path, "/sub/")) {
+			WriteError(writer, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+			return
+		}
 		next.ServeHTTP(writer, r)
 	})
+}
+
+func redactedLogPath(path string) string {
+	if strings.Contains(path, "/sub/") || strings.HasPrefix(path, "sub/") {
+		return "/sub/<redacted>"
+	}
+	return path
 }
