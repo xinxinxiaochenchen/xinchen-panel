@@ -124,5 +124,64 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 	}
 }
 
+func TestPostgresNodeEnableToggleAuditsAndQueuesReconcile(t *testing.T) {
+	databaseURL := catalogTestDatabaseURL()
+	if databaseURL == "" {
+		t.Skip("test PostgreSQL database is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	repo := NewPostgresRepository(pool)
+	var actorID, groupID, nodeID string
+	if err := pool.QueryRow(ctx, `INSERT INTO users(id,email,password_hash,status) VALUES (gen_random_uuid(),gen_random_uuid()::text || '@example.invalid','hash','active') RETURNING id::text`).Scan(&actorID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, actorID) })
+	if err := pool.QueryRow(ctx, `INSERT INTO resource_groups(id,code,name,region) VALUES (gen_random_uuid(),gen_random_uuid()::text,'Node toggle','US') RETURNING id::text`).Scan(&groupID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM resource_groups WHERE id=$1`, groupID) })
+	if err := pool.QueryRow(ctx, `INSERT INTO nodes(id,group_id,name,region,host,capabilities) VALUES (gen_random_uuid(),$1,'Toggle node','US',gen_random_uuid()::text || '.example.invalid',ARRAY['forward']) RETURNING id::text`, groupID).Scan(&nodeID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM nodes WHERE id=$1`, nodeID) })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE actor_user_id=$1`, actorID)
+	})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox_events WHERE aggregate_id=$1`, nodeID)
+	})
+	stopped, err := repo.SetNodeEnabled(ctx, nodeID, false, actorID, "toggle-node")
+	if err != nil || stopped.Enabled {
+		t.Fatalf("stopped node = %+v, %v", stopped, err)
+	}
+	var events, audits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE aggregate_id=$1 AND kind='node.changed'`, nodeID).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE object_id=$1 AND action='update' AND request_id='toggle-node'`, nodeID).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 || audits != 1 {
+		t.Fatalf("events=%d audits=%d", events, audits)
+	}
+	if _, err := repo.SetNodeEnabled(ctx, nodeID, false, actorID, "repeat-node"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE aggregate_id=$1 AND kind='node.changed'`, nodeID).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 {
+		t.Fatalf("no-op queued %d events", events)
+	}
+	if _, err := repo.SetNodeEnabled(ctx, "44444444-4444-7444-8444-444444444444", false, actorID, "missing-node"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing node = %v", err)
+	}
+}
+
 func stringPointer(value string) *string { return &value }
 func int64Pointer(value int64) *int64    { return &value }

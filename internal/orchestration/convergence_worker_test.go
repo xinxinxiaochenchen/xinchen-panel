@@ -132,6 +132,66 @@ func TestConvergenceWorkerConsumesRuleAndPolicyEvents(t *testing.T) {
 	}
 }
 
+func TestConvergenceWorkerReconcilesChangedNode(t *testing.T) {
+	fixture := newConvergenceFixture(t, 2)
+	ctx := context.Background()
+	if _, err := fixture.pool.Exec(ctx, `UPDATE nodes SET host='target.example.org' WHERE id=$1`, fixture.nodes[0]); err != nil {
+		t.Fatal(err)
+	}
+	var ownerID, planID, policyID string
+	insertID := func(query string, args ...any) string {
+		t.Helper()
+		var value string
+		if err := fixture.pool.QueryRow(ctx, query, args...).Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	ownerID = insertID(`INSERT INTO users(id,email,password_hash,status)
+VALUES (gen_random_uuid(),gen_random_uuid()::text || '@example.invalid','hash','active') RETURNING id::text`)
+	planID = insertID(`INSERT INTO plans(id,name,quota_bytes) VALUES (gen_random_uuid(),gen_random_uuid()::text,1000000) RETURNING id::text`)
+	if _, err := fixture.pool.Exec(ctx, `INSERT INTO memberships(id,user_id,plan_id,starts_at,ends_at,status,anchor_day,timezone,snapshot_json)
+VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','active',1,'UTC',jsonb_build_object('resource_group_ids',jsonb_build_array($3::text),'limits',jsonb_build_object('max_forward_rules_per_node',1)))`, ownerID, planID, fixture.groupID); err != nil {
+		t.Fatal(err)
+	}
+	policyID = insertID(`INSERT INTO forward_target_policies(id,kind,target_group_id,protocol,port_start,port_end)
+VALUES (gen_random_uuid(),'node',$1,'TCP',14443,14443) RETURNING id::text`, fixture.groupID)
+	_ = insertID(`INSERT INTO forward_rules(id,user_id,name,ingress_node_id,ingress_port,target_node_id,target_port,protocol)
+VALUES (gen_random_uuid(),$1,'Cross-node target',$2,24000,$3,14443,'TCP') RETURNING id::text`, ownerID, fixture.nodes[1], fixture.nodes[0])
+	t.Cleanup(func() {
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM forward_rules WHERE user_id=$1`, ownerID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM memberships WHERE user_id=$1`, ownerID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM forward_target_policies WHERE id=$1`, policyID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, ownerID)
+		_, _ = fixture.pool.Exec(ctx, `DELETE FROM plans WHERE id=$1`, planID)
+	})
+	revisions := NewRevisionRepository(fixture.pool)
+	initial, created, err := revisions.Reconcile(ctx, fixture.nodes[1])
+	if err != nil || !created || len(initial.Snapshot.Rules) != 1 {
+		t.Fatalf("initial ingress config = %+v, %t, %v", initial, created, err)
+	}
+	if _, err := fixture.pool.Exec(ctx, `UPDATE nodes SET enabled=false WHERE id=$1`, fixture.nodes[0]); err != nil {
+		t.Fatal(err)
+	}
+	eventID := fixture.addEvent(t, "node.changed", fmt.Sprintf(`{"node_id":%q}`, fixture.nodes[0]))
+	worker := NewConvergenceWorker(fixture.pool, revisions)
+	processed, err := worker.ProcessOne(ctx)
+	if err != nil || !processed {
+		t.Fatalf("node event processed=%t err=%v", processed, err)
+	}
+	var processedAt *time.Time
+	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at FROM outbox_events WHERE id=$1`, eventID).Scan(&processedAt); err != nil || processedAt == nil {
+		t.Fatalf("node event not completed: %v, %v", processedAt, err)
+	}
+	if _, err := NewRevisionRepository(fixture.pool).Desired(ctx, fixture.nodes[0]); err != nil {
+		t.Fatalf("changed node not reconciled: %v", err)
+	}
+	updated, err := revisions.Desired(ctx, fixture.nodes[1])
+	if err != nil || updated.Revision <= initial.Revision || len(updated.Snapshot.Rules) != 0 {
+		t.Fatalf("ingress still forwards to disabled target: %+v, %v", updated, err)
+	}
+}
+
 func TestConvergenceWorkerRetriesBadEventAndSkipsLockedRow(t *testing.T) {
 	fixture := newConvergenceFixture(t, 1)
 	ctx := context.Background()

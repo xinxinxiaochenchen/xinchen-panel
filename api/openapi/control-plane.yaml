@@ -557,6 +557,39 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/nodes/{id}:
+    patch:
+      operationId: setAdminNodeEnabled
+      summary: Enable or disable a node
+      description: Requires nodes.write and CSRF. A state change writes an audit entry and queues node configuration convergence. Repeating the current state is a no-op.
+      security: [{browserSession: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: Updated node
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /api/v1/admin/nodes/{id}/metrics:
     get:
       operationId: getAdminNodeMetrics

@@ -29,6 +29,16 @@ export function ResourcePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [metricsNodeID, setMetricsNodeID] = useState("");
+  const [busyNodeID, setBusyNodeID] = useState("");
+  const [nodeError, setNodeError] = useState("");
+  async function toggleNode(node: NodeRecord) {
+    setBusyNodeID(node.id);
+    setNodeError("");
+    const result = await mutateCatalog<NodeRecord>(`/api/v1/admin/nodes/${node.id}`, "PATCH", { enabled: !node.enabled }, csrfToken());
+    setBusyNodeID("");
+    if (result.kind === "error") setNodeError(result.message);
+    else onRefresh();
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -91,7 +101,9 @@ export function ResourcePanel({
                 <strong>{node.name}</strong>
                 <span>{node.group_code} · {node.host}</span>
                 <em>{nodeStatusLabel(node.agent_status)}</em>
+                <em>{node.enabled ? "已启用" : "已停用"}</em>
                 <button className="refresh-button" type="button" aria-expanded={metricsNodeID === node.id} onClick={() => setMetricsNodeID((current) => current === node.id ? "" : node.id)}>{metricsNodeID === node.id ? "收起指标" : "查看指标"}</button>
+                {canManageNodes && <button className="refresh-button" type="button" disabled={busyNodeID !== ""} onClick={() => void toggleNode(node)}>{busyNodeID === node.id ? "处理中…" : node.enabled ? "停用节点" : "启用节点"}</button>}
                 {canEnrollAgents && <AdminAgentEnrollment nodeID={node.id} nodeName={node.name} />}
               </div>
               {metricsNodeID === node.id && <AdminNodeMetrics nodeID={node.id} />}
@@ -104,6 +116,7 @@ export function ResourcePanel({
           )}
         </div>
       </div>
+      {nodeError && <p className="catalog-page-error" role="alert">{nodeError}</p>}
       {canManageNodes && open && (
         <div className="catalog-dialog-backdrop" role="presentation">
           <form

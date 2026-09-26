@@ -73,9 +73,40 @@ func (s catalogSessions) VerifyCSRF(ctx context.Context, token, csrf string) (id
 func (catalogSessions) Logout(context.Context, string, string) error { return nil }
 
 type catalogStub struct {
-	createdBy string
-	listedFor string
-	nodes     []catalog.Node
+	createdBy   string
+	listedFor   string
+	nodes       []catalog.Node
+	nodeEnabled bool
+}
+
+func (s *catalogStub) SetNodeEnabled(_ context.Context, nodeID string, enabled bool, actorID, requestID string) (catalog.Node, error) {
+	s.nodeEnabled = enabled
+	if nodeID != "33333333-3333-7333-8333-333333333333" {
+		return catalog.Node{}, catalog.ErrNotFound
+	}
+	return catalog.Node{ID: nodeID, Enabled: enabled}, nil
+}
+
+func TestAdminCanStopNodeWithCSRFAndNodePermission(t *testing.T) {
+	store := &catalogStub{}
+	handler := NewHandlerWithCatalog(testLogger(), nil, catalogSessions{}, store)
+	path := "/api/v1/admin/nodes/33333333-3333-7333-8333-333333333333"
+	for _, item := range []struct {
+		token, csrf string
+		status      int
+	}{
+		{"", "", 401}, {"member-token", "valid-csrf", 403}, {"agent-token", "valid-csrf", 403},
+		{"admin-token", "", 403}, {"admin-token", "valid-csrf", 200},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodPatch, path, item.token, item.csrf, `{"enabled":false}`))
+		if response.Code != item.status {
+			t.Fatalf("token %q csrf %q = %d %s", item.token, item.csrf, response.Code, response.Body.String())
+		}
+	}
+	if store.nodeEnabled {
+		t.Fatal("node was not stopped")
+	}
 }
 
 func (s *catalogStub) GetNodeMetrics(_ context.Context, nodeID string) (catalog.NodeMetrics, error) {
