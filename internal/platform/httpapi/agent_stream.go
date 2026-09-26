@@ -35,12 +35,20 @@ type AgentStreamPresence interface {
 	MarkOffline(context.Context, string) error
 }
 
+// AgentStreamUsage resolves the authenticated node to its Agent identity and
+// persists each report before returning. Partial persistence is safe: a
+// replay retries the whole batch against the idempotent usage ledger.
+type AgentStreamUsage interface {
+	RecordBatch(context.Context, string, agentproto.UsageBatch) error
+}
+
 type AgentStreamHandler struct {
 	parent       context.Context
 	logger       *slog.Logger
 	auth         AgentCertificateAuthenticator
 	revisions    AgentStreamRevisions
 	presence     AgentStreamPresence
+	usage        AgentStreamUsage
 	mu           sync.Mutex
 	active       map[string]*websocket.Conn
 	pollEvery    time.Duration
@@ -49,8 +57,12 @@ type AgentStreamHandler struct {
 }
 
 func NewAgentStreamHandler(parent context.Context, logger *slog.Logger, auth AgentCertificateAuthenticator,
-	revisions AgentStreamRevisions, presence AgentStreamPresence) *AgentStreamHandler {
-	return &AgentStreamHandler{parent: parent, logger: logger, auth: auth, revisions: revisions,
+	revisions AgentStreamRevisions, presence AgentStreamPresence, usage ...AgentStreamUsage) *AgentStreamHandler {
+	var recorder AgentStreamUsage
+	if len(usage) > 0 {
+		recorder = usage[0]
+	}
+	return &AgentStreamHandler{parent: parent, logger: logger, auth: auth, revisions: revisions, usage: recorder,
 		presence: presence, active: make(map[string]*websocket.Conn), pollEvery: 3 * time.Second,
 		renewEvery:   time.Minute,
 		recheckEvery: 15 * time.Second}
@@ -218,6 +230,23 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 				if value.Status == "applied" && value.Revision > appliedRevision {
 					appliedRevision = value.Revision
 				}
+			case agentproto.TypeUsageBatch:
+				if s.usage == nil {
+					return errors.New("Agent usage recording is unavailable")
+				}
+				batch, err := agentproto.DecodeUsageBatch(envelope.Payload)
+				if err != nil {
+					return err
+				}
+				recordCtx, recordCancel := context.WithTimeout(ctx, 10*time.Second)
+				err = s.usage.RecordBatch(recordCtx, nodeID, batch)
+				recordCancel()
+				if err != nil {
+					return err
+				}
+				if err := s.sendUsageAck(ctx, connection, nodeID, batch); err != nil {
+					return err
+				}
 			default:
 				return errors.New("Agent sent unsupported stream message")
 			}
@@ -234,6 +263,30 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 			}
 		}
 	}
+}
+
+func (s *AgentStreamHandler) sendUsageAck(ctx context.Context, connection *websocket.Conn, nodeID string, batch agentproto.UsageBatch) error {
+	digest, err := agentproto.UsageBatchDigest(batch)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(agentproto.UsageAck{BatchID: batch.BatchID, SHA256: digest})
+	if err != nil {
+		return err
+	}
+	messageID, err := id.NewV7()
+	if err != nil {
+		return err
+	}
+	frame, err := agentproto.Encode(agentproto.Envelope{ProtocolVersion: agentproto.ProtocolVersion,
+		MessageID: messageID, NodeID: nodeID, Type: agentproto.TypeUsageAck,
+		SentAt: time.Now().UTC(), Payload: payload})
+	if err != nil {
+		return err
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return connection.Write(writeCtx, websocket.MessageText, frame)
 }
 
 func (s *AgentStreamHandler) sendDesired(ctx context.Context, connection *websocket.Conn, nodeID string, capabilities []string, applied int64, lastSent *int64, lastRenewed *time.Time) error {

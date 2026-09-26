@@ -20,6 +20,8 @@ const (
 	TypeHeartbeat      MessageType = "heartbeat"
 	TypeConfigSnapshot MessageType = "config_snapshot"
 	TypeConfigResult   MessageType = "config_result"
+	TypeUsageBatch     MessageType = "usage_batch"
+	TypeUsageAck       MessageType = "usage_ack"
 )
 
 type Envelope struct {
@@ -41,7 +43,7 @@ func (value Envelope) validate() error {
 		return errors.New("message_id and node_id must be UUIDs")
 	}
 	switch value.Type {
-	case TypeHello, TypeHeartbeat, TypeConfigSnapshot, TypeConfigResult:
+	case TypeHello, TypeHeartbeat, TypeConfigSnapshot, TypeConfigResult, TypeUsageBatch, TypeUsageAck:
 	default:
 		return fmt.Errorf("unsupported Agent message type %q", value.Type)
 	}

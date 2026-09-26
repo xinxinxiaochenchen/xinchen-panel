@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"controlplane/internal/agentidentity"
+	"controlplane/internal/billing"
 	"controlplane/internal/orchestration"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/httpapi"
@@ -41,7 +42,8 @@ func startConfiguredAgentServer(ctx context.Context, cfg config.Config, pool *pg
 	}
 	service := agentidentity.NewEnrollmentService(pool, issuer)
 	presence := orchestration.NewAgentPresenceRepository(pool)
-	stream := httpapi.NewAgentStreamHandler(ctx, logger, service, orchestration.NewRevisionRepository(pool), presence)
+	stream := httpapi.NewAgentStreamHandler(ctx, logger, service, orchestration.NewRevisionRepository(pool), presence,
+		orchestration.NewUsageRecorder(billing.NewPostgresRepository(pool)))
 	listener, err := serveAgentTLS(ctx, cfg.AgentTLSAddr, tlsConfig,
 		httpapi.NewAgentHandlerWithStream(logger, service, stream), logger, stop)
 	if err != nil {

@@ -39,6 +39,7 @@ type Config struct {
 	ReconnectMin      time.Duration
 	ReconnectMax      time.Duration
 	ProxyReady        bool
+	UsageOutbox       *FileUsageOutbox
 }
 
 type Client struct {
@@ -172,60 +173,7 @@ func (c *Client) RunOnce(ctx context.Context) error {
 			}
 		}
 	}()
-	applied := int64(0)
-	appliedDigest := ""
-	var leaseUntil time.Time
-	for {
-		readCtx := ctx
-		var cancelRead context.CancelFunc
-		if !leaseUntil.IsZero() {
-			readCtx, cancelRead = context.WithDeadline(ctx, leaseUntil)
-		}
-		kind, frame, err := conn.Read(readCtx)
-		if cancelRead != nil {
-			cancelRead()
-		}
-		if err != nil {
-			return err
-		}
-		if kind != websocket.MessageText {
-			return errors.New("control plane sent non-text frame")
-		}
-		message, err := agentproto.Decode(frame)
-		if err != nil || message.NodeID != c.config.NodeID || message.Type != agentproto.TypeConfigSnapshot ||
-			!freshMessage(message.SentAt) {
-			return errors.New("invalid control plane message")
-		}
-		snapshot, err := agentproto.DecodeConfigSnapshot(message.Payload, time.Now())
-		if err != nil {
-			return fmt.Errorf("invalid configuration snapshot: %w", err)
-		}
-		if err := validateReceivedRevision(applied, appliedDigest, snapshot.Revision, snapshot.SHA256); err != nil {
-			return err
-		}
-		if snapshot.Revision > applied {
-			applyCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			err = runtime.Apply(applyCtx, agentruntime.Snapshot{Revision: uint64(snapshot.Revision), Rules: snapshot.ForwardConfig, ProxyConfig: snapshot.ProxyConfig})
-			cancel()
-			if err != nil {
-				if sendErr := send(agentproto.TypeConfigResult, agentproto.ConfigResult{Revision: snapshot.Revision,
-					SHA256: snapshot.SHA256, Status: "rejected", ErrorCode: "APPLY_FAILED", ErrorMessage: "configuration could not be applied"}); sendErr != nil {
-					return sendErr
-				}
-				continue
-			}
-			applied = snapshot.Revision
-			appliedDigest = snapshot.SHA256
-		}
-		if err := c.state.Save(snapshot); err != nil {
-			return fmt.Errorf("persist applied Agent snapshot: %w", err)
-		}
-		leaseUntil = snapshot.ValidUntil
-		if err := send(agentproto.TypeConfigResult, agentproto.ConfigResult{Revision: snapshot.Revision,
-			SHA256: snapshot.SHA256, Status: "applied"}); err != nil {
-			return err
-		}
-	}
+	return c.serveMessages(ctx, conn, runtime, send)
 }
 
 func validateReceivedRevision(applied int64, digest string, received int64, receivedDigest string) error {

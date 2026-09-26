@@ -128,7 +128,7 @@ func (r *PostgresRepository) RecordUsage(ctx context.Context, agentID string, re
 	if err != nil {
 		return UsageEvent{}, fmt.Errorf("load usage connection: %w", databaseError(err))
 	}
-	if report.ObservedAt.Before(startedAt) || !report.ObservedAt.Before(periodEndsAt) {
+	if !validUsageObservation(startedAt, periodEndsAt, report.ObservedAt) {
 		return UsageEvent{}, ErrInvalidMeter
 	}
 	if report.Sequence <= lastSequence {
@@ -188,4 +188,11 @@ func (r *PostgresRepository) RecordUsage(ctx context.Context, agentID string, re
 		return UsageEvent{}, databaseError(err)
 	}
 	return UsageEvent{ID: eventID, ConnectionID: report.ConnectionID, Sequence: report.Sequence, Cumulative: report.Counters, UploadedBytes: delta.UploadedBytes, DownloadedBytes: delta.DownloadedBytes, ChargedBytes: delta.ChargedBytes}, nil
+}
+
+// The period admits new connections in [start,end), while the final
+// cumulative usage snapshot may be observed exactly at end after traffic
+// has stopped. Later snapshots are always rejected.
+func validUsageObservation(startedAt, periodEndsAt, observedAt time.Time) bool {
+	return !observedAt.Before(startedAt) && !observedAt.After(periodEndsAt)
 }

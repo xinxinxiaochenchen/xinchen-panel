@@ -78,6 +78,11 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 	if err != nil {
 		return err
 	}
+	usage, err := agentclient.NewFileUsageOutbox(cfg.StateFile + ".usage.json")
+	if err != nil {
+		return fmt.Errorf("open Agent usage outbox: %w", err)
+	}
+	defer usage.Close()
 	var proxyTLS *tls.Config
 	if cfg.ProxyCertFile != "" {
 		proxyPair, err := tls.LoadX509KeyPair(cfg.ProxyCertFile, cfg.ProxyKeyFile)
@@ -87,7 +92,7 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 		proxyTLS = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{proxyPair}}
 	}
 	client, err := agentclient.New(agentclient.Config{URL: cfg.StreamURL, NodeID: cfg.NodeID,
-		Version: cfg.Version, RootCAs: roots, Certificate: pair, ProxyReady: proxyTLS != nil},
+		Version: cfg.Version, RootCAs: roots, Certificate: pair, ProxyReady: proxyTLS != nil, UsageOutbox: usage},
 		func() agentclient.Runtime {
 			return agentruntime.New(agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS})
 		}, state)

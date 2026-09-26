@@ -47,6 +47,12 @@ func TestPostgresBillingLedger(t *testing.T) {
 	frozen, _ := json.Marshal(map[string]any{"plan_name": "Frozen Plan", "quota_bytes": 1000, "default_multiplier_milli": 500, "resource_group_ids": []string{group}, "line_ids": []string{}, "limits": map[string]int{"max_hops": 1}})
 	membership := add(`INSERT INTO memberships(id,user_id,plan_id,starts_at,ends_at,status,anchor_day,timezone,snapshot_json) VALUES(gen_random_uuid(),$1,$2,'2025-01-31 00:00:00+00','2025-06-01 00:00:00+00','active',31,'UTC',$3) RETURNING id::text`, owner, plan, frozen)
 	repo := NewPostgresRepository(pool)
+	if mapped, err := repo.AgentIDForNode(ctx, node); err != nil || mapped != agent {
+		t.Fatalf("authenticated node mapped to Agent %q: %v", mapped, err)
+	}
+	if _, err := repo.AgentIDForNode(ctx, "00000000-0000-4000-8000-000000000099"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown authenticated node: %v", err)
+	}
 	at := instant(t, "2025-02-01T00:00:00Z")
 	var wg sync.WaitGroup
 	results := make(chan Period, 8)
@@ -222,5 +228,20 @@ func TestPostgresBillingLedger(t *testing.T) {
 	}
 	if _, err := pool.Exec(ctx, `DELETE FROM usage_events WHERE connection_id=$1`, connectionID); err == nil {
 		t.Fatal("ledger should reject deletes")
+	}
+	// The final counter snapshot is taken when the old period closes. It
+	// accounts for bytes already relayed before that boundary.
+	boundaryStart := period.EndsAt.Add(-15 * time.Second)
+	boundaryLease := add(`INSERT INTO quota_leases(id,billing_period_id,agent_id,request_id,requested_bytes,granted_bytes,issued_at,expires_at)
+ VALUES(gen_random_uuid(),$1,$2,gen_random_uuid(),100,100,$3,$4) RETURNING id::text`, period.ID, agent, boundaryStart, period.EndsAt)
+	exec(`UPDATE billing_periods SET reserved_bytes=reserved_bytes+100 WHERE id=$1`, period.ID)
+	boundaryConnection := "00000000-0000-4000-8000-000000000003"
+	if err := repo.RegisterConnection(ctx, Connection{ID: boundaryConnection, PeriodID: period.ID, LeaseID: boundaryLease,
+		AgentID: agent, IngressNodeID: node, MultiplierMilli: 2000, StartedAt: boundaryStart}); err != nil {
+		t.Fatalf("register boundary connection: %v", err)
+	}
+	if _, err := repo.RecordUsage(ctx, agent, UsageReport{ConnectionID: boundaryConnection, LeaseID: boundaryLease,
+		Sequence: 1, Counters: Counters{UploadedBytes: 5}, ObservedAt: period.EndsAt}); err != nil {
+		t.Fatalf("record final boundary snapshot: %v", err)
 	}
 }

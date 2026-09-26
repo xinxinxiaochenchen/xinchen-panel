@@ -257,6 +257,12 @@ WHERE node_id=$1 AND revision=$2 FOR UPDATE`, nodeID, revision).Scan(&storedDige
 		if status != "applied" {
 			return ErrResultConflict
 		}
+		// Re-enrollment resets the Agent's applied pointer while preserving
+		// historical revisions. A fresh process ACKing the same digest restores
+		// its current execution state without changing the immutable revision.
+		if _, err := tx.Exec(ctx, `UPDATE agents SET applied_revision=GREATEST(applied_revision,$2) WHERE node_id=$1`, nodeID, revision); err != nil {
+			return fmt.Errorf("restore agent applied revision: %w", err)
+		}
 		return tx.Commit(ctx)
 	}
 	if status == "applied" {

@@ -150,6 +150,17 @@ VALUES (gen_random_uuid(),$1,'Revision rule',$2,24000,'example.org',443,'TCP') R
 	if err := pool.QueryRow(ctx, `SELECT applied_revision FROM agents WHERE node_id=$1`, nodeID).Scan(&applied); err != nil || applied != 2 {
 		t.Fatalf("applied revision = %d, %v", applied, err)
 	}
+	// Re-enrollment retains the stable Agent and stored revision, but resets
+	// applied_revision until the newly connected process ACKs its snapshot.
+	if _, err := pool.Exec(ctx, `UPDATE agents SET applied_revision=0 WHERE node_id=$1`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordResult(ctx, nodeID, 2, second.Digest, "applied", "", ""); err != nil {
+		t.Fatalf("re-enrollment ACK: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT applied_revision FROM agents WHERE node_id=$1`, nodeID).Scan(&applied); err != nil || applied != 2 {
+		t.Fatalf("re-enrollment did not restore applied revision: %d, %v", applied, err)
+	}
 	if err := repo.RecordResult(ctx, nodeID, 1, first.Digest, "rejected", "BIND_FAILED", "old result"); !errors.Is(err, ErrResultConflict) {
 		t.Fatalf("stale conflicting NACK = %v", err)
 	}

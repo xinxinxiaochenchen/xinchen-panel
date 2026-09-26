@@ -49,6 +49,17 @@ Files: `internal/agentproto`, `agentclient`, `agentruntime`, `orchestration`, Ag
 - [ ] 上传+下载首入口计量、有限租约、超额停止、连接跨账期终止/重建；用量 outbox 持久化及断线重放。
 - [ ] 真实 TCP/UDP/Trojan 套接字验证额度耗尽、断线、重启恢复及报告丢失重试。
 
+### Task 4a: 报告传输与持久化（2026-09-26）
+
+- [x] `usage_batch` / `usage_ack` 严格字段和限长校验，批次摘要，认证节点映射为 Agent 身份后调用幂等账本。
+- [x] 0600 文件 outbox、原子落盘、排他锁、重启恢复、匹配 ACK 删除、容量及 IO 故障时拒绝续写。
+- [x] mTLS WebSocket 断线重放、持续用量发送、配置续租与 ACK 交错处理；首次配置应用前等待历史报告对账。
+- [x] 配置租约独立到期关闭；修复重入网后相同配置 ACK 不恢复 applied revision，以及旧账期截止时刻最终报告被拒绝。
+- [ ] 连接准入/租约申请与结算协议：从资源和已应用 revision 得到用户及账期，不接受 Agent 指定归属。
+- [ ] TCP/UDP/Trojan 首入口双向计量、本地额度执行、持久化未结租约及崩溃恢复。
+
+协议与剩余边界见 `docs/agent-usage-protocol.md`。报告链路已接入启动程序，但执行器尚不产生报告，不能以此宣称 Task 4 完成或开放真实代理。
+
 ## Task 5: REST、报表与控制台
 
 Files: billing handlers, `api/openapi/control-plane.yaml`, `apps/web`.

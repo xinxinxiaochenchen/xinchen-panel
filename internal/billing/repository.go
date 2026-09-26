@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"strings"
@@ -11,6 +12,18 @@ import (
 )
 
 type PostgresRepository struct{ pool *pgxpool.Pool }
+
+// AgentIDForNode maps an authenticated certificate node to its stable Agent
+// database identity. Historical usage is accepted after resource changes;
+// RecordUsage verifies the frozen connection belongs to this Agent.
+func (r *PostgresRepository) AgentIDForNode(ctx context.Context, nodeID string) (string, error) {
+	if !uuidPattern.MatchString(nodeID) {
+		return "", ErrNotFound
+	}
+	var agentID string
+	err := r.pool.QueryRow(ctx, `SELECT id::text FROM agents WHERE node_id=$1`, nodeID).Scan(&agentID)
+	return agentID, databaseError(err)
+}
 
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
