@@ -6,6 +6,10 @@ import { PreviewHome } from '../features/preview/PreviewHome'
 import { ModulePreview } from '../features/preview/ModulePreview'
 import { DashboardHome } from '../features/dashboard/DashboardHome'
 import { SignIn } from '../features/dashboard/SignIn'
+import { CatalogDirectory } from '../features/catalog/CatalogDirectory'
+import { ForwardDirectory } from '../features/catalog/ForwardDirectory'
+import { SubscriptionDirectory } from '../features/catalog/SubscriptionDirectory'
+import { RoutingDirectory } from '../features/catalog/RoutingDirectory'
 import { useViewer } from '../lib/useViewer'
 
 function readTheme(): 'light' | 'dark' {
@@ -94,7 +98,12 @@ export function App() {
           : viewer.kind === 'checking' ? <div className="page-state" role="status">正在检查安全会话…</div>
           : viewer.kind === 'error' ? <div className="page-state" role="alert">{viewer.message}<button type="button" onClick={refresh}>重试</button></div>
           : viewer.kind === 'guest' ? <SignIn onSignedIn={refresh} />
-          : sectionId === 'home' || sectionId === 'account' ? <DashboardHome user={viewer.user} /> : <ModulePreview section={selected} signedIn />}
+          : sectionId === 'home' || sectionId === 'account' ? <DashboardHome user={viewer.user} />
+          : sectionId === 'nodes' || sectionId === 'lines' ? <CatalogDirectory section={selected} user={viewer.user} />
+          : sectionId === 'forward' ? <ForwardDirectory section={selected} user={viewer.user} />
+          : sectionId === 'subscriptions' ? <SubscriptionDirectory section={selected} user={viewer.user} />
+          : sectionId === 'routing' ? <RoutingDirectory section={selected} user={viewer.user} />
+          : <ModulePreview section={selected} signedIn />}
         {signOutError && <div className="global-error" role="alert">{signOutError}</div>}
       </main>
 

@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户创建和密码轮换、资源组和节点目录、单跳线路、直达转发规则、套餐和订购授权 API、Agent 入网与配置流，以及纯 IP 只读预览页。代理连接的凭据与管理 API 已在开发分支实现，数据面下发与执行、订阅、分流和计费尚未实现；当前服务器尚未启用 Agent TLS 和实际转发。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。纯 IP 预览继续关闭浏览器认证和 Agent TLS；真实节点数据面仍需在安全域名和 Agent 入网后验收。
 
 ## 本地运行
 

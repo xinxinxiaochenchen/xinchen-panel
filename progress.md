@@ -72,3 +72,11 @@
 - Mihomo 导出按优先级生成域名、后缀、IP、CIDR、GeoIP 规则及 fallback；sing-box 导出域名、后缀、IP、CIDR 规则。GeoSite 暂无受控数据源，两个格式均明确拒绝；sing-box GeoIP 同样明确拒绝。线路动作必须在本次订阅实际可用目标中找到对应线路，Profile 停用或线路缺失时不导出错误配置。
 - 全量 Go 测试、vet、前端测试/类型检查/构建及 OpenAPI YAML 解析通过。服务器独立 PostgreSQL 16 测试库完成迁移 1–15、订阅生命周期测试和迁移 15 down/up，测试库已删除。
 - 已通过 Termark 发布到 `us dmit` 的 `/opt/network-control-plane/releases/preview-routing-20260926`；正式预览库升级前备份 `/opt/network-control-plane/backups/ncp-before-routing-20260926.dump`（0600），迁移版本 15。API/DB 健康且重启 0；公网纯 IP 首页和就绪接口 200，登录 404。HTTPS 域名、浏览器认证、Agent 入网和真实节点端到端验收仍待完成。
+
+## 2026-09-26 控制台操作页
+
+- 登录后的节点与线路页接入真实分页 API；节点展示资源域、能力、地址、倍率、Agent 状态和心跳，线路展示拓扑、优先级、权重、倍率，并支持用户自有单跳线路创建、启停。
+- 转发页接入真实规则列表和创建向导，支持 TCP、UDP、BOTH、节点或公网目标、CSRF 和服务端错误反馈。
+- 订阅页接入代理连接、分流 Profile 和订阅管理；支持创建代理连接、凭据查看/轮换/启停、创建订阅、绑定 Profile、地址查看、Token 重置和订阅启停。凭据与 Token 仅在明确操作后显示，不写入浏览器存储。
+- 分流页接入 Profile 和规则创建/查看，支持 fallback、优先级、domain/domain_suffix/IP/CIDR/GeoIP/GeoSite；最终格式支持边界仍由服务端校验。
+- 新增前端分页、CSRF、权限/空状态测试；前端测试、类型检查和生产构建通过。纯 IP 预览已更新到 `/opt/network-control-plane/releases/subscriptions-ui-20260926`，迁移保持版本 15，公网首页/就绪 200，登录 404，API/DB healthy 且重启 0。
