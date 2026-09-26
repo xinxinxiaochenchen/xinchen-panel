@@ -131,3 +131,4 @@
 - 独立 PostgreSQL 16 测试库中的 Trojan TLS 代理验收通过：临时 proxy 节点及共享单跳线路下发配置版本 1；Trojan TCP CONNECT 到服务器 HTTP ready 接口得到 200；用量账本上传 79、下载 191、计费 270 字节。临时 API 容器、测试库、Agent 凭据和脚本已删除，正式库仍为 0 用户、0 节点、0 Agent。
 - 使用 Clash Verge 内置 Mihomo Meta `v1.19.31` 原生 `-t` 校验生成的 Clash 和 Mihomo YAML，两个配置均通过；新增可选 `CONTROL_TEST_MIHOMO_BINARY` 回归测试，未设置时跳过，不影响普通开发环境。
 - 下载并按 GitHub 官方 SHA-256 校验 sing-box `v1.12.0` macOS arm64 发布包；用原生 `sing-box check` 验证默认、分流和阻断 fallback 三种生成 JSON，全部通过。新增可选 `CONTROL_TEST_SING_BOX_BINARY` 回归测试。
+- 修复线路管理页面的权限路径缺口：管理员现在可以在共享线路卡片上启停 `/api/v1/admin/lines/{id}`，普通用户仍只能启停自己的 `/api/v1/lines/{id}`；新增路径选择回归测试。前端 21 项测试和生产构建通过。

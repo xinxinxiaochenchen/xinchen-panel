@@ -5,6 +5,7 @@ import { capabilityLabel, loadCatalogPage, nodeStatusLabel, type CatalogPage, ty
 import type { User } from '../../lib/dashboard'
 import { CreateLine, csrfToken } from './CreateLine'
 import { mutateCatalog } from '../../lib/catalog'
+import { lineTogglePath } from './lineAccess'
 
 function DataState<T>({ state, empty }: { state: CatalogResource<T>; empty: string }) {
   if (state.kind === 'loading') return <div className="catalog-state" role="status">正在加载资源…</div>
@@ -36,13 +37,14 @@ function NodeCard({ node }: { node: NodeRecord }) {
 
 function LineCard({ line, user, onChanged }: { line: LineRecord; user: User; onChanged: () => void }) {
   const multiplier = line.multiplier_milli == null ? '套餐倍率' : `×${(line.multiplier_milli / 1000).toFixed(2)}`
-  const canToggle = line.owner_user_id === user.id && user.permissions.includes('lines.write.self')
+  const togglePath = lineTogglePath(line, user)
+  const canToggle = togglePath !== null
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function toggle() {
     setBusy(true)
     setError('')
-    const result = await mutateCatalog<LineRecord>(`/api/v1/lines/${line.id}`, 'PATCH', { enabled: !line.enabled }, csrfToken())
+    const result = await mutateCatalog<LineRecord>(togglePath!, 'PATCH', { enabled: !line.enabled }, csrfToken())
     setBusy(false)
     if (result.kind === 'error') setError(result.message)
     else onChanged()

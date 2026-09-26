@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAllCatalogPages, loadCatalogPage, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
+import { lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 
 test('catalog page sends opaque cursor without exposing another resource path', async () => {
   const calls: string[] = []
@@ -43,4 +44,16 @@ test('catalog option loader follows all cursor pages', async () => {
   assert.equal(result.kind, 'ready')
   if (result.kind === 'ready') assert.deepEqual(result.data.map((item) => item.id), ['one', 'two'])
   assert.equal(calls.length, 2)
+})
+
+test('line toggle uses shared administrator route and owner scoped route', () => {
+  const shared = { id: 'shared-id', owner_user_id: null }
+  const own = { id: 'own-id', owner_user_id: 'member-id' }
+  const admin = { id: 'admin-id', permissions: ['lines.write', 'lines.write.self'] }
+  const member = { id: 'member-id', permissions: ['lines.write.self'] }
+  assert.equal(lineTogglePath(shared, admin), '/api/v1/admin/lines/shared-id')
+  assert.equal(lineTogglePath(own, member), '/api/v1/lines/own-id')
+  assert.equal(lineTogglePath(shared, member), null)
+  assert.equal(lineTogglePath({ id: 'foreign-id', owner_user_id: 'other-id' }, admin), null)
+  assert.equal(lineTogglePath({ id: 'line/a', owner_user_id: null }, admin), '/api/v1/admin/lines/line%2Fa')
 })
