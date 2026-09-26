@@ -18,9 +18,9 @@ func NewAgentPresenceRepository(pool *pgxpool.Pool) *AgentPresenceRepository {
 	return &AgentPresenceRepository{pool: pool}
 }
 
-func (r *AgentPresenceRepository) MarkOnline(ctx context.Context, nodeID, version string) error {
-	result, err := r.pool.Exec(ctx, `UPDATE agents a SET status='online',version=$2,last_seen_at=clock_timestamp()
-FROM nodes n WHERE a.node_id=$1 AND n.id=a.node_id AND n.enabled AND a.status <> 'revoked'`, nodeID, version)
+func (r *AgentPresenceRepository) MarkOnline(ctx context.Context, nodeID, version string, capabilities []string) error {
+	result, err := r.pool.Exec(ctx, `UPDATE agents a SET status='online',version=$2,capabilities=$3,last_seen_at=clock_timestamp()
+FROM nodes n WHERE a.node_id=$1 AND n.id=a.node_id AND n.enabled AND a.status <> 'revoked'`, nodeID, version, capabilities)
 	if err != nil {
 		return fmt.Errorf("mark Agent online: %w", err)
 	}

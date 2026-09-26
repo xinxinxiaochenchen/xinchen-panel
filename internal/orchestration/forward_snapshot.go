@@ -15,6 +15,8 @@ type NodeFacts struct {
 	Enabled        bool
 	GroupEnabled   bool
 	ForwardCapable bool
+	ProxyCapable   bool
+	ProxyPort      int
 }
 
 // ForwardFacts contains current authorization and target facts for one rule.
@@ -94,6 +96,10 @@ func CompileForwardSnapshot(node NodeFacts, facts []ForwardFacts, revision uint6
 			if !fact.TCPPolicyAllowed || !fact.UDPPolicyAllowed {
 				continue
 			}
+		}
+		if node.ProxyCapable && fact.IngressPort == node.ProxyPort && (fact.Protocol == "TCP" || fact.Protocol == "BOTH") {
+			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "port reserved for proxy TLS listener"})
+			continue
 		}
 		rule := agentruntime.Rule{ID: fact.ID, IngressPort: fact.IngressPort,
 			TargetHost: fact.TargetHost, TargetPort: fact.TargetPort, Protocol: fact.Protocol, Enabled: true}

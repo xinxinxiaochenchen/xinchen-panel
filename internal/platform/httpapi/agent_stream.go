@@ -8,11 +8,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	"controlplane/internal/agentidentity"
 	"controlplane/internal/agentproto"
+	"controlplane/internal/agentruntime"
 	"controlplane/internal/orchestration"
 	"controlplane/internal/platform/id"
 	"github.com/coder/websocket"
@@ -28,7 +30,7 @@ type AgentStreamRevisions interface {
 }
 
 type AgentStreamPresence interface {
-	MarkOnline(context.Context, string, string) error
+	MarkOnline(context.Context, string, string, []string) error
 	RecordHeartbeat(context.Context, string, agentproto.Heartbeat) error
 	MarkOffline(context.Context, string) error
 }
@@ -42,6 +44,7 @@ type AgentStreamHandler struct {
 	mu           sync.Mutex
 	active       map[string]*websocket.Conn
 	pollEvery    time.Duration
+	renewEvery   time.Duration
 	recheckEvery time.Duration
 }
 
@@ -49,6 +52,7 @@ func NewAgentStreamHandler(parent context.Context, logger *slog.Logger, auth Age
 	revisions AgentStreamRevisions, presence AgentStreamPresence) *AgentStreamHandler {
 	return &AgentStreamHandler{parent: parent, logger: logger, auth: auth, revisions: revisions,
 		presence: presence, active: make(map[string]*websocket.Conn), pollEvery: 3 * time.Second,
+		renewEvery:   time.Minute,
 		recheckEvery: 15 * time.Second}
 }
 
@@ -116,8 +120,15 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 	if err != nil {
 		return err
 	}
-	if err := s.presence.MarkOnline(ctx, nodeID, hello.AgentVersion); err != nil {
+	if err := s.presence.MarkOnline(ctx, nodeID, hello.AgentVersion, hello.Capabilities); err != nil {
 		return err
+	}
+	if reconciler, ok := s.revisions.(interface {
+		Reconcile(context.Context, string) (orchestration.DesiredRevision, bool, error)
+	}); ok {
+		if _, _, err := reconciler.Reconcile(ctx, nodeID); err != nil {
+			return err
+		}
 	}
 	s.mu.Lock()
 	previous := s.active[nodeID]
@@ -143,7 +154,8 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 	}()
 	appliedRevision := hello.AppliedRevision
 	lastSent := int64(0)
-	if err := s.sendDesired(ctx, connection, nodeID, appliedRevision, &lastSent); err != nil {
+	var lastRenewed time.Time
+	if err := s.sendDesired(ctx, connection, nodeID, hello.Capabilities, appliedRevision, &lastSent, &lastRenewed); err != nil {
 		return err
 	}
 	incoming := make(chan agentIncoming, 1)
@@ -210,7 +222,7 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 				return errors.New("Agent sent unsupported stream message")
 			}
 		case <-poll.C:
-			if err := s.sendDesired(ctx, connection, nodeID, appliedRevision, &lastSent); err != nil {
+			if err := s.sendDesired(ctx, connection, nodeID, hello.Capabilities, appliedRevision, &lastSent, &lastRenewed); err != nil {
 				return err
 			}
 		case <-recheck.C:
@@ -224,7 +236,7 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 	}
 }
 
-func (s *AgentStreamHandler) sendDesired(ctx context.Context, connection *websocket.Conn, nodeID string, applied int64, lastSent *int64) error {
+func (s *AgentStreamHandler) sendDesired(ctx context.Context, connection *websocket.Conn, nodeID string, capabilities []string, applied int64, lastSent *int64, lastRenewed *time.Time) error {
 	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	desired, err := s.revisions.Desired(queryCtx, nodeID)
 	cancel()
@@ -234,11 +246,22 @@ func (s *AgentStreamHandler) sendDesired(ctx context.Context, connection *websoc
 	if err != nil {
 		return err
 	}
-	if (desired.Revision <= applied && desired.Status == "applied") || desired.Revision <= *lastSent {
+	// Re-send the current revision periodically to renew the Agent's short
+	// execution lease. The Agent closes listeners if renewal stops.
+	if desired.Revision < 1 || desired.Revision < applied || (desired.Revision == *lastSent && time.Since(*lastRenewed) < s.renewEvery) {
+		return nil
+	}
+	if err := requireAgentSnapshotCapability(capabilities, desired.Snapshot); err != nil {
+		if desired.Revision != *lastSent {
+			if err := s.revisions.RecordResult(ctx, nodeID, desired.Revision, desired.Digest, "rejected", "CAPABILITY_UNAVAILABLE", "Agent proxy TLS capability is not ready"); err != nil {
+				return err
+			}
+			*lastSent = desired.Revision
+		}
 		return nil
 	}
 	payload, err := json.Marshal(agentproto.ConfigSnapshot{Revision: desired.Revision, SHA256: desired.Digest,
-		ValidUntil: time.Now().Add(5 * time.Minute), ForwardConfig: desired.Snapshot.Rules})
+		ValidUntil: time.Now().Add(5 * time.Minute), ForwardConfig: desired.Snapshot.Rules, ProxyConfig: desired.Snapshot.ProxyConfig})
 	if err != nil {
 		return err
 	}
@@ -259,6 +282,14 @@ func (s *AgentStreamHandler) sendDesired(ctx context.Context, connection *websoc
 		return err
 	}
 	*lastSent = desired.Revision
+	*lastRenewed = time.Now()
+	return nil
+}
+
+func requireAgentSnapshotCapability(capabilities []string, snapshot agentruntime.Snapshot) error {
+	if len(snapshot.ProxyConfig) > 0 && !slices.Contains(capabilities, "proxy") {
+		return errors.New("Agent proxy TLS capability is not ready")
+	}
 	return nil
 }
 

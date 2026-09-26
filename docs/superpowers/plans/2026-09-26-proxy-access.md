@@ -31,12 +31,21 @@
 **Files:** `internal/platform/httpapi/proxy_access*.go`, `cmd/control-plane/main.go`, `internal/orchestration/*`, `internal/agentproto/*`, `internal/agentruntime/*`, `cmd/agent/*`, `api/openapi/control-plane.yaml`.
 
 - [x] Test REST ownership, RBAC, CSRF, no-cache credential reads, rotation and error mapping.
-- [ ] Test node-scoped proxy snapshot compilation, ACL revocation, digest and ACK/NACK behavior; extend protocol with proxy configuration.
-- [ ] Test TLS Trojan CONNECT against a real local socket using a generated cert; reject unknown credentials, invalid frames, unauthorized targets and expired membership/lease.
-- [ ] Wire Agent runtime, logs, configuration and Docker deployment without exposing browser secrets on the pure HTTP preview.
+- [x] Test node-scoped proxy snapshot compilation, ACL revocation, digest and ACK/NACK behavior; extend protocol with proxy configuration.
+- [x] Test TLS Trojan CONNECT against a real local socket using a generated cert; reject unknown credentials, unsupported commands, unauthorized targets and expired membership/lease.
+- [x] Wire Agent runtime and private certificate configuration. Deliver encrypted credentials only to the owner; transmit hash-only proxy config over mTLS. The Agent fails closed on disconnect or expired execution lease.
+- [ ] Package and deploy this phase without exposing browser secrets on the pure HTTP preview.
 
 ### Task 4: Release verification
 
-- [ ] Run full Go tests, race tests, vet, OpenAPI parse and frontend build.
-- [ ] Test migration up/down and end-to-end Agent handshake in an isolated PostgreSQL 16 database.
+- [x] Run full Go tests, race tests, vet, OpenAPI parse and frontend build.
+- [x] Test migration up/down, ownership, concurrent lock order, proxy revision compilation, rotation and ACK/NACK in isolated PostgreSQL 16 databases.
+- [x] Test mTLS control-plane stream and real Agent runtime locally: apply proxy config, relay TLS Trojan TCP payload, ACK, revoke, disconnect the existing client and persist the new revision.
 - [ ] Back up the formal database, deploy via Termark, verify health and public HTTP auth closure, and record exact remaining MVP gaps.
+
+## Release boundaries
+
+- This adapter supports Trojan TCP CONNECT with public destinations only. Trojan UDP, multi-hop proxying, usage accounting and quota leases remain outside this phase.
+- Each proxy node uses a TLS listener on its configured proxy port, including 443 when the Agent has bind permission. Its certificate and private key are configured on the Agent separately from the control-channel mTLS client identity.
+- Config snapshots have a five-minute execution lease, renewed every minute. Membership expiry is also enforced locally for each proxy session. The execution lease is distinct from the planned billable-byte quota lease.
+- The public HTTP preview keeps browser authentication closed and has no live user/Agent credentials. Actual server data-plane activation follows quota enforcement and a controlled deployment test.

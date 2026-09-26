@@ -14,14 +14,16 @@ var agentUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 var agentVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 
 type AgentConfig struct {
-	StreamURL  string
-	NodeID     string
-	Version    string
-	CACertFile string
-	CertFile   string
-	KeyFile    string
-	StateFile  string
-	BindHost   string
+	StreamURL     string
+	NodeID        string
+	Version       string
+	CACertFile    string
+	CertFile      string
+	KeyFile       string
+	StateFile     string
+	BindHost      string
+	ProxyCertFile string
+	ProxyKeyFile  string
 }
 
 func LoadAgentConfig(lookup func(string) (string, bool)) (AgentConfig, error) {
@@ -72,6 +74,20 @@ func LoadAgentConfig(lookup func(string) (string, bool)) (AgentConfig, error) {
 			return AgentConfig{}, errors.New("CONTROL_AGENT_BIND_HOST must be an IP address")
 		}
 		cfg.BindHost = value
+	}
+	cfg.ProxyCertFile, _ = lookup("CONTROL_AGENT_PROXY_CERT_FILE")
+	cfg.ProxyKeyFile, _ = lookup("CONTROL_AGENT_PROXY_KEY_FILE")
+	if cfg.ProxyCertFile != "" || cfg.ProxyKeyFile != "" {
+		for _, path := range []string{cfg.ProxyCertFile, cfg.ProxyKeyFile} {
+			info, err := os.Stat(path)
+			if !filepath.IsAbs(path) || err != nil || !info.Mode().IsRegular() {
+				return AgentConfig{}, errors.New("proxy TLS certificate and key require absolute regular files")
+			}
+		}
+		info, err := os.Stat(cfg.ProxyKeyFile)
+		if err != nil || info.Mode().Perm()&0077 != 0 {
+			return AgentConfig{}, errors.New("proxy TLS private key must be readable only by owner")
+		}
 	}
 	return cfg, nil
 }

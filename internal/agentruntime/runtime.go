@@ -2,8 +2,10 @@ package agentruntime
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"strconv"
@@ -16,6 +18,7 @@ type DialFunc func(context.Context, string) (net.Conn, error)
 
 type Options struct {
 	BindHost             string
+	ProxyTLSConfig       *tls.Config
 	Resolve              Resolver
 	DialTCP              DialFunc
 	DialUDP              DialFunc
@@ -30,6 +33,7 @@ type Runtime struct {
 	mu        sync.Mutex
 	options   Options
 	listeners map[listenerKey]*endpoint
+	proxies   map[int]*proxyEndpoint
 	revision  uint64
 	closed    bool
 	closeDone chan struct{}
@@ -86,7 +90,8 @@ func New(options Options) *Runtime {
 	if options.TCPDrainTimeout <= 0 {
 		options.TCPDrainTimeout = 30 * time.Second
 	}
-	return &Runtime{options: options, listeners: make(map[listenerKey]*endpoint), closeDone: make(chan struct{})}
+	return &Runtime{options: options, listeners: make(map[listenerKey]*endpoint),
+		proxies: make(map[int]*proxyEndpoint), closeDone: make(chan struct{})}
 }
 
 func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
@@ -102,13 +107,42 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 	if snapshot.Revision <= r.revision {
 		return fmt.Errorf("stale forward snapshot revision %d", snapshot.Revision)
 	}
+	wantedProxies := make(map[int]map[string]ProxyAccess)
+	for _, access := range snapshot.ProxyConfig {
+		if wantedProxies[access.IngressPort] == nil {
+			wantedProxies[access.IngressPort] = make(map[string]ProxyAccess)
+		}
+		wantedProxies[access.IngressPort][access.CredentialHash] = access
+	}
+	if len(wantedProxies) > 0 && (r.options.ProxyTLSConfig == nil ||
+		len(r.options.ProxyTLSConfig.Certificates) == 0) {
+		return errors.New("proxy TLS certificate is not configured")
+	}
 	staged := make(map[listenerKey]*endpoint)
+	stagedProxies := make(map[int]*proxyEndpoint)
 	defer func() {
 		for _, listener := range staged {
 			listener.close()
 		}
+		for _, listener := range stagedProxies {
+			listener.close()
+		}
 	}()
 	listen := net.ListenConfig{}
+	for port, accesses := range wantedProxies {
+		if _, exists := r.proxies[port]; exists {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		address := net.JoinHostPort(r.options.BindHost, strconv.Itoa(port))
+		raw, err := listen.Listen(ctx, "tcp", address)
+		if err != nil {
+			return fmt.Errorf("bind proxy TLS port %d: %w", port, err)
+		}
+		stagedProxies[port] = newProxyEndpoint(tls.NewListener(raw, r.options.ProxyTLSConfig), accesses)
+	}
 	for key, destination := range wanted {
 		if _, exists := r.listeners[key]; exists {
 			continue
@@ -136,6 +170,28 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	for port, listener := range r.proxies {
+		accesses, keep := wantedProxies[port]
+		if !keep {
+			listener.close()
+			delete(r.proxies, port)
+			continue
+		}
+		listener.mu.Lock()
+		if !maps.Equal(listener.accesses, accesses) {
+			listener.accesses = accesses
+			for session, previous := range listener.sessions {
+				if previous.ID == "" {
+					continue
+				}
+				current, allowed := accesses[previous.CredentialHash]
+				if !allowed || current != previous {
+					session.close()
+				}
+			}
+		}
+		listener.mu.Unlock()
+	}
 	for key, listener := range r.listeners {
 		destination, keep := wanted[key]
 		if !keep {
@@ -160,6 +216,12 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 		}
 		delete(staged, key)
 	}
+	for port, listener := range stagedProxies {
+		r.proxies[port] = listener
+		r.loops.Add(1)
+		go r.serveProxy(listener)
+		delete(stagedProxies, port)
+	}
 	r.revision = snapshot.Revision
 	return nil
 }
@@ -181,6 +243,10 @@ func (r *Runtime) Close() error {
 	for key, listener := range r.listeners {
 		listener.close()
 		delete(r.listeners, key)
+	}
+	for port, listener := range r.proxies {
+		listener.close()
+		delete(r.proxies, port)
 	}
 	r.mu.Unlock()
 	r.loops.Wait()

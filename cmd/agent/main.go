@@ -78,9 +78,19 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 	if err != nil {
 		return err
 	}
+	var proxyTLS *tls.Config
+	if cfg.ProxyCertFile != "" {
+		proxyPair, err := tls.LoadX509KeyPair(cfg.ProxyCertFile, cfg.ProxyKeyFile)
+		if err != nil {
+			return fmt.Errorf("load proxy TLS certificate: %w", err)
+		}
+		proxyTLS = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{proxyPair}}
+	}
 	client, err := agentclient.New(agentclient.Config{URL: cfg.StreamURL, NodeID: cfg.NodeID,
-		Version: cfg.Version, RootCAs: roots, Certificate: pair},
-		func() agentclient.Runtime { return agentruntime.New(agentruntime.Options{BindHost: cfg.BindHost}) }, state)
+		Version: cfg.Version, RootCAs: roots, Certificate: pair, ProxyReady: proxyTLS != nil},
+		func() agentclient.Runtime {
+			return agentruntime.New(agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS})
+		}, state)
 	if err != nil {
 		return err
 	}

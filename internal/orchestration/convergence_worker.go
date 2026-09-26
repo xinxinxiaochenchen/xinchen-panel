@@ -41,7 +41,7 @@ func (w *ConvergenceWorker) ProcessOne(ctx context.Context) (bool, error) {
 	var retries int
 	err = tx.QueryRow(ctx, `SELECT id::text,kind,payload,retry_count FROM outbox_events
 WHERE processed_at IS NULL AND available_at <= now()
-AND kind IN ('forward_rule.changed','forward_policy.changed')
+AND kind IN ('forward_rule.changed','forward_policy.changed','proxy_access.changed')
 ORDER BY available_at,created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&eventID, &kind, &payload, &retries)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
@@ -82,7 +82,7 @@ func retryDelaySeconds(attempt int) int {
 }
 
 func (w *ConvergenceWorker) reconcileEvent(ctx context.Context, tx pgx.Tx, kind string, payload []byte) error {
-	if kind == "forward_rule.changed" {
+	if kind == "forward_rule.changed" || kind == "proxy_access.changed" {
 		var event struct {
 			NodeID string `json:"node_id"`
 		}

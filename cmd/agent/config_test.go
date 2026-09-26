@@ -30,6 +30,20 @@ func TestLoadAgentConfigRequiresSecurePathsAndWSS(t *testing.T) {
 	if err != nil || loaded.NodeID != values["CONTROL_AGENT_NODE_ID"] || loaded.BindHost != "0.0.0.0" {
 		t.Fatalf("valid config = %+v, %v", loaded, err)
 	}
+	values["CONTROL_AGENT_PROXY_CERT_FILE"] = write("proxy.pem", 0644)
+	values["CONTROL_AGENT_PROXY_KEY_FILE"] = write("proxy.key", 0600)
+	loaded, err = LoadAgentConfig(lookup)
+	if err != nil || loaded.ProxyCertFile != values["CONTROL_AGENT_PROXY_CERT_FILE"] {
+		t.Fatalf("valid proxy TLS config = %+v, %v", loaded, err)
+	}
+	if err := os.Chmod(values["CONTROL_AGENT_PROXY_KEY_FILE"], 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadAgentConfig(lookup); err == nil {
+		t.Fatal("world-readable proxy private key accepted")
+	}
+	delete(values, "CONTROL_AGENT_PROXY_CERT_FILE")
+	delete(values, "CONTROL_AGENT_PROXY_KEY_FILE")
 	values["CONTROL_AGENT_STREAM_URL"] = "ws://127.0.0.1:18443/api/v1/agent/stream"
 	if _, err := LoadAgentConfig(lookup); err == nil {
 		t.Fatal("plaintext Agent stream accepted")

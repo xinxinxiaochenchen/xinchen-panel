@@ -37,7 +37,7 @@ VALUES (gen_random_uuid(),$1,'Presence node','US',gen_random_uuid()::text || '.e
 	}
 	defer pool.Exec(ctx, `DELETE FROM agents WHERE node_id=$1`, nodeID)
 	repo := NewAgentPresenceRepository(pool)
-	if err := repo.MarkOnline(ctx, nodeID, "1.0.0"); err != nil {
+	if err := repo.MarkOnline(ctx, nodeID, "1.0.0", []string{"forward"}); err != nil {
 		t.Fatal(err)
 	}
 	heartbeat := agentproto.Heartbeat{UptimeSeconds: 30, CPUPct: 12.5, MemoryUsedBytes: 1024,
@@ -69,7 +69,7 @@ FROM agents a JOIN agent_metrics m ON m.node_id=a.node_id WHERE a.node_id=$1`, n
 	if _, err := pool.Exec(ctx, `UPDATE agents SET status='revoked' WHERE node_id=$1`, nodeID); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.MarkOnline(ctx, nodeID, "1.0.0"); !errors.Is(err, ErrAgentPresenceDenied) {
+	if err := repo.MarkOnline(ctx, nodeID, "1.0.0", []string{"forward"}); !errors.Is(err, ErrAgentPresenceDenied) {
 		t.Fatalf("revoked online = %v", err)
 	}
 	if err := repo.RecordHeartbeat(ctx, nodeID, heartbeat); !errors.Is(err, ErrAgentPresenceDenied) {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -65,7 +66,8 @@ func (r *RevisionRepository) reconcileOnce(ctx context.Context, nodeID string) (
 	}
 	defer tx.Rollback(ctx)
 	var current int64
-	if err := tx.QueryRow(ctx, `SELECT desired_revision FROM agents WHERE node_id=$1 FOR UPDATE`, nodeID).Scan(&current); err != nil {
+	var capabilities []string
+	if err := tx.QueryRow(ctx, `SELECT desired_revision,capabilities FROM agents WHERE node_id=$1 FOR UPDATE`, nodeID).Scan(&current, &capabilities); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DesiredRevision{}, false, ErrAgentNotFound
 		}
@@ -86,6 +88,18 @@ func (r *RevisionRepository) reconcileOnce(ctx context.Context, nodeID string) (
 	if err != nil {
 		return DesiredRevision{}, false, err
 	}
+	if node.Enabled && node.GroupEnabled && node.ProxyCapable && slices.Contains(capabilities, "proxy") {
+		proxyFacts, err := readProxyFacts(ctx, tx, nodeID)
+		if err != nil {
+			return DesiredRevision{}, false, err
+		}
+		proxyConfig, err := CompileProxySnapshot(node, proxyFacts, uint64(current)+1)
+		if err != nil {
+			return DesiredRevision{}, false, err
+		}
+		compiled.Snapshot.ProxyConfig = proxyConfig.Snapshot.ProxyConfig
+		compiled.Rejected = append(compiled.Rejected, proxyConfig.Rejected...)
+	}
 	payload, digest, err := CanonicalForwardPayload(compiled)
 	if err != nil {
 		return DesiredRevision{}, false, err
@@ -103,6 +117,11 @@ func (r *RevisionRepository) reconcileOnce(ctx context.Context, nodeID string) (
 			return DesiredRevision{}, false, err
 		}
 		if latest.Digest == digest {
+			if latest.Status == "applied" || latest.Status == "rejected" {
+				if err := recordProxyApplyStatus(ctx, tx, nodeID, current, payload, latest.Status, true); err != nil {
+					return DesiredRevision{}, false, err
+				}
+			}
 			if _, err := tx.Exec(ctx, `UPDATE config_revisions SET diagnostics_json=$3
 WHERE node_id=$1 AND revision=$2 AND diagnostics_json IS DISTINCT FROM $3::jsonb`, nodeID, current, diagnostics); err != nil {
 				return DesiredRevision{}, false, fmt.Errorf("refresh configuration diagnostics: %w", err)
@@ -121,8 +140,8 @@ WHERE node_id=$1 AND revision=$2 AND diagnostics_json IS DISTINCT FROM $3::jsonb
 		return DesiredRevision{}, false, errors.New("configuration revision exhausted")
 	}
 	next := current + 1
-	if _, err := tx.Exec(ctx, `INSERT INTO config_revisions(node_id,revision,sha256,payload_json,diagnostics_json)
-VALUES ($1,$2,$3,$4,$5)`, nodeID, next, digest, payload, diagnostics); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO config_revisions(node_id,revision,sha256,payload_json,diagnostics_json,created_at)
+VALUES ($1,$2,$3,$4,$5,clock_timestamp())`, nodeID, next, digest, payload, diagnostics); err != nil {
 		return DesiredRevision{}, false, fmt.Errorf("insert configuration revision: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE agents SET desired_revision=$2 WHERE node_id=$1`, nodeID, next); err != nil {
@@ -173,7 +192,8 @@ FROM config_revisions WHERE node_id=$1 AND revision=$2`, nodeID, revision).Scan(
 	}
 	value.AppliedAt = appliedAt
 	var executable struct {
-		ForwardConfig []agentruntime.Rule `json:"forward_config"`
+		ForwardConfig []agentruntime.Rule        `json:"forward_config"`
+		ProxyConfig   []agentruntime.ProxyAccess `json:"proxy_config,omitempty"`
 	}
 	if err := json.Unmarshal(payload, &executable); err != nil {
 		return DesiredRevision{}, fmt.Errorf("decode configuration revision: %w", err)
@@ -181,7 +201,7 @@ FROM config_revisions WHERE node_id=$1 AND revision=$2`, nodeID, revision).Scan(
 	if err := json.Unmarshal(diagnostics, &value.Diagnostics); err != nil {
 		return DesiredRevision{}, fmt.Errorf("decode configuration diagnostics: %w", err)
 	}
-	value.Snapshot = agentruntime.Snapshot{Revision: uint64(value.Revision), Rules: executable.ForwardConfig}
+	value.Snapshot = agentruntime.Snapshot{Revision: uint64(value.Revision), Rules: executable.ForwardConfig, ProxyConfig: executable.ProxyConfig}
 	return value, nil
 }
 
@@ -213,9 +233,10 @@ func (r *RevisionRepository) RecordResult(ctx context.Context, nodeID string, re
 		return ErrRevisionNotFound
 	}
 	var storedDigest, priorStatus string
+	var payload []byte
 	var priorCode, priorMessage *string
-	err = tx.QueryRow(ctx, `SELECT sha256,status,error_code,error_message FROM config_revisions
-WHERE node_id=$1 AND revision=$2 FOR UPDATE`, nodeID, revision).Scan(&storedDigest, &priorStatus, &priorCode, &priorMessage)
+	err = tx.QueryRow(ctx, `SELECT sha256,status,error_code,error_message,payload_json FROM config_revisions
+WHERE node_id=$1 AND revision=$2 FOR UPDATE`, nodeID, revision).Scan(&storedDigest, &priorStatus, &priorCode, &priorMessage, &payload)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrRevisionNotFound
 	}
@@ -250,6 +271,11 @@ WHERE node_id=$1 AND revision=$2`, nodeID, revision); err != nil {
 		if _, err := tx.Exec(ctx, `UPDATE config_revisions SET status='rejected',error_code=$3,error_message=$4
 WHERE node_id=$1 AND revision=$2`, nodeID, revision, code, message); err != nil {
 			return fmt.Errorf("mark configuration rejected: %w", err)
+		}
+	}
+	if revision == desired {
+		if err := recordProxyApplyStatus(ctx, tx, nodeID, revision, payload, status, false); err != nil {
+			return err
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

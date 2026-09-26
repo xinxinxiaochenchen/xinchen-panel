@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"regexp"
 	"strings"
+	"time"
 
 	"controlplane/internal/forward"
 )
@@ -20,9 +22,21 @@ type Rule struct {
 }
 
 type Snapshot struct {
-	Revision uint64 `json:"revision"`
-	Rules    []Rule `json:"forward_config"`
+	Revision    uint64        `json:"revision"`
+	Rules       []Rule        `json:"forward_config"`
+	ProxyConfig []ProxyAccess `json:"proxy_config,omitempty"`
 }
+
+type ProxyAccess struct {
+	ID             string    `json:"id"`
+	UserID         string    `json:"user_id"`
+	LineID         string    `json:"line_id"`
+	IngressPort    int       `json:"ingress_port"`
+	CredentialHash string    `json:"credential_hash"`
+	ExpiresAt      time.Time `json:"expires_at"`
+}
+
+var trojanHashPattern = regexp.MustCompile(`^[0-9a-f]{56}$`)
 
 type listenerKey struct {
 	protocol string
@@ -78,6 +92,26 @@ func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 			}
 			listeners[key] = target{host: rule.TargetHost, port: rule.TargetPort, id: rule.ID}
 		}
+	}
+	proxyIDs := make(map[string]struct{}, len(snapshot.ProxyConfig))
+	proxyHashes := make(map[string]struct{}, len(snapshot.ProxyConfig))
+	for _, access := range snapshot.ProxyConfig {
+		if access.ID == "" || access.UserID == "" || access.LineID == "" ||
+			access.ID != strings.TrimSpace(access.ID) || access.IngressPort < 1 || access.IngressPort > 65535 ||
+			!trojanHashPattern.MatchString(access.CredentialHash) || access.ExpiresAt.IsZero() {
+			return nil, errors.New("invalid proxy access configuration")
+		}
+		if _, found := proxyIDs[access.ID]; found {
+			return nil, errors.New("duplicate proxy access ID")
+		}
+		if _, found := proxyHashes[access.CredentialHash]; found {
+			return nil, errors.New("duplicate proxy credential hash")
+		}
+		if _, found := listeners[listenerKey{protocol: "TCP", port: access.IngressPort}]; found {
+			return nil, errors.New("proxy listener conflicts with forward TCP listener")
+		}
+		proxyIDs[access.ID] = struct{}{}
+		proxyHashes[access.CredentialHash] = struct{}{}
 	}
 	return listeners, nil
 }

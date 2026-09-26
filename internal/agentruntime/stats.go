@@ -20,5 +20,10 @@ func (r *Runtime) Stats() Stats {
 			listener.udpMu.Unlock()
 		}
 	}
+	for _, listener := range r.proxies {
+		listener.mu.Lock()
+		result.Connections += int64(len(listener.sessions))
+		listener.mu.Unlock()
+	}
 	return result
 }

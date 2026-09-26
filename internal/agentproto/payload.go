@@ -18,10 +18,11 @@ import (
 )
 
 type ConfigSnapshot struct {
-	Revision      int64               `json:"revision"`
-	SHA256        string              `json:"sha256"`
-	ValidUntil    time.Time           `json:"valid_until"`
-	ForwardConfig []agentruntime.Rule `json:"forward_config"`
+	Revision      int64                      `json:"revision"`
+	SHA256        string                     `json:"sha256"`
+	ValidUntil    time.Time                  `json:"valid_until"`
+	ForwardConfig []agentruntime.Rule        `json:"forward_config"`
+	ProxyConfig   []agentruntime.ProxyAccess `json:"proxy_config,omitempty"`
 }
 
 type ConfigResult struct {
@@ -38,22 +39,32 @@ var errorCodePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 // CanonicalForwardConfig is the one executable encoding used by the control
 // plane digest and by the Agent before applying a received snapshot.
 func CanonicalForwardConfig(input []agentruntime.Rule) ([]byte, string, error) {
+	return CanonicalConfig(input, nil)
+}
+
+// CanonicalConfig includes all executable configuration in one digest. Empty
+// proxy configuration is omitted so existing forward-only revisions retain
+// their wire encoding and checksum during an upgrade.
+func CanonicalConfig(input []agentruntime.Rule, proxyInput []agentruntime.ProxyAccess) ([]byte, string, error) {
 	rules := append([]agentruntime.Rule(nil), input...)
+	proxies := append([]agentruntime.ProxyAccess(nil), proxyInput...)
 	for _, rule := range rules {
 		if !rule.Enabled {
 			return nil, "", errors.New("executable forward config contains a disabled rule")
 		}
 	}
 	sort.Slice(rules, func(left, right int) bool { return rules[left].ID < rules[right].ID })
-	if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: 1, Rules: rules}); err != nil {
+	sort.Slice(proxies, func(left, right int) bool { return proxies[left].ID < proxies[right].ID })
+	if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: 1, Rules: rules, ProxyConfig: proxies}); err != nil {
 		return nil, "", err
 	}
 	if rules == nil {
 		rules = make([]agentruntime.Rule, 0)
 	}
 	payload, err := json.Marshal(struct {
-		ForwardConfig []agentruntime.Rule `json:"forward_config"`
-	}{ForwardConfig: rules})
+		ForwardConfig []agentruntime.Rule        `json:"forward_config"`
+		ProxyConfig   []agentruntime.ProxyAccess `json:"proxy_config,omitempty"`
+	}{ForwardConfig: rules, ProxyConfig: proxies})
 	if err != nil {
 		return nil, "", err
 	}
@@ -70,7 +81,7 @@ func DecodeConfigSnapshot(payload []byte, now time.Time) (ConfigSnapshot, error)
 		value.ValidUntil.IsZero() || !value.ValidUntil.After(now) {
 		return ConfigSnapshot{}, errors.New("invalid forward snapshot revision, digest or expiry")
 	}
-	_, digest, err := CanonicalForwardConfig(value.ForwardConfig)
+	_, digest, err := CanonicalConfig(value.ForwardConfig, value.ProxyConfig)
 	if err != nil {
 		return ConfigSnapshot{}, fmt.Errorf("invalid forward snapshot: %w", err)
 	}

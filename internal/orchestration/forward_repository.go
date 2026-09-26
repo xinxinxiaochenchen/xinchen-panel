@@ -51,9 +51,9 @@ func (r *ForwardSnapshotRepository) Compile(ctx context.Context, nodeID string, 
 func readForwardNode(ctx context.Context, tx pgx.Tx, nodeID string) (NodeFacts, error) {
 	var node NodeFacts
 	var capabilities []string
-	err := tx.QueryRow(ctx, `SELECT n.id::text,n.group_id::text,n.enabled,g.enabled,n.capabilities
+	err := tx.QueryRow(ctx, `SELECT n.id::text,n.group_id::text,n.enabled,g.enabled,n.capabilities,COALESCE(n.proxy_port,0)
 FROM nodes n JOIN resource_groups g ON g.id=n.group_id WHERE n.id=$1`, nodeID).Scan(
-		&node.ID, &node.GroupID, &node.Enabled, &node.GroupEnabled, &capabilities)
+		&node.ID, &node.GroupID, &node.Enabled, &node.GroupEnabled, &capabilities, &node.ProxyPort)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NodeFacts{}, ErrNodeNotFound
 	}
@@ -61,6 +61,7 @@ FROM nodes n JOIN resource_groups g ON g.id=n.group_id WHERE n.id=$1`, nodeID).S
 		return NodeFacts{}, fmt.Errorf("read forward node: %w", err)
 	}
 	node.ForwardCapable = slices.Contains(capabilities, "forward")
+	node.ProxyCapable = slices.Contains(capabilities, "proxy")
 	return node, nil
 }
 

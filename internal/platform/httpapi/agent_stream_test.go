@@ -7,15 +7,19 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
 	"io"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -53,13 +57,15 @@ type streamStore struct {
 }
 
 func (s *streamStore) Desired(context.Context, string) (orchestration.DesiredRevision, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.desired, nil
 }
 func (s *streamStore) RecordResult(_ context.Context, _ string, revision int64, digest, status, code, message string) error {
 	s.results <- agentproto.ConfigResult{Revision: revision, SHA256: digest, Status: status, ErrorCode: code, ErrorMessage: message}
 	return nil
 }
-func (s *streamStore) MarkOnline(context.Context, string, string) error {
+func (s *streamStore) MarkOnline(context.Context, string, string, []string) error {
 	s.mu.Lock()
 	s.online++
 	s.mu.Unlock()
@@ -125,6 +131,8 @@ func TestAgentStreamRequiresMTLSAndDeliversSnapshotWithResult(t *testing.T) {
 		results: make(chan agentproto.ConfigResult, 1), heartbeats: make(chan agentproto.Heartbeat, 1)}
 	auth := &streamAuthenticator{}
 	stream := NewAgentStreamHandler(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), auth, store, store)
+	stream.pollEvery = 10 * time.Millisecond
+	stream.renewEvery = 40 * time.Millisecond
 	server := httptest.NewUnstartedServer(NewAgentHandlerWithStream(slog.New(slog.NewTextHandler(io.Discard, nil)), nil, stream))
 	pair, roots := testStreamCertificate(t)
 	server.TLS = &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: roots}
@@ -191,6 +199,18 @@ func TestAgentStreamRequiresMTLSAndDeliversSnapshotWithResult(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("heartbeat not saved")
+	}
+	_, renewalRaw, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewalMessage, err := agentproto.Decode(renewalRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := agentproto.DecodeConfigSnapshot(renewalMessage.Payload, time.Now())
+	if err != nil || renewed.Revision != snapshot.Revision || renewed.SHA256 != snapshot.SHA256 || !renewed.ValidUntil.After(snapshot.ValidUntil) {
+		t.Fatalf("configuration lease was not renewed: %+v, %v", renewed, err)
 	}
 }
 
@@ -289,14 +309,23 @@ func TestAgentStreamClosesAfterCertificateRevocation(t *testing.T) {
 }
 
 func TestAgentClientAndControlPlaneStreamApplyEndToEnd(t *testing.T) {
-	_, digest, err := agentproto.CanonicalForwardConfig(nil)
+	portReservation, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyPort := portReservation.Addr().(*net.TCPAddr).Port
+	portReservation.Close()
+	proxyConfig := []agentruntime.ProxyAccess{{ID: "access", UserID: "user", LineID: "line", IngressPort: proxyPort,
+		CredentialHash: strings.Repeat("a", 56), ExpiresAt: time.Now().Add(time.Hour)}}
+	_, digest, err := agentproto.CanonicalConfig(nil, proxyConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := &streamStore{desired: orchestration.DesiredRevision{NodeID: certificateTestNodeID, Revision: 1,
-		Digest: digest, Snapshot: agentruntime.Snapshot{Revision: 1}, Status: "pending"},
+		Digest: digest, Snapshot: agentruntime.Snapshot{Revision: 1, ProxyConfig: proxyConfig}, Status: "pending"},
 		results: make(chan agentproto.ConfigResult, 1), heartbeats: make(chan agentproto.Heartbeat, 1)}
 	stream := NewAgentStreamHandler(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), &streamAuthenticator{}, store, store)
+	stream.pollEvery = 10 * time.Millisecond
 	server := httptest.NewUnstartedServer(NewAgentHandlerWithStream(slog.New(slog.NewTextHandler(io.Discard, nil)), nil, stream))
 	pair, clientCA := testStreamCertificate(t)
 	server.TLS = &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: clientCA}
@@ -309,8 +338,20 @@ func TestAgentClientAndControlPlaneStreamApplyEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	client, err := agentclient.New(agentclient.Config{URL: "wss" + strings.TrimPrefix(server.URL, "https") + "/api/v1/agent/stream",
-		NodeID: certificateTestNodeID, Version: "1.0.0", RootCAs: serverRoots, Certificate: pair},
-		func() agentclient.Runtime { return agentruntime.New(agentruntime.Options{BindHost: "127.0.0.1"}) }, state)
+		NodeID: certificateTestNodeID, Version: "1.0.0", RootCAs: serverRoots, Certificate: pair, ProxyReady: true},
+		func() agentclient.Runtime {
+			return agentruntime.New(agentruntime.Options{BindHost: "127.0.0.1",
+				ProxyTLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, Certificates: server.TLS.Certificates},
+				Resolve: func(context.Context, string) ([]netip.Addr, error) {
+					return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+				},
+				DialTCP: func(context.Context, string) (net.Conn, error) {
+					client, peer := net.Pipe()
+					go func() { defer peer.Close(); _, _ = io.Copy(peer, peer) }()
+					return client, nil
+				},
+			})
+		}, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,10 +366,47 @@ func TestAgentClientAndControlPlaneStreamApplyEndToEnd(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Agent did not apply control plane snapshot")
 	}
+	proxyClient, err := tls.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(proxyPort)),
+		&tls.Config{MinVersion: tls.VersionTLS12, RootCAs: serverRoots, ServerName: "127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxyClient.Close()
+	proxyClient.SetDeadline(time.Now().Add(2 * time.Second))
+	request := append([]byte(strings.Repeat("a", 56)+"\r\n"), 1, 3, 11)
+	request = append(request, []byte("example.org")...)
+	request = binary.BigEndian.AppendUint16(request, 443)
+	request = append(request, []byte("\r\nhello")...)
+	if _, err := proxyClient.Write(request); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, 5)
+	if _, err := io.ReadFull(proxyClient, response); err != nil || string(response) != "hello" {
+		t.Fatalf("end-to-end Trojan response=%q, %v", response, err)
+	}
+	_, revokedDigest, err := agentproto.CanonicalForwardConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	store.desired = orchestration.DesiredRevision{NodeID: certificateTestNodeID, Revision: 2, Digest: revokedDigest,
+		Snapshot: agentruntime.Snapshot{Revision: 2}, Status: "pending"}
+	store.mu.Unlock()
+	select {
+	case result := <-store.results:
+		if result.Revision != 2 || result.Status != "applied" {
+			t.Fatalf("revocation ACK=%+v", result)
+		}
+	case <-ctx.Done():
+		t.Fatal("revocation not applied")
+	}
+	if _, err := proxyClient.Read(response); err == nil {
+		t.Fatal("Agent retained revoked proxy connection")
+	}
 	cancel()
 	<-done
 	loaded, err := state.Load()
-	if err != nil || loaded.Revision != 1 {
+	if err != nil || loaded.Revision != 2 {
 		t.Fatalf("saved Agent state = %+v, %v", loaded, err)
 	}
 }
