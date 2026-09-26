@@ -4,6 +4,7 @@
 
 ## 当前状态（2026-09-27）
 
+- 当前运行 `c6bd719`，管理 UI 不再列出保留的 `roles.write` 权限，OpenAPI 同步写明系统管理员边界。发布包 SHA-256 `ed908a1d00f6d45086679281779b28fe20d12502cafe87ca4ac856f0c9005bc8`；升级前备份 `/opt/network-control-plane/backups/ncp-before-c6bd719.dump` 权限 0600。迁移保持 18，API/DB healthy、重启 0，公网首页/ready 200、登录 404，Agent TLS 18443 仅监听回环。清理有对应解压目录的旧上传包后磁盘可用约 1.5 GB；正式库仍无用户、节点和 Agent。
 - 已发布 `f2c21db` 至 `/opt/network-control-plane/releases/release-f2c21db`，新增自定义 RBAC 角色、权限目录、普通用户角色分配、审计和会话权限即时刷新；自定义角色不能持有 `roles.write`，写操作限定系统管理员。发布包 SHA-256 `b511e1e3692a035ede8ff81c27b7ddf30db96ac11f00a48a8c55f7c735a44039`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-f2c21db.dump` 权限 0600。正式库迁移版本 18，API/DB healthy、重启 0；公网首页/ready 200，明文登录与未认证角色 API 404，18443 仍仅监听 `127.0.0.1`。正式库用户、节点、Agent 均为 0；既有 Nginx Proxy Manager 未改动，磁盘可用空间约 1.2 GB。
 
 - 已发布 `release-ipv6-cidr-20260927`：Mihomo 订阅对 IPv6 地址及受控 GeoIP IPv6 网段生成 `IP-CIDR6`。发布包 SHA-256 `c011de4926a43ca0a7538b820d90c13d43dfeecfe0e43d1e7bea48c63621b13f`；升级前备份 `/opt/network-control-plane/backups/ncp-before-ipv6-cidr-20260927.dump` 权限 0600。API/DB healthy、重启 0，回环首页/live/ready 200，明文登录和未认证规则集接口 404，迁移版本 17。清理已解压的旧上传归档后，磁盘可用空间约 1.5 GB；发布目录和数据库备份保留。正式库仍无用户、节点或 Agent。
