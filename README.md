@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。纯 IP 预览继续关闭浏览器认证和 Agent TLS；真实节点数据面仍需在安全域名和 Agent 入网后验收。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。纯 IP 预览继续关闭浏览器认证；Agent TLS 已在服务器回环地址启用，真实节点数据面仍需在 Agent 入网后验收。
 
 ## 本地运行
 
@@ -56,13 +56,13 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 `internal/orchestration` 可从 PostgreSQL 的一致性只读快照中编译单节点转发配置。编译时重新检查账户、有效订购快照、资源组、节点能力和目标策略，剔除失效规则；非法目标、损坏的订购快照或监听冲突会被单独排除并返回诊断，避免阻断其他规则的撤销。节点停用时直接生成空配置。输出规则顺序固定。每节点规则数是创建上限；正数上限下调不自动删减已有规则，降为零则撤销该套餐的转发能力。
 
-配置版本仓储在锁定 Agent 后，于同一数据库事务读取当前节点事实并编译完整转发快照。可执行内容的 SHA-256 不变时不新增版本，但会刷新逐规则诊断；变化时递增 `desired_revision`。Agent 回执必须匹配节点、版本和摘要；应用成功才推进 `applied_revision`，失败回执可随重试更新，但已应用版本不会被失败回执覆盖。失败原因有长度和字符限制。收敛 worker 消费转发规则与目标策略的 outbox 事件，并定期扫描 Agent 节点，以处理套餐到期等时间驱动的撤销。Agent 身份、配置流和回执传输已有实现；线上 Agent TLS 与 Agent 进程尚未启用，故服务器当前不会执行转发。
+配置版本仓储在锁定 Agent 后，于同一数据库事务读取当前节点事实并编译完整转发快照。可执行内容的 SHA-256 不变时不新增版本，但会刷新逐规则诊断；变化时递增 `desired_revision`。Agent 回执必须匹配节点、版本和摘要；应用成功才推进 `applied_revision`，失败回执可随重试更新，但已应用版本不会被失败回执覆盖。失败原因有长度和字符限制。收敛 worker 消费转发规则与目标策略的 outbox 事件，并定期扫描 Agent 节点，以处理套餐到期等时间驱动的撤销。Agent 身份、配置流和回执传输已有实现；线上 Agent TLS 仅在回环地址启用、Agent 进程尚未部署，故服务器当前不会执行转发。
 
 `internal/agentproto` 定义版本 1 的 JSON 消息封包和直达转发配置/结果负载。封包限制为 1 MiB，拒绝未知版本、字段、重复 JSON 字段和无效身份；Agent 验证快照有效期及与控制面一致的可执行内容摘要后才能应用。协议已连接到独立 mTLS WebSocket 监听器和 Agent 进程。
 
-`internal/agentidentity` 增加 Agent 入网身份基础：10 分钟一次性令牌只以 SHA-256 存库；Agent 以 Ed25519 CSR 换取绑定节点 URI 的 24 小时客户端证书；签发和令牌消费在同一事务中完成。证书认证会核对 CA、节点 URI、当前数据库指纹、节点启用状态与吊销状态。启用独立 TLS 监听器时，管理员须用当前密码重新认证，并经 `POST /api/v1/admin/nodes/{id}/agent-enrollment` 签发令牌；签发记录审计但不保存明文令牌。Agent 经 TLS `POST /api/v1/agent/enroll` 入网，入口有单进程 IP、令牌及全局速率限制。TLS 监听器需要 `CONTROL_AGENT_TLS_ADDR`、`CONTROL_AGENT_TLS_CERT_FILE`、`CONTROL_AGENT_TLS_KEY_FILE`、`CONTROL_AGENT_CA_CERT_FILE`、`CONTROL_AGENT_CA_KEY_FILE` 全部配置；监听地址默认限回环；显式设置 `CONTROL_AGENT_PUBLIC_TLS_ENABLED=true` 后可绑定 IP 地址，部署时使用可选 `compose.agent-tls.yaml` 并验证服务器证书 IP SAN。私钥文件权限不能对组或其他用户开放。CA 私钥不写入数据库或响应，Agent 私钥不离开节点。当前公网纯 IP 预览不启用这些配置，故没有入网或令牌路由。
+`internal/agentidentity` 增加 Agent 入网身份基础：10 分钟一次性令牌只以 SHA-256 存库；Agent 以 Ed25519 CSR 换取绑定节点 URI 的 24 小时客户端证书；签发和令牌消费在同一事务中完成。证书认证会核对 CA、节点 URI、当前数据库指纹、节点启用状态与吊销状态。启用独立 TLS 监听器时，管理员须用当前密码重新认证，并经 `POST /api/v1/admin/nodes/{id}/agent-enrollment` 签发令牌；签发记录审计但不保存明文令牌。Agent 经 TLS `POST /api/v1/agent/enroll` 入网，入口有单进程 IP、令牌及全局速率限制。TLS 监听器需要 `CONTROL_AGENT_TLS_ADDR`、`CONTROL_AGENT_TLS_CERT_FILE`、`CONTROL_AGENT_TLS_KEY_FILE`、`CONTROL_AGENT_CA_CERT_FILE`、`CONTROL_AGENT_CA_KEY_FILE` 全部配置；监听地址默认限回环；显式设置 `CONTROL_AGENT_PUBLIC_TLS_ENABLED=true` 后可绑定 IP 地址，部署时使用可选 `compose.agent-tls.yaml` 并验证服务器证书 IP SAN。私钥文件权限不能对组或其他用户开放。CA 私钥不写入数据库或响应，Agent 私钥不离开节点。当前服务器已在回环地址启用 Agent TLS；公网纯 IP HTTP 预览不提供入网或令牌路由。
 
-`cmd/agent` 提供独立 Agent 进程和 `enroll` 命令。入网命令从标准输入读取一次性令牌，在 Agent 本机生成 Ed25519 私钥，经受信任 HTTPS 换取证书，并仅新建权限为 `0600` 的证书和私钥文件。运行进程主动建立 mTLS WebSocket，发送 hello 与 15 秒心跳，接收完整转发快照，由 `agentruntime` 原子应用并回传 ACK/NACK；断线会关闭转发监听并重连。心跳采集 Linux `/proc` 的 CPU、内存、网卡字节及本机活动转发连接数。控制面数据库保存最新指标，45 秒无心跳会转为离线。迁移 `000007_agent_presence` 增加指标表。`cmd/agent-token` 可在受限服务器本机为现有管理员和节点签发令牌到新建的私有文件；命令不在标准输出打印令牌。证书轮换、多节点实际部署仍待完成；公网 Agent TLS 入口已有显式开关和可选部署文件，但当前纯 IP HTTP 预览继续关闭 Agent TLS 与浏览器登录，尚未进行真实节点验收。
+`cmd/agent` 提供独立 Agent 进程和 `enroll` 命令。入网命令从标准输入读取一次性令牌，在 Agent 本机生成 Ed25519 私钥，经受信任 HTTPS 换取证书，并仅新建权限为 `0600` 的证书和私钥文件。运行进程主动建立 mTLS WebSocket，发送 hello 与 15 秒心跳，接收完整转发快照，由 `agentruntime` 原子应用并回传 ACK/NACK；断线会关闭转发监听并重连。心跳采集 Linux `/proc` 的 CPU、内存、网卡字节及本机活动转发连接数。控制面数据库保存最新指标，45 秒无心跳会转为离线。迁移 `000007_agent_presence` 增加指标表。`cmd/agent-token` 可在受限服务器本机为现有管理员和节点签发令牌到新建的私有文件；命令不在标准输出打印令牌。证书轮换、多节点实际部署仍待完成；公网 Agent TLS 入口已有显式开关和可选部署文件，但当前纯 IP HTTP 预览继续关闭浏览器登录，Agent TLS 仅在服务器回环地址开放，尚未进行真实节点验收。
 
 ## 用户生命周期开发状态
 

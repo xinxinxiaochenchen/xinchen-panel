@@ -1,13 +1,13 @@
 # 纯 IP 预览部署（`us dmit`）
 
-本部署包含节点、单跳线路、转发、代理连接、订阅、分流、账期、用量账本、额度租约、周期 worker，以及管理员和账户页面。公网仍是纯 IP 只读预览；浏览器认证与 Agent TLS 入口未启用，真实代理流量尚未在服务器验收。
+本部署包含节点、单跳线路、转发、代理连接、订阅、分流、账期、用量账本、额度租约、周期 worker，以及管理员和账户页面。公网仍是纯 IP 只读预览；浏览器认证关闭，Agent TLS 仅在服务器回环地址开放，真实代理流量尚未在服务器验收。
 
 ## 当前状态（2026-09-26）
 
-- 已在 `us dmit` 部署提交 `011d97a`，目录 `/opt/network-control-plane/releases/release-011d97a`。当前版本包含管理员节点启停、跨入口配置收敛、节点实时指标 API/UI 和一次性 Agent 入网令牌弹窗。
+- 已在 `us dmit` 部署提交 `1f98d29`，目录 `/opt/network-control-plane/releases/release-1f98d29`。当前版本包含管理员节点启停、跨入口配置收敛、节点实时指标 API/UI 和一次性 Agent 入网令牌弹窗。
 - PostgreSQL 16.10 容器健康；API 映射 `0.0.0.0:18080`，供纯 IP 测试。
 - 从开发机请求 `http://179.255.145.149:18080/` 返回 200 HTML，浏览器渲染七项导航、浅深色主题、手机布局及真实就绪状态；`/api/v1/health/live` 与 `/ready` 均返回 200 `{"status":"ok"}`。
-- 迁移记录版本 1–15；本次升级前备份 `/opt/network-control-plane/backups/ncp-before-011d97a.dump`，权限 `0600`。
+- 迁移记录版本 1–15；本次升级前备份 `/opt/network-control-plane/backups/ncp-before-1f98d29.dump`，权限 `0600`。
 - 运行容器中 `CONTROL_BROWSER_AUTH_ENABLED=false`（Compose 默认值），浏览器认证关闭。公网 `/api/v1/auth/login` 返回 404；不能在明文 HTTP 上提交密码。
 - 部署时发现 macOS AppleDouble 元数据文件影响迁移发现，已加入回归测试和加载器过滤，见提交 `2594ba4`。原始失败的 `0695de1` 发布目录留作排障记录，未作为当前运行版本。
 - 现有 Nginx Proxy Manager 容器及 80/443 端口未改动。预览实例未配置公网域名或反向代理。
@@ -21,6 +21,8 @@
 - 2026-09-26 发布 `2e87597`：账期、用量账本、计费字节租约与周期 worker 纳入镜像。正式库先备份，随后应用迁移 11/12；Agent 数 0，API/DB healthy，重启次数 0。公网首页与 live/ready 200，登录、订阅管理、公开订阅及 Agent 入网 404；公开订阅路径返回 no-store。现有 Nginx Proxy Manager 80/443 未改动。Agent 上报与本地额度执行、分流、可操作前端及真实节点验收仍待完成。
 
 - 2026-09-26 发布 `011d97a`：管理员可启停节点；事务内写审计和 outbox，节点状态变化重算全部已入网 Agent 的配置，以撤销指向停用目标节点的其他入口转发。完整 Go 测试、vet、前端 20 项测试、类型检查、生产构建与 OpenAPI 解析通过。发布包 SHA-256 为 `24347f9861ccf3b68daf04c42ce4acb8a7744378888b5cbb863308c702a43fcd`，正式库升级前备份权限 0600。公网 IP 首页、live、ready 均 200，登录 404；API/DB healthy、重启次数 0；迁移版本 15，节点和 Agent 数均为 0。
+
+- 2026-09-26 发布 `1f98d29`：增加显式 Agent TLS IP 监听开关和可选 Compose 覆盖配置。发布包 SHA-256 `192a79387a8cb1d7534b43ba0a5605182964f34304a74f5db17ac96a8db40af2`，升级前正式库备份 `ncp-before-1f98d29.dump` 为 0600。服务器生成专用 Ed25519 CA 与服务器证书，证书匹配回环和公网 IP，私钥权限 0600；证书有效至 2027-09-26。覆盖配置仅将 18443 映射到主机 `127.0.0.1`；可信 CA 的 TLS 请求到 Agent 入网路径返回 405，证明握手和路由可用。公网首页/live/ready 200、登录 404，API/DB healthy、重启 0，迁移 15，节点/Agent 仍为 0。
 
 ## 布局与边界
 
@@ -46,7 +48,7 @@
 
 当前按用户要求开放 18080 用于纯 IP 页面与连通性测试；页面只显示预览内容，登录后的操作页尚未对公网开放。不要在明文 HTTP 上测试带 Cookie 的登录功能。域名和证书就绪后，在现有 Nginx Proxy Manager 中创建 HTTPS 代理主机，并将 `CONTROL_BIND_IP` 恢复为 `127.0.0.1`，再关闭公网 18080 访问。
 
-## Agent TLS 纯 IP 接入（可选，当前未启用）
+## Agent TLS 纯 IP 接入（回环已启用，公网未开放）
 
 Agent 使用独立的 HTTPS/mTLS 入口，与浏览器的 HTTP 预览端口分开。启用前准备一组专用 CA 和服务器证书：服务器证书的 IP SAN 必须覆盖 Agent URL 所用的 IP；Agent 预装该 CA 证书并保持证书校验开启。CA 私钥和服务器私钥仅留在控制面服务器，不能复制到节点。
 
