@@ -68,3 +68,21 @@ CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
 ```
 
 不指定覆盖文件时，现有预览入口和 Agent TLS 关闭状态保持原样。此覆盖文件只开放 Agent 通道，不开放管理接口；当前纯 IP 预览关闭了浏览器身份路由，且正式库中没有节点。首个节点必须先通过受信任 HTTPS 管理入口创建，或使用后续提供的受限本机引导命令；随后管理员可发一次性令牌并让 Agent 用可信 CA 完成证书登记。仅启用此覆盖文件不能完成入网。
+
+## 同机 Agent Compose overlay
+
+发布包还包含 `compose.agent-local.yaml` 和 `Dockerfile.agent`。它们默认不参与启动；只有在节点已经创建、Agent 证书已登记、目录中存在 `agent-ca.crt`、`agent.crt`、`agent.key` 且权限正确时才启用。overlay 使用 host network，让 Agent 连接 `wss://127.0.0.1:18443/api/v1/agent/stream` 并在服务器上绑定节点端口；状态目录保存配置快照、额度租约和用量 outbox，容器本身保持只读文件系统。
+
+```sh
+install -d -m 0700 /opt/network-control-plane/secrets/agent-credentials
+install -d -m 0700 /opt/network-control-plane/state/agent
+chown 65532:65532 /opt/network-control-plane/secrets/agent-credentials /opt/network-control-plane/state/agent
+# 将控制面签发的 agent-ca.crt、agent.crt、agent.key 放入 credentials 目录；三个文件由 UID 65532 拥有，agent.key 为 0600
+CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
+CONTROL_AGENT_CREDENTIAL_DIR=/opt/network-control-plane/secrets/agent-credentials \
+CONTROL_AGENT_STATE_DIR=/opt/network-control-plane/state/agent \
+CONTROL_AGENT_NODE_ID=<node-uuid> \
+  docker compose -f compose.yaml -f compose.agent-tls.yaml -f compose.agent-local.yaml up -d --build agent
+```
+
+如果节点具备 `proxy` 能力，还需要把独立的 `proxy.crt` 和 `proxy.key` 放入凭据目录，并通过 `CONTROL_AGENT_PROXY_CERT_FILE`、`CONTROL_AGENT_PROXY_KEY_FILE` 指定容器内路径；没有代理证书时，Agent 仍可运行转发能力，但会拒绝代理监听配置。停止时只停止 `agent` 服务，不要删除状态目录。

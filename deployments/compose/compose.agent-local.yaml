@@ -1,0 +1,32 @@
+# Optional same-host Agent. Prepare all credential and state directories first.
+# host networking is intentional: the Agent reaches the loopback mTLS listener
+# and can bind the node's configured proxy/forward ports on the host.
+services:
+  agent:
+    build:
+      context: ../..
+      dockerfile: deployments/compose/Dockerfile.agent
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    mem_limit: 128m
+    environment:
+      CONTROL_AGENT_STREAM_URL: ${CONTROL_AGENT_STREAM_URL:-wss://127.0.0.1:18443/api/v1/agent/stream}
+      CONTROL_AGENT_NODE_ID: ${CONTROL_AGENT_NODE_ID:?set CONTROL_AGENT_NODE_ID}
+      CONTROL_AGENT_VERSION: ${CONTROL_AGENT_VERSION:-0.1.0}
+      CONTROL_AGENT_CA_CERT_FILE: /run/agent/agent-ca.crt
+      CONTROL_AGENT_CERT_FILE: /run/agent/agent.crt
+      CONTROL_AGENT_KEY_FILE: /run/agent/agent.key
+      CONTROL_AGENT_STATE_FILE: /var/lib/network-control-plane-agent/state.json
+      CONTROL_AGENT_BIND_HOST: ${CONTROL_AGENT_BIND_HOST:-0.0.0.0}
+      CONTROL_AGENT_PROXY_CERT_FILE: ${CONTROL_AGENT_PROXY_CERT_FILE:-}
+      CONTROL_AGENT_PROXY_KEY_FILE: ${CONTROL_AGENT_PROXY_KEY_FILE:-}
+    volumes:
+      - "${CONTROL_AGENT_CREDENTIAL_DIR:?set CONTROL_AGENT_CREDENTIAL_DIR}:/run/agent:ro"
+      - "${CONTROL_AGENT_STATE_DIR:?set CONTROL_AGENT_STATE_DIR}:/var/lib/network-control-plane-agent"

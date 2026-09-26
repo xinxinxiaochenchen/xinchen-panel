@@ -1,0 +1,5 @@
+FROM scratch
+WORKDIR /app
+COPY bin/agent /usr/local/bin/agent
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/agent"]
