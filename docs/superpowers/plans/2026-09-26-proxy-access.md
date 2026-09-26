@@ -34,14 +34,14 @@
 - [x] Test node-scoped proxy snapshot compilation, ACL revocation, digest and ACK/NACK behavior; extend protocol with proxy configuration.
 - [x] Test TLS Trojan CONNECT against a real local socket using a generated cert; reject unknown credentials, unsupported commands, unauthorized targets and expired membership/lease.
 - [x] Wire Agent runtime and private certificate configuration. Deliver encrypted credentials only to the owner; transmit hash-only proxy config over mTLS. The Agent fails closed on disconnect or expired execution lease.
-- [ ] Package and deploy this phase without exposing browser secrets on the pure HTTP preview.
+- [x] Package and deploy this phase without exposing browser secrets on the pure HTTP preview.
 
 ### Task 4: Release verification
 
 - [x] Run full Go tests, race tests, vet, OpenAPI parse and frontend build.
 - [x] Test migration up/down, ownership, concurrent lock order, proxy revision compilation, rotation and ACK/NACK in isolated PostgreSQL 16 databases.
 - [x] Test mTLS control-plane stream and real Agent runtime locally: apply proxy config, relay TLS Trojan TCP payload, ACK, revoke, disconnect the existing client and persist the new revision.
-- [ ] Back up the formal database, deploy via Termark, verify health and public HTTP auth closure, and record exact remaining MVP gaps.
+- [x] Back up the formal database, deploy via Termark, verify health and public HTTP auth closure, and record exact remaining MVP gaps.
 
 ## Release boundaries
 
