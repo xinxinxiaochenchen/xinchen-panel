@@ -349,6 +349,8 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .admin-row strong { min-width: 0; overflow-wrap: anywhere; }
 .admin-row span:not(.catalog-icon) { color: var(--muted); margin-left: auto; }
 .admin-row em { font-style: normal; color: var(--accent); }
+.admin-policy-row { flex-wrap: wrap; }
+.admin-policy-row .refresh-button { padding: 7px 10px; font-size: 10px; }
 .admin-card-grid, .admin-resource-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .admin-resource-grid h3 { font-size: 14px; margin: 0 0 6px; }
 .admin-resource-grid .admin-row { flex-wrap: wrap; }

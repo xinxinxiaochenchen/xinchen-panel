@@ -4,6 +4,7 @@ import {
   buildPlanInput,
   buildMembershipInput,
   buildNodeInput,
+  buildForwardPolicyInput,
   hasAdminAccess,
 } from "../src/lib/admin.ts";
 
@@ -71,4 +72,16 @@ test("proxy nodes require a valid proxy port and forward-only nodes omit it", ()
   });
   assert.deepEqual(node.capabilities, ["forward"]);
   assert.equal(node.proxy_port, null);
+});
+
+test("forward destination policy requires a bounded port range and node group", () => {
+  assert.deepEqual(buildForwardPolicyInput({ kind: "node", groupID: "group-id", protocol: "TCP", portStart: 443, portEnd: 444 }), {
+    kind: "node", target_group_id: "group-id", protocol: "TCP", port_start: 443, port_end: 444, enabled: true,
+  });
+  assert.deepEqual(buildForwardPolicyInput({ kind: "public_host", groupID: "ignored", protocol: "UDP", portStart: 53, portEnd: 53 }), {
+    kind: "public_host", protocol: "UDP", port_start: 53, port_end: 53, enabled: true,
+  });
+  assert.throws(() => buildForwardPolicyInput({ kind: "node", groupID: "", protocol: "TCP", portStart: 443, portEnd: 443 }));
+  assert.throws(() => buildForwardPolicyInput({ kind: "public_host", groupID: "", protocol: "TCP", portStart: 500, portEnd: 499 }));
+  assert.throws(() => buildForwardPolicyInput({ kind: "public_host", groupID: "", protocol: "TCP", portStart: 0, portEnd: 1 }));
 });

@@ -23,8 +23,25 @@ func (catalogSessions) Authenticate(_ context.Context, token string) (identity.P
 		return identity.PublicUser{ID: "admin-id", Permissions: []string{"nodes.write", "nodes.read"}}, nil
 	case "member-token":
 		return identity.PublicUser{ID: "member-id", Permissions: []string{"nodes.read"}}, nil
+	case "policy-token":
+		return identity.PublicUser{ID: "policy-id", Permissions: []string{"forward_policies.write"}}, nil
 	default:
 		return identity.PublicUser{}, identity.ErrUnauthenticated
+	}
+}
+
+func TestForwardPolicyAdministratorCanListResourceGroups(t *testing.T) {
+	service := &catalogStub{}
+	handler := NewHandlerWithCatalog(testLogger(), nil, catalogSessions{}, service)
+	list := httptest.NewRecorder()
+	handler.ServeHTTP(list, catalogRequest(http.MethodGet, "/api/v1/admin/resource-groups", "policy-token", "", ""))
+	if list.Code != 200 {
+		t.Fatalf("resource group list = %d %s", list.Code, list.Body.String())
+	}
+	create := httptest.NewRecorder()
+	handler.ServeHTTP(create, catalogRequest(http.MethodPost, "/api/v1/admin/resource-groups", "policy-token", "valid-csrf", `{"code":"RFC.JPT1","name":"Tokyo","region":"JP"}`))
+	if create.Code != 403 {
+		t.Fatalf("resource group create = %d %s", create.Code, create.Body.String())
 	}
 }
 func (s catalogSessions) VerifyCSRF(ctx context.Context, token, csrf string) (identity.PublicUser, error) {

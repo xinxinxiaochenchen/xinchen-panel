@@ -8,6 +8,37 @@ export type ResourceGroup = {
   enabled: boolean;
   created_at: string;
 };
+export type ForwardTargetPolicy = {
+  id: string;
+  kind: "public_host" | "node";
+  target_group_id: string | null;
+  protocol: "TCP" | "UDP";
+  port_start: number;
+  port_end: number;
+  enabled: boolean;
+};
+export type ForwardPolicyDraft = {
+  kind: "public_host" | "node";
+  groupID: string;
+  protocol: "TCP" | "UDP";
+  portStart: number;
+  portEnd: number;
+};
+
+export function buildForwardPolicyInput(draft: ForwardPolicyDraft) {
+  if (draft.kind === "node" && !draft.groupID) throw new Error("节点目标策略必须选择资源域。");
+  if (!Number.isInteger(draft.portStart) || !Number.isInteger(draft.portEnd) || draft.portStart < 1 || draft.portEnd > 65535 || draft.portEnd < draft.portStart) {
+    throw new Error("目标端口范围必须在 1–65535 之间，且起始端口不大于结束端口。");
+  }
+  return {
+    kind: draft.kind,
+    ...(draft.kind === "node" ? { target_group_id: draft.groupID } : {}),
+    protocol: draft.protocol,
+    port_start: draft.portStart,
+    port_end: draft.portEnd,
+    enabled: true,
+  };
+}
 export type Plan = {
   id: string;
   name: string;

@@ -27,7 +27,12 @@ func registerCatalogRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 	mux.HandleFunc("/api/v1/admin/resource-groups", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			if _, ok := catalogPrincipal(w, r, sessions, "nodes.write", false); !ok {
+			user, ok := catalogPrincipal(w, r, sessions, "", false)
+			if !ok {
+				return
+			}
+			if !slices.Contains(user.Permissions, "nodes.write") && !slices.Contains(user.Permissions, "forward_policies.write") {
+				WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "permission denied")
 				return
 			}
 			limit, after, ok := catalogPageParams(w, r, true)

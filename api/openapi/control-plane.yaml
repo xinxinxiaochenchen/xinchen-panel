@@ -475,6 +475,7 @@ paths:
     get:
       operationId: listResourceGroups
       summary: List all resource groups (administrator)
+      description: Requires nodes.write or forward_policies.write. The latter can list group identifiers for node destination policies but cannot create groups.
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}

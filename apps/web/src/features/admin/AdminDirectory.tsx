@@ -6,11 +6,12 @@ import {
   type LineRecord,
   type NodeRecord,
 } from "../../lib/catalog";
-import type { Plan, ResourceGroup } from "../../lib/admin";
+import type { ForwardTargetPolicy, Plan, ResourceGroup } from "../../lib/admin";
 import { UserPanel } from "./AdminUsers";
 import { PlanPanel } from "./AdminPlans";
 import { ResourcePanel } from "./AdminResources";
 import { AdminMembershipForm } from "./AdminMembershipForm";
+import { AdminForwardPolicies } from "./AdminForwardPolicies";
 
 type AdminData = {
   users: User[];
@@ -18,6 +19,7 @@ type AdminData = {
   groups: ResourceGroup[];
   nodes: NodeRecord[];
   lines: LineRecord[];
+  forwardPolicies: ForwardTargetPolicy[];
 };
 const emptyData: AdminData = {
   users: [],
@@ -25,6 +27,7 @@ const emptyData: AdminData = {
   groups: [],
   nodes: [],
   lines: [],
+  forwardPolicies: [],
 };
 
 export function AdminDirectory({ user }: { user: User }) {
@@ -56,7 +59,7 @@ export function AdminDirectory({ user }: { user: User }) {
         {
           key: "groups",
           path: "/api/v1/admin/resource-groups",
-          allowed: can("nodes.write"),
+          allowed: can("nodes.write") || can("forward_policies.write"),
         },
         {
           key: "nodes",
@@ -67,6 +70,11 @@ export function AdminDirectory({ user }: { user: User }) {
           key: "lines",
           path: "/api/v1/admin/lines",
           allowed: can("lines.write"),
+        },
+        {
+          key: "forwardPolicies",
+          path: "/api/v1/admin/forward-target-policies",
+          allowed: can("forward_policies.write"),
         },
       ];
     void Promise.all(
@@ -84,6 +92,7 @@ export function AdminDirectory({ user }: { user: User }) {
         groups: [],
         nodes: [],
         lines: [],
+        forwardPolicies: [],
       };
       const failures: string[] = [];
       const failedKeys: string[] = [];
@@ -111,7 +120,7 @@ export function AdminDirectory({ user }: { user: User }) {
         <div>
           <span className="section-overline">ADMINISTRATION</span>
           <h1>资源与账户管理</h1>
-          <p>配置账户、套餐、资源域和节点。</p>
+          <p>配置账户、套餐、资源域、节点和转发目标策略。</p>
         </div>
         <button className="refresh-button" type="button" onClick={refresh}>
           <RefreshCw size={16} />
@@ -172,6 +181,9 @@ export function AdminDirectory({ user }: { user: User }) {
             onRefresh={refresh}
           />
         )}
+      {!loading && can("forward_policies.write") && !failed.includes("forwardPolicies") && (
+        <AdminForwardPolicies policies={data.forwardPolicies} groups={data.groups} onRefresh={refresh} />
+      )}
     </div>
   );
 }
