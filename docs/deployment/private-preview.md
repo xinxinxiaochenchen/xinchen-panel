@@ -4,6 +4,8 @@
 
 ## 当前状态（2026-09-27）
 
+- 已发布 `f2c21db` 至 `/opt/network-control-plane/releases/release-f2c21db`，新增自定义 RBAC 角色、权限目录、普通用户角色分配、审计和会话权限即时刷新；自定义角色不能持有 `roles.write`，写操作限定系统管理员。发布包 SHA-256 `b511e1e3692a035ede8ff81c27b7ddf30db96ac11f00a48a8c55f7c735a44039`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-f2c21db.dump` 权限 0600。正式库迁移版本 18，API/DB healthy、重启 0；公网首页/ready 200，明文登录与未认证角色 API 404，18443 仍仅监听 `127.0.0.1`。正式库用户、节点、Agent 均为 0；既有 Nginx Proxy Manager 未改动，磁盘可用空间约 1.2 GB。
+
 - 已发布 `release-ipv6-cidr-20260927`：Mihomo 订阅对 IPv6 地址及受控 GeoIP IPv6 网段生成 `IP-CIDR6`。发布包 SHA-256 `c011de4926a43ca0a7538b820d90c13d43dfeecfe0e43d1e7bea48c63621b13f`；升级前备份 `/opt/network-control-plane/backups/ncp-before-ipv6-cidr-20260927.dump` 权限 0600。API/DB healthy、重启 0，回环首页/live/ready 200，明文登录和未认证规则集接口 404，迁移版本 17。清理已解压的旧上传归档后，磁盘可用空间约 1.5 GB；发布目录和数据库备份保留。正式库仍无用户、节点或 Agent。
 - 已发布 `3d4faf4` 至 `/opt/network-control-plane/releases/release-3d4faf4`，新增管理员上传、版本化和启停 GeoSite/GeoIP 规则集，并在订阅导出时按同一数据库快照展开。发布包 SHA-256 `0a49dd6ed8262cbe3de4f1e7a79be6dc85199110077f70b92fea1416bb9104b8`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-3d4faf4.dump` 权限 0600。迁移版本 17，API/DB healthy；公网 IP 首页/ready 200，明文登录 404，未认证规则集 API 404；现有 Nginx Proxy Manager 未改动。正式库仍为 0 用户、0 节点、0 Agent，规则集 0 条。
 - 已发布 `1852394` 至 `/opt/network-control-plane/releases/release-1852394`，补齐目录中共享线路与自有线路的编辑入口：管理员和线路所有者分别使用受限 PATCH 路径，编辑名称、优先级、权重、标签；共享线路可调整倍率。上传的发布包 SHA-256 `d5abd8dedd82bbf04180fadcae442709213338aaba3e9425560e1cb27c3fe6b8`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-1852394.dump` 权限 0600。服务器 API/DB healthy，迁移版本 16；公网 IP 首页/ready 200，明文登录 404；现有 Nginx Proxy Manager 未改动。正式库仍为 0 用户、0 节点、0 Agent。

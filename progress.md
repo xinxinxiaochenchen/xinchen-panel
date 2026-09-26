@@ -137,3 +137,10 @@
 - 下载并按 GitHub 官方 SHA-256 校验 sing-box `v1.12.0` macOS arm64 发布包；用原生 `sing-box check` 验证默认、分流和阻断 fallback 三种生成 JSON，全部通过。新增可选 `CONTROL_TEST_SING_BOX_BINARY` 回归测试。
 - 修复线路管理页面的权限路径缺口：管理员现在可以在共享线路卡片上启停 `/api/v1/admin/lines/{id}`，普通用户仍只能启停自己的 `/api/v1/lines/{id}`；新增路径选择回归测试。前端 21 项测试和生产构建通过。
 - 已通过 Termark 将 `d14fdbb` 发布到 `us dmit` 的 `/opt/network-control-plane/releases/release-d14fdbb`。发布包 SHA-256 `c44d0bcbde8a3859b021e236cfa954c5b19bb2039eaa8e0ebff0b9d37d0f1094`，升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-d14fdbb.dump` 权限 0600。初次 `docker compose up` 遗漏既有 Agent TLS 覆盖文件，随即用 `compose.agent-tls.yaml` 和原证书目录重建恢复；最终 API/DB healthy、API 重启 0，18443 仅绑定 `127.0.0.1`，公网首页/ready 200、登录 404，迁移 16，正式库用户/节点/Agent 均为 0。临时上传包已删除，磁盘剩余约 1.4GB。
+
+## 2026-09-27 自定义 RBAC 发布
+
+- 提交 `f2c21db`：自定义角色的权限目录、创建/更新/删除，普通用户角色分配、审计、REST/OpenAPI、管理 UI 与现有会话权限即时生效。系统角色不可编辑，角色写操作限定系统管理员，自定义角色不得包含 `roles.write`。审查修复了大小写 UUID 自我分配绕过、角色权限自我提升路径，以及角色分配/删除并发时的错误处理。
+- 本地完整 Go 测试、Go vet、前端 26 项测试、TypeScript/生产构建、OpenAPI YAML 解析与 diff 检查通过。服务器独立 PostgreSQL 16 测试库完成迁移 1–18 和角色生命周期测试，随后删除临时库。
+- 经 Termark 发布到 `us dmit` 的 `/opt/network-control-plane/releases/release-f2c21db`，发布包 SHA-256 `b511e1e3692a035ede8ff81c27b7ddf30db96ac11f00a48a8c55f7c735a44039`。正式库升级前备份 `ncp-before-f2c21db.dump` 权限 0600，迁移版本 18。API/DB healthy、重启 0；公网首页/ready 200，明文登录和未认证角色 API 404；Agent TLS 18443 仍仅绑定回环。正式库仍为 0 用户、0 节点、0 Agent；磁盘剩余约 1.2 GB。
+- 继续开发可执行多跳与线路权重切换。正式管理员登录及生产节点验收仍需受信任 HTTPS 管理入口和首个正式节点位置。

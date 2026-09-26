@@ -76,7 +76,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 后续阶段
 
-下一阶段重点是受信任 HTTPS 管理入口、正式管理员及节点入网，以及在正式节点上复核配置撤销和真实流量。隔离数据库和临时 Agent 已通过 TCP/UDP/Trojan TLS 及计费入账验收。可执行多跳、线路权重切换和自定义 RBAC 属于后续迭代。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+下一阶段重点是受信任 HTTPS 管理入口、正式管理员及节点入网，以及在正式节点上复核配置撤销和真实流量。隔离数据库和临时 Agent 已通过 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。可执行多跳和线路权重切换仍在开发。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前基础服务的纯 IP 只读预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 
