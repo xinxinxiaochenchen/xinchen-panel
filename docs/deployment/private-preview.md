@@ -14,6 +14,7 @@
 - 2026-09-26 发布 `a056e72`：公网首页 HTML、就绪探针均返回 200，登录返回 404；浏览器预览页实时状态显示“运行正常”。API/DB 容器均为 healthy、重启次数为 0；现有 Nginx Proxy Manager 未改动。迁移 5 已先在独立库验证，测试库及临时文件已清理。
 - 2026-09-26 发布 `ce02780`：控制面新增配置收敛 worker。正式库升级前备份为 `/opt/network-control-plane/backups/pre-convergence-ce02780.dump`，权限 `0600`；迁移仍为 5。公网首页和就绪探针返回 200，登录返回 404。API/DB 均 healthy、重启次数 0；正式库暂无 Agent，因而尚无实际转发。独立测试数据库和测试二进制已清理，原有 Nginx Proxy Manager 继续运行。
 - 2026-09-26 发布 `74fc614`：Agent 入网身份基础、审计和限流已纳入镜像，但相关 TLS/浏览器入口仍关闭。迁移 6 在独立 PostgreSQL 16 测试库通过 up/down；正式库升级前备份为 `/opt/network-control-plane/backups/pre-agent-74fc614.dump`，权限 `0600`。正式库迁移至版本 6，Agent 数为 0。公网纯 IP 首页及就绪接口返回 200，登录与 Agent 入网入口返回 404；实际 Agent 通道和转发仍未部署。
+- 2026-09-26 发布 `231744f`：Agent mTLS WebSocket、配置快照与回执、心跳指标及本机 Agent 二进制纳入发布包。迁移 7 在独立 PostgreSQL 16 测试库通过 up/down 和指标集成测试；正式库升级前备份为 `/opt/network-control-plane/backups/pre-agent-stream-231744f.dump`，权限 `0600`。正式库已迁移至版本 7，Agent 数为 0。公网 `http://179.255.145.149:18080/` 首页和就绪接口返回 200，登录、入网和配置流返回 404。Agent TLS 未配置，实际转发尚未在服务器运行；Nginx Proxy Manager 未改动。
 
 ## 布局与边界
 

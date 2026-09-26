@@ -42,5 +42,5 @@
 
 **Files:** `api/openapi/control-plane.yaml`, `README.md`, `docs/deployment/private-preview.md`, `progress.md`, `deployments/compose/compose.yaml`.
 
-- [ ] Run focused and full Go tests, race tests, vet, OpenAPI validation and frontend build. Run migration up/down and stream integration in an isolated PostgreSQL 16 database.
-- [ ] Build Linux amd64 binaries, back up the production database, deploy a new release to `us dmit`, and verify public HTTP stays read-only while Agent TLS is not exposed until configured. Record the exact release and remaining MVP gaps.
+- [x] Run focused and full Go tests, race tests, vet, OpenAPI validation and frontend build. Run migration up/down and stream integration in an isolated PostgreSQL 16 database.
+- [x] Build Linux amd64 binaries, back up the production database, deploy a new release to `us dmit`, and verify public HTTP stays read-only while Agent TLS is not exposed until configured. Record the exact release and remaining MVP gaps.
