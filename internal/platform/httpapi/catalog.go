@@ -19,6 +19,7 @@ type CatalogStore interface {
 	ListGroups(context.Context, int, string) ([]catalog.ResourceGroup, error)
 	CreateNode(context.Context, catalog.NodeInput, string, string) (catalog.Node, error)
 	ListAllNodes(context.Context, int, string) ([]catalog.Node, error)
+	GetNodeMetrics(context.Context, string) (catalog.NodeMetrics, error)
 	ListAllowedNodes(context.Context, string, int, string) ([]catalog.Node, error)
 	GetAllowedNode(context.Context, string, string) (catalog.Node, error)
 }
@@ -72,7 +73,12 @@ func registerCatalogRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 	mux.HandleFunc("/api/v1/admin/nodes", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			if _, ok := catalogPrincipal(w, r, sessions, "nodes.write", false); !ok {
+			user, ok := catalogPrincipal(w, r, sessions, "", false)
+			if !ok {
+				return
+			}
+			if !slices.Contains(user.Permissions, "nodes.write") && !slices.Contains(user.Permissions, "agents.write") {
+				WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "permission denied")
 				return
 			}
 			limit, after, ok := catalogPageParams(w, r, false)
@@ -108,6 +114,27 @@ func registerCatalogRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 		default:
 			WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 		}
+	})
+	mux.HandleFunc("GET /api/v1/admin/nodes/{id}/metrics", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := catalogPrincipal(w, r, sessions, "", false)
+		if !ok {
+			return
+		}
+		if !slices.Contains(user.Permissions, "nodes.write") && !slices.Contains(user.Permissions, "agents.write") {
+			WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "permission denied")
+			return
+		}
+		id := r.PathValue("id")
+		if !catalog.ValidID(id) {
+			WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+			return
+		}
+		metrics, err := store.GetNodeMetrics(r.Context(), id)
+		if err != nil {
+			writeCatalogError(w, r, err)
+			return
+		}
+		writeCatalogJSON(w, http.StatusOK, metrics)
 	})
 	mux.HandleFunc("/api/v1/nodes", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

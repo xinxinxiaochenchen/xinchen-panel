@@ -25,6 +25,8 @@ func (catalogSessions) Authenticate(_ context.Context, token string) (identity.P
 		return identity.PublicUser{ID: "member-id", Permissions: []string{"nodes.read"}}, nil
 	case "policy-token":
 		return identity.PublicUser{ID: "policy-id", Permissions: []string{"forward_policies.write"}}, nil
+	case "agent-token":
+		return identity.PublicUser{ID: "agent-id", Permissions: []string{"agents.write"}}, nil
 	default:
 		return identity.PublicUser{}, identity.ErrUnauthenticated
 	}
@@ -44,6 +46,20 @@ func TestForwardPolicyAdministratorCanListResourceGroups(t *testing.T) {
 		t.Fatalf("resource group create = %d %s", create.Code, create.Body.String())
 	}
 }
+
+func TestAgentAdministratorCanListNodesWithoutCreatingThem(t *testing.T) {
+	handler := NewHandlerWithCatalog(testLogger(), nil, catalogSessions{}, &catalogStub{})
+	list := httptest.NewRecorder()
+	handler.ServeHTTP(list, catalogRequest(http.MethodGet, "/api/v1/admin/nodes", "agent-token", "", ""))
+	if list.Code != http.StatusOK {
+		t.Fatalf("agent node list = %d %s", list.Code, list.Body.String())
+	}
+	create := httptest.NewRecorder()
+	handler.ServeHTTP(create, catalogRequest(http.MethodPost, "/api/v1/admin/nodes", "agent-token", "valid-csrf", `{}`))
+	if create.Code != http.StatusForbidden {
+		t.Fatalf("agent node create = %d %s", create.Code, create.Body.String())
+	}
+}
 func (s catalogSessions) VerifyCSRF(ctx context.Context, token, csrf string) (identity.PublicUser, error) {
 	user, err := s.Authenticate(ctx, token)
 	if err != nil {
@@ -60,6 +76,38 @@ type catalogStub struct {
 	createdBy string
 	listedFor string
 	nodes     []catalog.Node
+}
+
+func (s *catalogStub) GetNodeMetrics(_ context.Context, nodeID string) (catalog.NodeMetrics, error) {
+	if nodeID != "33333333-3333-7333-8333-333333333333" {
+		return catalog.NodeMetrics{}, catalog.ErrNotFound
+	}
+	return catalog.NodeMetrics{NodeID: nodeID, AgentStatus: "unknown"}, nil
+}
+
+func TestAdminNodeMetricsRequiresNodePermission(t *testing.T) {
+	handler := NewHandlerWithCatalog(testLogger(), nil, catalogSessions{}, &catalogStub{})
+	path := "/api/v1/admin/nodes/33333333-3333-7333-8333-333333333333/metrics"
+	for _, item := range []struct {
+		token  string
+		status int
+	}{
+		{"", 401}, {"member-token", 403}, {"policy-token", 403}, {"agent-token", 200}, {"admin-token", 200},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodGet, path, item.token, "", ""))
+		if response.Code != item.status {
+			t.Fatalf("token %q: status %d body %s", item.token, response.Code, response.Body.String())
+		}
+		if item.status == 200 && (!strings.Contains(response.Body.String(), `"agent_status":"unknown"`) || !strings.Contains(response.Body.String(), `"metrics":null`)) {
+			t.Fatalf("missing empty heartbeat: %s", response.Body.String())
+		}
+	}
+	missing := httptest.NewRecorder()
+	handler.ServeHTTP(missing, catalogRequest(http.MethodGet, "/api/v1/admin/nodes/44444444-4444-7444-8444-444444444444/metrics", "admin-token", "", ""))
+	if missing.Code != 404 {
+		t.Fatalf("missing node = %d", missing.Code)
+	}
 }
 
 func (s *catalogStub) CreateGroup(_ context.Context, input catalog.GroupInput, actor, _ string) (catalog.ResourceGroup, error) {

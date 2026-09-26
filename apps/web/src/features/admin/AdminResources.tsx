@@ -1,19 +1,25 @@
 import { useState, type FormEvent } from "react";
 import { Plus, Server } from "lucide-react";
-import { mutateCatalog } from "../../lib/catalog";
+import { mutateCatalog, nodeStatusLabel } from "../../lib/catalog";
 import type { ResourceGroup } from "../../lib/admin";
 import type { NodeRecord } from "../../lib/catalog";
 import { csrfToken } from "../catalog/CreateLine";
 import { AdminSection } from "./AdminSection";
 import { AdminNodeForm } from "./AdminNodeForm";
+import { AdminNodeMetrics } from "./AdminNodeMetrics";
+import { AdminAgentEnrollment } from "./AdminAgentEnrollment";
 
 export function ResourcePanel({
   groups,
   nodes,
+  canManageNodes,
+  canEnrollAgents,
   onRefresh,
 }: {
   groups: ResourceGroup[];
   nodes: NodeRecord[];
+  canManageNodes: boolean;
+  canEnrollAgents: boolean;
   onRefresh: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -22,6 +28,7 @@ export function ResourcePanel({
   const [region, setRegion] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [metricsNodeID, setMetricsNodeID] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -46,7 +53,7 @@ export function ResourcePanel({
     <AdminSection
       title="资源域与节点"
       description="先建立资源域，再通过节点 Agent 接入服务器。"
-      action={
+      action={canManageNodes ?
         <button
           className="primary-button catalog-create-button"
           type="button"
@@ -55,13 +62,13 @@ export function ResourcePanel({
           <Server size={16} />
           创建资源域
         </button>
-      }
+      : undefined}
     >
-      <div className="admin-inline-actions">
+      {canManageNodes && <div className="admin-inline-actions">
         <AdminNodeForm groups={groups} onSaved={onRefresh} />
-      </div>
+      </div>}
       <div className="admin-resource-grid">
-        <div>
+        {canManageNodes && <div>
           <h3>资源域</h3>
           {groups.map((group) => (
             <div className="admin-row" key={group.id}>
@@ -75,26 +82,29 @@ export function ResourcePanel({
           {groups.length === 0 && (
             <div className="catalog-form-note">暂无资源域。</div>
           )}
-        </div>
+        </div>}
         <div>
           <h3>节点</h3>
           {nodes.map((node) => (
-            <div className="admin-row" key={node.id}>
-              <strong>{node.name}</strong>
-              <span>
-                {node.group_code} · {node.host}
-              </span>
-              <em>{node.agent_status}</em>
+            <div className="admin-node-entry" key={node.id}>
+              <div className="admin-row">
+                <strong>{node.name}</strong>
+                <span>{node.group_code} · {node.host}</span>
+                <em>{nodeStatusLabel(node.agent_status)}</em>
+                <button className="refresh-button" type="button" aria-expanded={metricsNodeID === node.id} onClick={() => setMetricsNodeID((current) => current === node.id ? "" : node.id)}>{metricsNodeID === node.id ? "收起指标" : "查看指标"}</button>
+                {canEnrollAgents && <AdminAgentEnrollment nodeID={node.id} nodeName={node.name} />}
+              </div>
+              {metricsNodeID === node.id && <AdminNodeMetrics nodeID={node.id} />}
             </div>
           ))}
           {nodes.length === 0 && (
             <div className="catalog-form-note">
-              暂无节点，Agent 入网后会显示。
+              暂无节点，请先创建节点记录，再签发 Agent 入网令牌。
             </div>
           )}
         </div>
       </div>
-      {open && (
+      {canManageNodes && open && (
         <div className="catalog-dialog-backdrop" role="presentation">
           <form
             className="catalog-dialog"

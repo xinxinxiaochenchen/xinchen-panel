@@ -64,7 +64,7 @@ export function AdminDirectory({ user }: { user: User }) {
         {
           key: "nodes",
           path: "/api/v1/admin/nodes",
-          allowed: can("nodes.write"),
+          allowed: can("nodes.write") || can("agents.write"),
         },
         {
           key: "lines",
@@ -172,12 +172,13 @@ export function AdminDirectory({ user }: { user: User }) {
           />
         )}
       {!loading &&
-        can("nodes.write") &&
-        !failed.includes("groups") &&
+        (can("nodes.write") || can("agents.write")) &&
         !failed.includes("nodes") && (
           <ResourcePanel
             groups={data.groups}
             nodes={data.nodes}
+            canManageNodes={can("nodes.write")}
+            canEnrollAgents={can("agents.write")}
             onRefresh={refresh}
           />
         )}

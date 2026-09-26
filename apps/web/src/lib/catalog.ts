@@ -15,6 +15,23 @@ export type NodeRecord = {
   last_seen_at: string | null
 }
 
+export type NodeMetricsRecord = {
+  node_id: string
+  agent_status: string
+  last_seen_at: string | null
+  fresh: boolean
+  metrics: null | {
+    observed_at: string
+    uptime_seconds: number
+    cpu_pct: number
+    memory_used_bytes: number
+    rx_bytes: number
+    tx_bytes: number
+    connections: number
+    engine_status: string
+  }
+}
+
 export type LineRecord = {
   id: string
   owner_user_id: string | null

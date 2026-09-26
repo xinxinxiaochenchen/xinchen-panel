@@ -518,6 +518,7 @@ paths:
     get:
       operationId: listAllNodes
       summary: List all nodes (administrator)
+      description: Requires nodes.write or agents.write. The latter grants node visibility for Agent enrollment but not node creation.
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
@@ -556,6 +557,26 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/nodes/{id}/metrics:
+    get:
+      operationId: getAdminNodeMetrics
+      summary: Read the latest Agent telemetry for a node
+      description: Requires nodes.write or agents.write. Metrics are fresh only when both the Agent and telemetry were observed within 45 seconds. RX and TX are cumulative network interface counters, separate from billed user traffic.
+      security: [{browserSession: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Node Agent status and latest metrics, if reported.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NodeMetrics'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /api/v1/nodes:
     get:
       operationId: listAllowedNodes
@@ -1850,6 +1871,30 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Node'}
         next_cursor: {type: ['string', 'null']}
+    NodeMetrics:
+      type: object
+      required: [node_id, agent_status, last_seen_at, fresh, metrics]
+      properties:
+        node_id: {type: string, format: uuid}
+        agent_status: {type: string, enum: [unknown, online, offline, revoked]}
+        last_seen_at: {type: ['string', 'null'], format: date-time}
+        fresh: {type: boolean}
+        metrics:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/AgentMetrics'
+    AgentMetrics:
+      type: object
+      required: [observed_at, uptime_seconds, cpu_pct, memory_used_bytes, rx_bytes, tx_bytes, connections, engine_status]
+      properties:
+        observed_at: {type: string, format: date-time}
+        uptime_seconds: {type: integer, format: int64, minimum: 0}
+        cpu_pct: {type: number, minimum: 0, maximum: 100}
+        memory_used_bytes: {type: integer, format: int64, minimum: 0}
+        rx_bytes: {type: integer, format: int64, minimum: 0}
+        tx_bytes: {type: integer, format: int64, minimum: 0}
+        connections: {type: integer, format: int64, minimum: 0}
+        engine_status: {type: string, enum: [running, degraded, stopped]}
     User:
       type: object
       required: [id, email, status, timezone, roles, permissions]

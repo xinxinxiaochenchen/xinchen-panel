@@ -351,6 +351,14 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .admin-row em { font-style: normal; color: var(--accent); }
 .admin-policy-row { flex-wrap: wrap; }
 .admin-policy-row .refresh-button { padding: 7px 10px; font-size: 10px; }
+.admin-node-entry { display: flex; flex-direction: column; gap: 8px; }
+.admin-node-entry .refresh-button { padding: 7px 10px; font-size: 10px; }
+.admin-node-metrics { border: 1px solid var(--border); border-radius: 11px; padding: 15px; background: var(--surface-soft); }
+.admin-node-metrics-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.admin-node-metrics-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+.admin-node-metrics-grid span { display: flex; flex-direction: column; gap: 4px; }
+.admin-node-metrics-grid small { color: var(--muted); font-size: 10px; }
+.admin-node-metrics-grid strong { font-size: 13px; overflow-wrap: anywhere; }
 .admin-card-grid, .admin-resource-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .admin-resource-grid h3 { font-size: 14px; margin: 0 0 6px; }
 .admin-resource-grid .admin-row { flex-wrap: wrap; }
@@ -414,6 +422,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 }
 
 @media (max-width: 600px) {
+.admin-node-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .account-settings-grid { grid-template-columns: 1fr; }
   .account-password-card { grid-column: auto; }
   .account-password-card form { grid-template-columns: 1fr; }
