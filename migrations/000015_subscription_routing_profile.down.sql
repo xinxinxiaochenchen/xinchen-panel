@@ -1,0 +1,3 @@
+DROP INDEX subscriptions_routing_profile_idx;
+ALTER TABLE subscriptions DROP CONSTRAINT subscriptions_routing_profile_owner_fk;
+ALTER TABLE subscriptions DROP COLUMN routing_profile_id;

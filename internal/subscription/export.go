@@ -68,12 +68,12 @@ ORDER BY t.sort_order`, sub.ID, sub.UserID)
 	targets := make([]subscriptionconfig.Target, 0)
 	for rows.Next() {
 		var v subscriptionconfig.Target
-		var lineID, lineOwner, group, sealed string
-		if err := rows.Scan(&v.ID, &v.Name, &lineID, &v.LineName, &lineOwner, &group, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed); err != nil {
+		var lineOwner, group, sealed string
+		if err := rows.Scan(&v.ID, &v.Name, &v.LineID, &v.LineName, &lineOwner, &group, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed); err != nil {
 			rows.Close()
 			return nil, "", err
 		}
-		if !lineAllowed(sub.UserID, lineID, lineOwner, group, grant) {
+		if !lineAllowed(sub.UserID, v.LineID, lineOwner, group, grant) {
 			continue
 		}
 		password, err := r.cipher.Open(v.ID, sub.UserID, sealed)
@@ -95,12 +95,74 @@ ORDER BY t.sort_order`, sub.ID, sub.UserID)
 	if err := checkExpiry(ctx, tx, ends); err != nil {
 		return nil, "", ErrNotFound
 	}
-	body, contentType, err := subscriptionconfig.Render(format, sub.NameTemplate, targets)
+	policy, err := loadExportPolicy(ctx, tx, sub, targets)
 	if err != nil {
-		return nil, "", fmt.Errorf("render subscription: %w", err)
+		return nil, "", err
+	}
+	body, contentType, err := subscriptionconfig.RenderWithRouting(format, sub.NameTemplate, targets, policy)
+	if err != nil {
+		return nil, "", ValidationError{"routing_profile_id", err.Error()}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, "", err
 	}
 	return body, contentType, nil
+}
+
+func loadExportPolicy(ctx context.Context, tx pgx.Tx, sub Subscription, targets []subscriptionconfig.Target) (*subscriptionconfig.RoutingPolicy, error) {
+	if sub.RoutingProfileID == nil {
+		return nil, nil
+	}
+	var kind string
+	var line *string
+	if err := tx.QueryRow(ctx, `SELECT fallback_kind,fallback_line_id::text FROM routing_profiles WHERE id=$1 AND user_id=$2 AND enabled`, *sub.RoutingProfileID, sub.UserID).Scan(&kind, &line); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUnavailable
+		}
+		return nil, err
+	}
+	policy := &subscriptionconfig.RoutingPolicy{Fallback: subscriptionconfig.Action{Kind: kind}}
+	if line != nil {
+		policy.Fallback.LineID = *line
+	}
+	rows, err := tx.Query(ctx, `SELECT match_type,match_value,action,line_id::text FROM routing_rules WHERE profile_id=$1 AND enabled ORDER BY priority,id`, *sub.RoutingProfileID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var rule subscriptionconfig.Rule
+		var line *string
+		if err := rows.Scan(&rule.MatchType, &rule.MatchValue, &rule.Action.Kind, &line); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if line != nil {
+			rule.Action.LineID = *line
+		}
+		policy.Rules = append(policy.Rules, rule)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	available := map[string]bool{}
+	for _, target := range targets {
+		available[target.LineID] = true
+	}
+	needed := map[string]bool{}
+	if policy.Fallback.Kind == "line" {
+		needed[policy.Fallback.LineID] = true
+	}
+	for _, rule := range policy.Rules {
+		if rule.Action.Kind == "line" {
+			needed[rule.Action.LineID] = true
+		}
+	}
+	for id := range needed {
+		if !available[id] {
+			return nil, ErrUnavailable
+		}
+	}
+	return policy, nil
 }

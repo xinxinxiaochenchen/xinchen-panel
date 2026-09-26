@@ -62,6 +62,8 @@ Files: `internal/agentproto`, `agentclient`, `agentruntime`, `orchestration`, Ag
 
 后续进展：Agent 客户端已实现按请求 ID 关联开启、续租和结算回复，和配置快照、用量 ACK 共用单读者循环；生产执行器在计量器尚未就绪时拒绝开通转发或代理监听器。执行器仍未发起额度请求或计量 TCP/UDP/Trojan 流量，Task 4 仍未完成。
 
+执行器进展：新增共用的累计整数计费和本地租约预算，按上传/下载并发预留且只计成功写出的有效载荷；UDP 数据报不足额时不部分发送。TCP、Trojan TLS、UDP 入口已通过模拟计量服务的真实套接字准入测试。生产 Agent 尚未提供真实计量服务，也未完成持久租约、续租和用量 ACK 后结算，Task 4 保持未完成。
+
 协议与剩余边界见 `docs/agent-usage-protocol.md`。报告链路已接入启动程序，但执行器尚不产生报告，不能以此宣称 Task 4 完成或开放真实代理。
 
 ## Task 5: REST、报表与控制台

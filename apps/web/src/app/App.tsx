@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ArrowUpRight, LockKeyhole, Menu, Moon, Sun, X } from 'lucide-react'
+import { ArrowUpRight, LockKeyhole, LogOut, Menu, Moon, Sun, X } from 'lucide-react'
 import { sections, sectionFromHash, type SectionId } from './sections'
 import { useHealth } from '../lib/useHealth'
 import { PreviewHome } from '../features/preview/PreviewHome'
 import { ModulePreview } from '../features/preview/ModulePreview'
+import { DashboardHome } from '../features/dashboard/DashboardHome'
+import { SignIn } from '../features/dashboard/SignIn'
+import { useViewer } from '../lib/useViewer'
 
 function readTheme(): 'light' | 'dark' {
   return window.localStorage.getItem('control-theme') === 'dark' ? 'dark' : 'light'
@@ -14,6 +17,8 @@ export function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(readTheme)
   const [menuOpen, setMenuOpen] = useState(false)
   const health = useHealth()
+  const { viewer, refresh } = useViewer()
+  const [signOutError, setSignOutError] = useState('')
   const selected = sections.find((section) => section.id === sectionId) ?? sections[0]
 
   useEffect(() => {
@@ -31,8 +36,19 @@ export function App() {
   }, [theme])
 
   useEffect(() => {
-    document.title = `${selected.label} · 网络控制平面预览`
-  }, [selected.label])
+    document.title = `${selected.label} · 网络控制平面${viewer.kind === 'preview' ? '预览' : ''}`
+  }, [selected.label, viewer.kind])
+
+  async function signOut() {
+    const csrf = document.cookie.split('; ').find((part) => part.startsWith('__Host-control_csrf='))?.split('=')[1]
+    if (!csrf) { setSignOutError('退出凭据不可用，请刷新页面后重试。'); return }
+    try {
+      const response = await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } })
+      if (!response.ok) { setSignOutError('退出失败，请稍后重试。'); return }
+      setSignOutError('')
+      refresh()
+    } catch { setSignOutError('无法连接账户服务，请稍后重试。') }
+  }
 
   return (
     <div className="app-shell">
@@ -53,7 +69,8 @@ export function App() {
           </nav>
 
           <div className="header-actions">
-            <span className="preview-pill"><span className="preview-dot" />纯 IP 预览</span>
+            {viewer.kind === 'preview' ? <span className="preview-pill"><span className="preview-dot" />纯 IP 预览</span> : viewer.kind === 'signed-in' ? <span className="preview-pill account-pill">{viewer.user.email}</span> : null}
+            {viewer.kind === 'signed-in' && <button className="icon-button" type="button" onClick={() => void signOut()} aria-label="退出登录"><LogOut size={18} /></button>}
             <button className="icon-button" type="button" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
               aria-label={theme === 'light' ? '切换深色主题' : '切换浅色主题'}>
               {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
@@ -73,12 +90,17 @@ export function App() {
       </header>
 
       <main className="main-content">
-        {sectionId === 'home' ? <PreviewHome health={health} /> : <ModulePreview section={selected} />}
+        {viewer.kind === 'preview' ? sectionId === 'home' ? <PreviewHome health={health} /> : <ModulePreview section={selected} />
+          : viewer.kind === 'checking' ? <div className="page-state" role="status">正在检查安全会话…</div>
+          : viewer.kind === 'error' ? <div className="page-state" role="alert">{viewer.message}<button type="button" onClick={refresh}>重试</button></div>
+          : viewer.kind === 'guest' ? <SignIn onSignedIn={refresh} />
+          : sectionId === 'home' || sectionId === 'account' ? <DashboardHome user={viewer.user} /> : <ModulePreview section={selected} signedIn />}
+        {signOutError && <div className="global-error" role="alert">{signOutError}</div>}
       </main>
 
       <footer className="site-footer">
         <span>网络控制平面 · 独立设计的节点与线路管理系统</span>
-        <span className="footer-security"><LockKeyhole size={14} />管理登录将在安全接入后开放</span>
+        <span className="footer-security"><LockKeyhole size={14} />{viewer.kind === 'preview' ? '管理登录将在安全接入后开放' : '安全会话连接'}</span>
         <a href="/api/v1/health/ready" target="_blank" rel="noreferrer">查看健康接口 <ArrowUpRight size={14} /></a>
       </footer>
     </div>

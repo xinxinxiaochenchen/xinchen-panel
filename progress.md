@@ -45,3 +45,30 @@
 - 2026-09-26：Agent 用量报告子阶段新增 `usage_batch`/`usage_ack`、严格限长与字段校验、SHA-256 批次摘要、认证节点到 Agent ID 的控制面入账映射、服务端先持久化再 ACK。Agent 有 0600 文件 outbox、排他锁、原子落盘、失效拒写、断线重放和持续连接发送；ACK 丢失会重发同批次，已入账项由连接序号去重。修复配置保存阻塞时租约到期执行器仍运行、重入网同配置 ACK 未恢复 applied revision、账期截止时刻最终快照被拒绝。协议见 `docs/agent-usage-protocol.md`。独立 PostgreSQL 16 容器验证真实账本、节点映射、账期边界和重入网回归；Go 全量测试、相关 race、vet 通过。独立测试容器已删除；正式服务器未发布本轮代码，继续纯 IP 只读预览。连接准入、租约申请与结算及 TCP/UDP/Trojan 本地计量/限额仍待实现，真实代理不得开放。
 - 2026-09-26：连接准入阶段新增迁移 13，将每份计费租约唯一绑定连接；控制面按 mTLS 节点身份核对已应用配置、资源所有者、冻结账期与倍率，处理开启/续租/结算消息。独立 PostgreSQL 16 临时库验证 migration 13 up/down/up、并发幂等、跨连接借用拒绝、资源转移、配置推进和线路迁移；完整 Go 测试、关键 race 与 vet 通过。Agent 客户端、本地计量和真实节点执行尚未接入，正式服务器继续只读预览。
 - 2026-09-26：Agent 客户端增加额度请求 ID 关联与单读者回复分发，测试覆盖重复请求、拒绝、取消及断线清理；生产 Agent 在额度执行尚未接通时拒绝含真实流量的配置快照。连接签发时刻和心跳时间校验经独立 PostgreSQL 回归修正。执行器逐字节计量、额度耗尽停用、持久化未结租约和真实节点部署仍待完成。
+- 2026-09-26：抽出 Agent/控制面共用的累计整数计费公式，新增 Agent 并发预算、按实际写入计量、UDP 整包拒绝，以及执行器的传输无关计量接口。真实套接字测试覆盖 TCP、Trojan TLS、UDP 在模拟计量服务下的准入和额度停止，完整 Go 测试及 vet 通过。生产 Agent 仍不安装真实计量服务，故继续拒绝开通流量；未结租约持久化、续租、用量报告/结算和服务端部署仍待实现。
+- 2026-09-26：新增 Agent 活动租约文件存储原语：0600 权限、独占锁、严格 JSON 字段校验、原子落盘、重启恢复、租约身份不可变、累计计数和序号不可回退、结算删除。针对损坏/重复字段/符号链接/权限错误/并发打开的测试通过；尚未接入运行时报告 ACK 和续租状态机，不能开放真实流量。
+- 2026-09-26：完成 Agent 连接级额度续租的首个闭环：保留读取缓冲区中的未发送字节，旧租约最终用量 ACK 后结算，再申请新租约；累计计数和序号跨租约连续，结算量只包含当前租约增量。关闭会唤醒等待 ACK 的复制，TCP/Trojan 会话撤销时同步关闭计量器；重启恢复按当前租约增量计费。新增当前账期、用户 UTC 日报和管理员按日期/用户/入口节点/线路聚合的 REST、RBAC、范围限制与 OpenAPI 文档。Go 全量测试、Agent/runtime race、vet、前端构建通过；PGlite 校验了账期与报表 SQL。独立 PostgreSQL 16 和真实服务器验收尚未做，线上继续纯 IP 只读预览。
+
+## 2026-09-26 分流与稳定性阶段
+
+- 新增迁移 14：`routing_profiles` 与 `routing_rules`，支持域名、域名后缀、IP、CIDR、GeoIP、GeoSite 规则；fallback 支持直连、阻断或套餐授权的单跳线路。
+- 新增 `internal/routing` 领域校验、PostgreSQL 仓储、套餐规则数量限制、线路授权复核、审计记录与 profile 校验 API。
+- 新增用户分流 REST：`/api/v1/routing-profiles` 及 rules、validate 子资源；接入 `routing.read` / `routing.write` RBAC 和 CSRF。
+- 修复 Agent 配置撤销时的计量结算死锁：先关闭数据连接，再异步等待控制面结算 ACK；新增回归测试。
+- 前端首页支持安全来源下登录后读取套餐、账期和最近日流量；公网纯 HTTP 继续保持只读预览。
+- 验证：全量 Go 测试、`go vet ./...`、Agent/分流/API race 测试、Web 测试/typecheck/build 均通过。PostgreSQL 16 独立迁移和服务器预览验收见下文。
+
+### 服务器预览发布（2026-09-26）
+
+- Termark 资产 `us dmit` 已确认地址为 `179.255.145.149:22`；通过应用内 CLI 完成发布。
+- 发布目录：`/opt/network-control-plane/releases/preview-20260926`；发布前数据库备份：`/opt/network-control-plane/backups/ncp-before-preview-20260926.dump`。
+- 服务器 PostgreSQL 16.10 临时库已验证迁移 1–14，随后删除；正式预览库已由迁移 worker 升级到版本 14。
+- 纯 IP 预览已切换到新镜像并健康运行：`http://179.255.145.149:18080/`；`/api/v1/health/ready` 返回 200，容器状态 healthy，`/api/v1/me` 返回 404（浏览器认证保持关闭）。
+- Nginx/HTTPS、登录、Agent 入网和真实代理流量仍未开启；域名反代后再单独启用浏览器认证。
+
+## 2026-09-26 订阅与分流联动
+
+- 新增迁移 15，将订阅可选绑定同用户分流 Profile；创建和更新时检查归属与启用状态，PATCH `null` 可以清除绑定。
+- Mihomo 导出按优先级生成域名、后缀、IP、CIDR、GeoIP 规则及 fallback；sing-box 导出域名、后缀、IP、CIDR 规则。GeoSite 暂无受控数据源，两个格式均明确拒绝；sing-box GeoIP 同样明确拒绝。线路动作必须在本次订阅实际可用目标中找到对应线路，Profile 停用或线路缺失时不导出错误配置。
+- 全量 Go 测试、vet、前端测试/类型检查/构建及 OpenAPI YAML 解析通过。服务器独立 PostgreSQL 16 测试库完成迁移 1–15、订阅生命周期测试和迁移 15 down/up，测试库已删除。
+- 已通过 Termark 发布到 `us dmit` 的 `/opt/network-control-plane/releases/preview-routing-20260926`；正式预览库升级前备份 `/opt/network-control-plane/backups/ncp-before-routing-20260926.dump`（0600），迁移版本 15。API/DB 健康且重启 0；公网纯 IP 首页和就绪接口 200，登录 404。HTTPS 域名、浏览器认证、Agent 入网和真实节点端到端验收仍待完成。

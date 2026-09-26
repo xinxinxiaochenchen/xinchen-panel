@@ -160,6 +160,77 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .site-footer a, .footer-security { display: inline-flex; align-items: center; gap: 5px; }
 .site-footer a:hover { color: var(--accent); }
 
+.account-pill { max-width: 190px; overflow: hidden; text-overflow: ellipsis; color: var(--accent); }
+.page-state { min-height: 52vh; display: flex; align-items: center; justify-content: center; gap: 18px; color: var(--muted); font-size: 15px; }
+.page-state button, .refresh-button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 10px 15px; font: inherit; font-size: 12px; font-weight: 700; }
+.page-state button:hover, .refresh-button:hover { border-color: var(--accent); color: var(--accent); }
+.global-error { position: fixed; bottom: 22px; right: 22px; z-index: 30; border: 1px solid #d78a8a; background: var(--surface); color: #b95050; padding: 12px 16px; border-radius: 10px; box-shadow: var(--shadow); font-size: 12px; }
+.auth-page { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); align-items: center; gap: 12%; min-height: min(760px, 80vh); padding: 70px 0 100px; }
+.auth-intro h1, .dashboard-intro h1 { font-size: clamp(42px, 5vw, 62px); letter-spacing: -.055em; line-height: 1.15; margin: 18px 0; }
+.auth-intro p, .dashboard-intro p { max-width: 460px; color: var(--muted); font-size: 14px; line-height: 1.9; }
+.auth-card { display: flex; flex-direction: column; padding: 35px; border: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow); border-radius: 20px; }
+.auth-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.auth-card h2 { font-size: 24px; letter-spacing: -.04em; margin: 22px 0 2px; }
+.auth-card p { font-size: 12px; color: var(--muted); margin: 0 0 25px; }
+.auth-card label { font-size: 11px; font-weight: 700; margin: 13px 0 8px; }
+.auth-card input { width: 100%; height: 44px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); padding: 0 12px; font: inherit; font-size: 13px; }
+.auth-card input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.auth-card .primary-button { border: 0; width: 100%; margin-top: 25px; }
+.auth-card .primary-button:disabled { opacity: .65; cursor: wait; }
+.auth-error { color: #bd5757; font-size: 11px; line-height: 1.5; margin-top: 13px; }
+.dashboard-home { padding: 68px 0 95px; }
+.dashboard-intro { display: flex; justify-content: space-between; align-items: end; gap: 22px; margin-bottom: 28px; }
+.dashboard-intro h1 { font-size: clamp(38px, 4.4vw, 57px); margin-bottom: 8px; overflow-wrap: anywhere; }
+.dashboard-intro p { margin: 0; }
+.refresh-button { display: inline-flex; align-items: center; gap: 7px; flex: none; }
+.account-strip { display: flex; align-items: center; gap: 13px; padding: 19px 24px; border: 1px solid var(--border); border-radius: 15px; background: var(--surface); margin-bottom: 18px; }
+.account-avatar { display: grid; place-items: center; width: 40px; height: 40px; color: var(--accent); background: var(--accent-soft); border-radius: 50%; flex: none; }
+.account-strip > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.account-strip small { color: var(--muted); font-size: 10px; }
+.account-strip strong { font-size: 13px; overflow-wrap: anywhere; }
+.account-active, .plan-status { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 11px; font-weight: 700; }
+.account-active { margin-left: auto; white-space: nowrap; }
+.account-active > span, .plan-status > span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.dashboard-grid { display: grid; grid-template-columns: minmax(270px, .84fr) minmax(0, 1.16fr); gap: 18px; }
+.dashboard-card { min-width: 0; padding: 26px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); }
+.dashboard-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 31px; }
+.dashboard-card-heading > span:first-child { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 750; }
+.dashboard-card-heading svg { color: var(--accent); }
+.live-tag { color: var(--accent); background: var(--accent-soft); font-size: 9px; letter-spacing: .1em; padding: 6px 8px; border-radius: 5px; font-weight: 800; }
+.plan-name { display: block; font-size: 29px; letter-spacing: -.04em; margin-bottom: 9px; overflow-wrap: anywhere; }
+.card-divider { border-top: 1px solid var(--border); margin: 26px 0 17px; }
+.detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; color: var(--muted); font-size: 12px; }
+.detail-row strong { color: var(--text); text-align: right; }
+.usage-card { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--accent-soft) 27%, var(--surface))); }
+.period-label { font-size: 10px; color: var(--muted); text-align: right; }
+.usage-total { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 34px 0 20px; }
+.usage-total > div { display: flex; flex-direction: column; gap: 7px; }
+.usage-total > div > span, .daily-summary span { color: var(--muted); font-size: 11px; }
+.usage-total strong { font-size: clamp(30px, 3.5vw, 43px); line-height: 1; letter-spacing: -.045em; }
+.usage-ratio { color: var(--accent); font-size: 21px; font-weight: 750; }
+.usage-progress { height: 10px; background: var(--surface-soft); border-radius: 10px; overflow: hidden; }
+.usage-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #237d61, #69c996); }
+.usage-legend { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 10px; margin-top: 10px; }
+.usage-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 33px; }
+.usage-metrics > div { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 11px; padding: 15px; background: var(--surface); }
+.usage-metrics svg { color: var(--accent); }
+.usage-metrics span { color: var(--muted); font-size: 10px; }
+.usage-metrics strong { font-size: 14px; white-space: nowrap; }
+.usage-note, .dashboard-footnote { color: var(--muted); font-size: 10px; line-height: 1.6; }
+.usage-note { margin: 14px 0 0; }
+.daily-card { grid-column: 1 / -1; }
+.daily-card .dashboard-card-heading { margin-bottom: 18px; }
+.daily-summary { display: flex; align-items: baseline; gap: 12px; }
+.daily-summary strong { font-size: 22px; letter-spacing: -.035em; }
+.daily-chart { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); align-items: end; gap: 9px; height: 145px; margin-top: 24px; border-bottom: 1px solid var(--border); }
+.daily-bar { height: 100%; display: flex; align-items: end; min-width: 0; }
+.daily-bar span { display: block; width: 100%; min-height: 2px; border-radius: 5px 5px 0 0; background: var(--accent); opacity: .78; }
+.daily-bar:hover span { opacity: 1; }
+.chart-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; margin-top: 10px; }
+.data-status { display: flex; align-items: center; justify-content: center; min-height: 155px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+.data-error { color: #b95c5c; }
+.dashboard-footnote { margin-top: 19px; }
+
 @media (max-width: 1120px) {
   .header-inner { width: min(100% - 44px, 1320px); gap: 15px; }
   .desktop-nav { gap: 0; }
@@ -172,6 +243,9 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 }
 
 @media (max-width: 890px) {
+  .auth-page { gap: 6%; }
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .daily-card { grid-column: auto; }
   .desktop-nav { display: none; }
   .header-inner { height: 70px; }
   .header-actions { margin-left: auto; }
@@ -192,6 +266,21 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 }
 
 @media (max-width: 600px) {
+  .account-pill { display: none; }
+  .auth-page { display: flex; flex-direction: column; align-items: stretch; gap: 30px; min-height: 0; padding: 54px 0 70px; }
+  .auth-intro h1 { font-size: 40px; }
+  .auth-card { padding: 25px; }
+  .dashboard-home { padding: 48px 0 65px; }
+  .dashboard-intro { align-items: flex-start; flex-direction: column; }
+  .dashboard-intro h1 { font-size: 38px; }
+  .account-strip { padding: 17px; }
+  .dashboard-card { padding: 21px; }
+  .dashboard-card-heading { align-items: flex-start; }
+  .period-label { max-width: 45%; }
+  .usage-metrics { grid-template-columns: 1fr; gap: 8px; margin-top: 24px; }
+  .usage-metrics > div { flex-direction: row; align-items: center; }
+  .usage-metrics strong { margin-left: auto; }
+  .daily-chart { gap: 5px; height: 120px; }
   .header-inner, .main-content, .site-footer { width: min(100% - 36px, 1240px); }
   .brand-copy strong { font-size: 13px; }
   .brand-copy small { font-size: 8px; }

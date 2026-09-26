@@ -44,9 +44,10 @@ type listenerKey struct {
 }
 
 type target struct {
-	host string
-	port int
-	id   string
+	host     string
+	port     int
+	id       string
+	revision uint64
 }
 
 type Resolver func(context.Context, string) ([]netip.Addr, error)

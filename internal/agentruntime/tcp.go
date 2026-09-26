@@ -7,12 +7,15 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"controlplane/internal/agentmeter"
 )
 
 type tcpSession struct {
 	mu       sync.Mutex
 	client   net.Conn
 	upstream net.Conn
+	meter    MeteredConnection
 	ctx      context.Context
 	cancel   context.CancelFunc
 	closed   bool
@@ -34,6 +37,18 @@ func (session *tcpSession) setUpstream(connection net.Conn) bool {
 	return true
 }
 
+func (session *tcpSession) setMeter(meter MeteredConnection) bool {
+	session.mu.Lock()
+	if session.closed {
+		session.mu.Unlock()
+		_ = meter.Close()
+		return false
+	}
+	session.meter = meter
+	session.mu.Unlock()
+	return true
+}
+
 func (session *tcpSession) close() {
 	session.mu.Lock()
 	if session.closed {
@@ -42,11 +57,19 @@ func (session *tcpSession) close() {
 	}
 	session.closed = true
 	upstream := session.upstream
+	meter := session.meter
+	session.meter = nil
 	session.mu.Unlock()
 	session.cancel()
 	_ = session.client.Close()
 	if upstream != nil {
 		_ = upstream.Close()
+	}
+	if meter != nil {
+		// Closing a metered connection may synchronously wait for the control
+		// stream to acknowledge a final settlement. Do not block Apply or the
+		// stream reader while revoking a data-plane session.
+		go func() { _ = meter.Close() }()
 	}
 }
 
@@ -131,6 +154,20 @@ func (r *Runtime) relayTCP(listener *endpoint, session *tcpSession) {
 	if destination == nil {
 		return
 	}
+	var metered MeteredConnection
+	if r.options.Meter != nil {
+		var err error
+		metered, err = r.options.Meter.Open(session.ctx, "forward", destination.id, destination.revision)
+		if err != nil {
+			return
+		}
+		if !session.setMeter(metered) {
+			return
+		}
+		defer metered.Close()
+	} else if r.options.RequireMetering {
+		return
+	}
 	ctx, cancel := context.WithTimeout(session.ctx, 10*time.Second)
 	defer cancel()
 	address, err := ResolvePublic(ctx, destination.host, r.options.Resolve)
@@ -144,27 +181,41 @@ func (r *Runtime) relayTCP(listener *endpoint, session *tcpSession) {
 	if !session.setUpstream(upstream) {
 		return
 	}
-	uploadDone := make(chan struct{})
-	downloadDone := make(chan struct{})
+	uploadDone := make(chan error, 1)
+	downloadDone := make(chan error, 1)
+	copyPayload := func(dst io.Writer, src io.Reader, direction agentmeter.Direction) error {
+		if metered != nil {
+			_, err := metered.Copy(dst, src, direction)
+			return err
+		}
+		_, err := io.Copy(dst, src)
+		return err
+	}
 	go func() {
-		_, _ = io.Copy(upstream, session.client)
+		err := copyPayload(upstream, session.client, agentmeter.Upload)
 		closeWrite(upstream)
-		close(uploadDone)
+		uploadDone <- err
 	}()
 	go func() {
-		_, _ = io.Copy(session.client, upstream)
+		err := copyPayload(session.client, upstream, agentmeter.Download)
 		closeWrite(session.client)
-		close(downloadDone)
+		downloadDone <- err
 	}()
 	select {
-	case <-uploadDone:
+	case err := <-uploadDone:
+		if err != nil {
+			session.close()
+		}
 		select {
 		case <-downloadDone:
 		case <-time.After(r.options.TCPDrainTimeout):
 			session.close()
 			<-downloadDone
 		}
-	case <-downloadDone:
+	case err := <-downloadDone:
+		if err != nil {
+			session.close()
+		}
 		select {
 		case <-uploadDone:
 		case <-time.After(r.options.TCPDrainTimeout):

@@ -7,11 +7,14 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"controlplane/internal/agentmeter"
 )
 
 type udpSession struct {
 	conn     net.Conn
 	client   net.Addr
+	meter    MeteredConnection
 	lastSeen atomic.Int64
 }
 
@@ -47,7 +50,13 @@ func (r *Runtime) relayUDPPacket(listener *endpoint, client net.Addr, packet []b
 		return
 	}
 	session.lastSeen.Store(time.Now().UnixNano())
-	if _, err := session.conn.Write(packet); err != nil {
+	var err error
+	if session.meter != nil {
+		_, err = session.meter.WritePacket(session.conn, packet, agentmeter.Upload)
+	} else {
+		_, err = session.conn.Write(packet)
+	}
+	if err != nil {
 		r.removeUDPAssociation(listener, client.String(), session)
 	}
 }
@@ -66,6 +75,22 @@ func (r *Runtime) udpAssociation(listener *endpoint, client net.Addr) *udpSessio
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	var metered MeteredConnection
+	if r.options.Meter != nil {
+		var err error
+		metered, err = r.options.Meter.Open(ctx, "forward", destination.id, destination.revision)
+		if err != nil {
+			return nil
+		}
+	} else if r.options.RequireMetering {
+		return nil
+	}
+	accepted := false
+	defer func() {
+		if !accepted && metered != nil {
+			_ = metered.Close()
+		}
+	}()
 	address, err := ResolvePublic(ctx, destination.host, r.options.Resolve)
 	if err != nil {
 		return nil
@@ -90,11 +115,12 @@ func (r *Runtime) udpAssociation(listener *endpoint, client net.Addr) *udpSessio
 		_ = upstream.Close()
 		return nil
 	}
-	session := &udpSession{conn: upstream, client: client}
+	session := &udpSession{conn: upstream, client: client, meter: metered}
 	session.lastSeen.Store(time.Now().UnixNano())
 	listener.sessions[key] = session
 	r.loops.Add(1)
 	listener.udpMu.Unlock()
+	accepted = true
 	go r.serveUDPReplies(listener, key, session)
 	return session
 }
@@ -126,7 +152,11 @@ func (r *Runtime) serveUDPReplies(listener *endpoint, key string, session *udpSe
 			listener.udpMu.Unlock()
 			return
 		}
-		_, err = listener.udp.WriteTo(buffer[:count], session.client)
+		if session.meter != nil {
+			_, err = session.meter.WritePacket(packetWriter{listener.udp, session.client}, buffer[:count], agentmeter.Download)
+		} else {
+			_, err = listener.udp.WriteTo(buffer[:count], session.client)
+		}
 		listener.udpMu.Unlock()
 		if err != nil {
 			return
@@ -141,4 +171,14 @@ func (r *Runtime) removeUDPAssociation(listener *endpoint, key string, session *
 	}
 	listener.udpMu.Unlock()
 	_ = session.conn.Close()
+	if session.meter != nil {
+		_ = session.meter.Close()
+	}
 }
+
+type packetWriter struct {
+	conn   net.PacketConn
+	client net.Addr
+}
+
+func (w packetWriter) Write(payload []byte) (int, error) { return w.conn.WriteTo(payload, w.client) }

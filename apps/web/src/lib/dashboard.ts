@@ -1,0 +1,75 @@
+export type User = {
+  id: string
+  email: string
+  status: string
+  timezone: string
+  roles: string[]
+  permissions: string[]
+}
+
+export type Snapshot = { plan_name: string; quota_bytes: number }
+export type Membership = { id: string; status: string; starts_at: string; ends_at: string; snapshot: Snapshot }
+export type Usage = {
+  starts_at: string
+  ends_at: string
+  membership_ends_at: string
+  quota_bytes: number
+  uploaded_bytes: number
+  downloaded_bytes: number
+  charged_bytes: number
+  reserved_bytes: number
+  remaining_bytes: number
+  available_bytes: number
+  usage_percent: number
+  snapshot: Snapshot
+}
+export type DailyUsage = { date: string; uploaded_bytes: number; downloaded_bytes: number; charged_bytes: number }
+export type Viewer = { kind: 'preview' } | { kind: 'guest' } | { kind: 'signed-in'; user: User }
+export type Resource<T> = { kind: 'loading' } | { kind: 'empty' } | { kind: 'ready'; data: T } | { kind: 'error'; message: string }
+
+export function isSecureLocation(protocol: string, hostname: string): boolean {
+  return protocol === 'https:' || protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)
+}
+
+export async function loadViewer(protocol: string, hostname: string, request: typeof fetch = fetch): Promise<Viewer> {
+  if (!isSecureLocation(protocol, hostname)) return { kind: 'preview' }
+  const response = await request('/api/v1/me', { credentials: 'same-origin', cache: 'no-store' })
+  if (response.status === 404) return { kind: 'preview' }
+  if (response.status === 401) return { kind: 'guest' }
+  if (!response.ok) throw new Error(`账户状态暂不可用（${response.status}）`)
+  return { kind: 'signed-in', user: await response.json() as User }
+}
+
+export async function loadResource<T>(path: string, request: typeof fetch = fetch): Promise<Resource<T>> {
+  try {
+    const response = await request(path, { credentials: 'same-origin', cache: 'no-store' })
+    if (response.status === 404) return { kind: 'empty' }
+    if (response.status === 401) return { kind: 'error', message: '登录已过期，请重新登录。' }
+    if (response.status === 403) return { kind: 'error', message: '当前账户无权查看此数据。' }
+    if (!response.ok) throw new Error(`请求失败（${response.status}）`)
+    return { kind: 'ready', data: await response.json() as T }
+  } catch {
+    return { kind: 'error', message: '数据暂不可用，请稍后重试。' }
+  }
+}
+
+export function dailyRange(now: Date, days: number): { from: string; to: string } {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const start = new Date(end)
+  start.setUTCDate(start.getUTCDate() - Math.min(Math.max(days, 1), 90) + 1)
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) }
+}
+
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** unit
+  return `${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: value < 10 ? 2 : 1 }).format(value)} ${units[unit]}`
+}
+
+export function formatDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }).format(date)
+}

@@ -68,6 +68,8 @@ type RouteStores struct {
 	AgentTokens   AgentTokenStore
 	ProxyAccess   ProxyAccessStore
 	Subscriptions SubscriptionStore
+	Usage         UsageStore
+	Routing       RoutingStore
 }
 
 func NewHandlerWithProxyAccess(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, proxy ProxyAccessStore) http.Handler {
@@ -131,6 +133,12 @@ func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions Id
 		}
 		if stores.Subscriptions != nil {
 			registerSubscriptionRoutes(mux, sessions, stores.Subscriptions)
+		}
+		if stores.Usage != nil {
+			registerUsageRoutes(mux, sessions, stores.Usage)
+		}
+		if stores.Routing != nil {
+			registerRoutingRoutes(mux, sessions, stores.Routing)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

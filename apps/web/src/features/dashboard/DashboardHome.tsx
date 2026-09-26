@@ -1,0 +1,100 @@
+import { useEffect, useState } from 'react'
+import { Activity, ArrowDownLeft, ArrowUpRight, CalendarDays, CircleUserRound, RefreshCw, ShieldCheck, Wallet } from 'lucide-react'
+import { dailyRange, formatBytes, formatDate, loadResource, type DailyUsage, type Membership, type Resource, type Usage, type User } from '../../lib/dashboard'
+
+type DailyResponse = { items: DailyUsage[] }
+const loading = { kind: 'loading' } as const
+
+function DataStatus({ state, empty }: { state: Resource<unknown>; empty: string }) {
+  if (state.kind === 'loading') return <div className="data-status" role="status">正在加载实时数据…</div>
+  if (state.kind === 'empty') return <div className="data-status">{empty}</div>
+  if (state.kind === 'error') return <div className="data-status data-error" role="alert">{state.message}</div>
+  return null
+}
+
+function MembershipCard({ state }: { state: Resource<Membership> }) {
+  return <article className="dashboard-card membership-card">
+    <div className="dashboard-card-heading"><span><Wallet size={18} /> 当前套餐</span><span className="live-tag">LIVE DATA</span></div>
+    {state.kind === 'ready' ? <>
+      <strong className="plan-name">{state.data.snapshot.plan_name || '未命名套餐'}</strong>
+      <span className="plan-status"><span />{state.data.status === 'active' ? '使用中' : state.data.status}</span>
+      <div className="card-divider" />
+      <div className="detail-row"><span>开始日期</span><strong>{formatDate(state.data.starts_at)}</strong></div>
+      <div className="detail-row"><span>有效期至</span><strong>{formatDate(state.data.ends_at)}</strong></div>
+      <div className="detail-row"><span>套餐流量</span><strong>{formatBytes(state.data.snapshot.quota_bytes)}</strong></div>
+    </> : <DataStatus state={state} empty="当前没有生效的套餐。" />}
+  </article>
+}
+
+function UsageCard({ state }: { state: Resource<Usage> }) {
+  const data = state.kind === 'ready' ? state.data : null
+  const percent = data ? Math.min(100, Math.max(0, data.usage_percent)) : 0
+  return <article className="dashboard-card usage-card">
+    <div className="dashboard-card-heading"><span><Activity size={18} /> 本期流量</span>{data && <span className="period-label">{formatDate(data.starts_at)} — {formatDate(data.ends_at)}</span>}</div>
+    {data ? <>
+      <div className="usage-total"><div><span>已计费流量</span><strong>{formatBytes(data.charged_bytes)}</strong></div><span className="usage-ratio">{percent.toFixed(1)}%</span></div>
+      <div className="usage-progress" role="progressbar" aria-label="套餐流量使用率" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div>
+      <div className="usage-legend"><span>本期配额 {formatBytes(data.quota_bytes)}</span><span>剩余 {formatBytes(data.remaining_bytes)}</span></div>
+      <div className="usage-metrics">
+        <div><ArrowUpRight size={17} /><span>上传</span><strong>{formatBytes(data.uploaded_bytes)}</strong></div>
+        <div><ArrowDownLeft size={17} /><span>下载</span><strong>{formatBytes(data.downloaded_bytes)}</strong></div>
+        <div><ShieldCheck size={17} /><span>当前可用</span><strong>{formatBytes(data.available_bytes)}</strong></div>
+      </div>
+      {data.reserved_bytes > 0 && <p className="usage-note">已预留 {formatBytes(data.reserved_bytes)}，当前可用流量已扣除预留。</p>}
+    </> : <DataStatus state={state} empty="当前没有可显示的计费周期。" />}
+  </article>
+}
+
+function DailyCard({ state, from, to }: { state: Resource<DailyResponse>; from: string; to: string }) {
+  const items = state.kind === 'ready' ? state.data.items ?? [] : []
+  const values = new Map(items.map((item) => [item.date, item.charged_bytes]))
+  const days: { date: string; bytes: number }[] = []
+  const cursor = new Date(`${from}T00:00:00Z`)
+  while (cursor.toISOString().slice(0, 10) <= to) {
+    const date = cursor.toISOString().slice(0, 10)
+    days.push({ date, bytes: values.get(date) ?? 0 })
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  const max = Math.max(1, ...days.map((day) => day.bytes))
+  const total = days.reduce((sum, day) => sum + day.bytes, 0)
+  return <article className="dashboard-card daily-card">
+    <div className="dashboard-card-heading"><span><CalendarDays size={18} /> 最近 14 天</span><span className="period-label">按 UTC 日期统计</span></div>
+    {state.kind === 'ready' ? <>
+      <div className="daily-summary"><span>已计费流量</span><strong>{formatBytes(total)}</strong></div>
+      {items.length === 0 ? <div className="data-status">这段时间暂无流量记录。</div> : <div className="daily-chart" role="img" aria-label={`从 ${from} 到 ${to} 的每日计费流量`}>
+        {days.map((day) => <div className="daily-bar" key={day.date} title={`${day.date}：${formatBytes(day.bytes)}`}><span style={{ height: `${Math.max(day.bytes > 0 ? 6 : 2, day.bytes / max * 100)}%` }} /></div>)}
+      </div>}
+      <div className="chart-axis"><span>{from.slice(5)}</span><span>{to.slice(5)}</span></div>
+    </> : <DataStatus state={state} empty="这段时间暂无流量记录。" />}
+  </article>
+}
+
+export function DashboardHome({ user }: { user: User }) {
+  const [generation, setGeneration] = useState(0)
+  const [membership, setMembership] = useState<Resource<Membership>>(loading)
+  const [usage, setUsage] = useState<Resource<Usage>>(loading)
+  const [daily, setDaily] = useState<Resource<DailyResponse>>(loading)
+  const { from, to } = dailyRange(new Date(), 14)
+
+  useEffect(() => {
+    let active = true
+    setMembership(loading)
+    setUsage(loading)
+    setDaily(loading)
+    const read = async <T,>(path: string, update: (value: Resource<T>) => void) => {
+      const result = await loadResource<T>(path)
+      if (active) update(result)
+    }
+    void read('/api/v1/my/membership', setMembership)
+    void read('/api/v1/my/usage/current', setUsage)
+    void read(`/api/v1/my/usage/daily?${new URLSearchParams({ from, to })}`, setDaily)
+    return () => { active = false }
+  }, [user.id, generation, from, to])
+
+  return <div className="dashboard-home">
+    <div className="dashboard-intro"><div><span className="section-overline">PERSONAL OVERVIEW</span><h1>你好，{user.email.split('@')[0]}</h1><p>账户、套餐与真实流量都在这里。</p></div><button className="refresh-button" type="button" onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={16} />刷新数据</button></div>
+    <div className="account-strip"><span className="account-avatar"><CircleUserRound size={23} /></span><div><small>当前账户</small><strong>{user.email}</strong></div><span className="account-active"><span />{user.status === 'active' ? '账户正常' : user.status}</span></div>
+    <div className="dashboard-grid"><MembershipCard state={membership} /><UsageCard state={usage} /><DailyCard state={daily} from={from} to={to} /></div>
+    <p className="dashboard-footnote">数据来自当前账户的实时接口；账期流量与最近 14 天的 UTC 日统计口径可能不同。</p>
+  </div>
+}

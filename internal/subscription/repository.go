@@ -25,12 +25,12 @@ func NewPostgresRepository(pool *pgxpool.Pool, cipher *proxyaccess.CredentialCip
 	return &PostgresRepository{pool: pool, cipher: cipher}
 }
 
-const subscriptionSelect = `SELECT s.id::text,s.user_id::text,s.name,s.name_template,s.enabled,s.created_at,s.updated_at,
+const subscriptionSelect = `SELECT s.id::text,s.user_id::text,s.name,s.name_template,s.routing_profile_id::text,s.enabled,s.created_at,s.updated_at,
 ARRAY(SELECT t.proxy_access_id::text FROM subscription_proxy_targets t WHERE t.subscription_id=s.id ORDER BY t.sort_order) FROM subscriptions s`
 
 func scanSubscription(row pgx.Row) (Subscription, error) {
 	var s Subscription
-	err := row.Scan(&s.ID, &s.UserID, &s.Name, &s.NameTemplate, &s.Enabled, &s.CreatedAt, &s.UpdatedAt, &s.ProxyAccessIDs)
+	err := row.Scan(&s.ID, &s.UserID, &s.Name, &s.NameTemplate, &s.RoutingProfileID, &s.Enabled, &s.CreatedAt, &s.UpdatedAt, &s.ProxyAccessIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Subscription{}, ErrNotFound
 	}
@@ -60,7 +60,7 @@ func (r *PostgresRepository) Create(ctx context.Context, owner string, in Input,
 	if !catalog.ValidID(owner) {
 		return Subscription{}, "", ErrNotFound
 	}
-	in, err := Normalize(NewSubscription{Name: in.Name, NameTemplate: in.NameTemplate, ProxyAccessIDs: in.ProxyAccessIDs, Enabled: &in.Enabled})
+	in, err := Normalize(NewSubscription{Name: in.Name, NameTemplate: in.NameTemplate, ProxyAccessIDs: in.ProxyAccessIDs, RoutingProfileID: in.RoutingProfileID, Enabled: &in.Enabled})
 	if err != nil {
 		return Subscription{}, "", err
 	}
@@ -99,7 +99,10 @@ func (r *PostgresRepository) Create(ctx context.Context, owner string, in Input,
 	if err := authorizeTargets(ctx, tx, owner, in.ProxyAccessIDs, grant); err != nil {
 		return Subscription{}, "", err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO subscriptions(id,user_id,name,name_template,enabled,token_hash,token_ciphertext) VALUES($1,$2,$3,$4,$5,$6,$7)`, subID, owner, in.Name, in.NameTemplate, in.Enabled, hash, sealed)
+	if err := authorizeProfile(ctx, tx, owner, in.RoutingProfileID); err != nil {
+		return Subscription{}, "", err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO subscriptions(id,user_id,name,name_template,routing_profile_id,enabled,token_hash,token_ciphertext) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, subID, owner, in.Name, in.NameTemplate, in.RoutingProfileID, in.Enabled, hash, sealed)
 	if err != nil {
 		return Subscription{}, "", databaseError(err)
 	}

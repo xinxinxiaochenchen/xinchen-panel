@@ -3,7 +3,8 @@ package billing
 import (
 	"errors"
 	"math"
-	"math/bits"
+
+	"controlplane/internal/metering"
 )
 
 var ErrInvalidMeter = errors.New("invalid or overflowing usage counters")
@@ -42,14 +43,9 @@ func charged(c Counters, multiplier int64) (int64, error) {
 	if c.UploadedBytes < 0 || c.DownloadedBytes < 0 || multiplier < 1 || multiplier > 100000 || c.DownloadedBytes > math.MaxInt64-c.UploadedBytes {
 		return 0, ErrInvalidMeter
 	}
-	raw := uint64(c.UploadedBytes + c.DownloadedBytes)
-	hi, lo := bits.Mul64(raw, uint64(multiplier))
-	if hi >= 1000 {
+	quotient, err := metering.Charged(c.UploadedBytes+c.DownloadedBytes, multiplier)
+	if err != nil {
 		return 0, ErrInvalidMeter
 	}
-	quotient, _ := bits.Div64(hi, lo, 1000)
-	if quotient > math.MaxInt64 {
-		return 0, ErrInvalidMeter
-	}
-	return int64(quotient), nil
+	return quotient, nil
 }

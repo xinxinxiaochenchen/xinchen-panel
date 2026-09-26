@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"controlplane/internal/agentmeter"
 )
 
 // proxyEndpoint owns one Trojan TLS listener and its credential set. It shares
@@ -20,11 +22,12 @@ type proxyEndpoint struct {
 	mu       sync.Mutex
 	accesses map[string]ProxyAccess
 	sessions map[*tcpSession]ProxyAccess
+	revision uint64
 	closed   bool
 }
 
-func newProxyEndpoint(listener net.Listener, accesses map[string]ProxyAccess) *proxyEndpoint {
-	return &proxyEndpoint{listener: listener, accesses: accesses, sessions: make(map[*tcpSession]ProxyAccess)}
+func newProxyEndpoint(listener net.Listener, accesses map[string]ProxyAccess, revision uint64) *proxyEndpoint {
+	return &proxyEndpoint{listener: listener, accesses: accesses, sessions: make(map[*tcpSession]ProxyAccess), revision: revision}
 }
 
 func (p *proxyEndpoint) close() {
@@ -95,11 +98,25 @@ func (r *Runtime) relayProxy(p *proxyEndpoint, session *tcpSession) {
 		return
 	}
 	p.sessions[session] = access
+	revision := p.revision
 	// Capture the credential generation while holding the same mutex used by
 	// Apply: a rotation between authentication and dialing closes this session.
 	expiry := time.AfterFunc(time.Until(access.ExpiresAt), session.close)
 	p.mu.Unlock()
 	defer expiry.Stop()
+	var metered MeteredConnection
+	if r.options.Meter != nil {
+		metered, err = r.options.Meter.Open(session.ctx, "proxy", access.ID, revision)
+		if err != nil {
+			return
+		}
+		if !session.setMeter(metered) {
+			return
+		}
+		defer metered.Close()
+	} else if r.options.RequireMetering {
+		return
+	}
 	ctx, cancel := context.WithTimeout(session.ctx, 10*time.Second)
 	address, err := ResolvePublic(ctx, host, r.options.Resolve)
 	if err != nil {
@@ -112,7 +129,7 @@ func (r *Runtime) relayProxy(p *proxyEndpoint, session *tcpSession) {
 		return
 	}
 	_ = session.client.SetDeadline(time.Time{})
-	relayProxyStreams(session, reader, r.options.TCPDrainTimeout)
+	relayProxyStreams(session, reader, r.options.TCPDrainTimeout, metered)
 }
 
 func readTrojanConnect(reader *bufio.Reader) (string, string, int, error) {
@@ -166,14 +183,43 @@ func readTrojanConnect(reader *bufio.Reader) (string, string, int, error) {
 	return string(auth[:56]), host, port, nil
 }
 
-func relayProxyStreams(session *tcpSession, reader io.Reader, drain time.Duration) {
-	upload := make(chan struct{})
-	download := make(chan struct{})
-	go func() { _, _ = io.Copy(session.upstream, reader); closeWrite(session.upstream); close(upload) }()
-	go func() { _, _ = io.Copy(session.client, session.upstream); closeWrite(session.client); close(download) }()
+func relayProxyStreams(session *tcpSession, reader io.Reader, drain time.Duration, metered MeteredConnection) {
+	upload := make(chan error, 1)
+	download := make(chan error, 1)
+	copyPayload := func(dst io.Writer, src io.Reader, direction agentmeter.Direction) error {
+		if metered != nil {
+			_, err := metered.Copy(dst, src, direction)
+			return err
+		}
+		_, err := io.Copy(dst, src)
+		return err
+	}
+	go func() {
+		err := copyPayload(session.upstream, reader, agentmeter.Upload)
+		closeWrite(session.upstream)
+		upload <- err
+	}()
+	go func() {
+		err := copyPayload(session.client, session.upstream, agentmeter.Download)
+		closeWrite(session.client)
+		download <- err
+	}()
 	select {
-	case <-upload:
-	case <-download:
+	case err := <-upload:
+		if err != nil {
+			session.close()
+		}
+		select {
+		case <-download:
+		case <-time.After(drain):
+			session.close()
+			<-download
+		}
+		return
+	case err := <-download:
+		if err != nil {
+			session.close()
+		}
 	}
 	timer := time.NewTimer(drain)
 	defer timer.Stop()
@@ -181,12 +227,6 @@ func relayProxyStreams(session *tcpSession, reader io.Reader, drain time.Duratio
 	case <-upload:
 	case <-timer.C:
 		session.close()
+		<-upload
 	}
-	select {
-	case <-download:
-	case <-timer.C:
-		session.close()
-	}
-	<-upload
-	<-download
 }

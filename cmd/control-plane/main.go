@@ -21,6 +21,7 @@ import (
 	"controlplane/internal/platform/db"
 	"controlplane/internal/platform/httpapi"
 	"controlplane/internal/proxyaccess"
+	"controlplane/internal/routing"
 	"controlplane/internal/subscription"
 )
 
@@ -54,6 +55,8 @@ func main() {
 	var agentTokenStore httpapi.AgentTokenStore
 	var proxyAccessStore httpapi.ProxyAccessStore
 	var subscriptionStore httpapi.SubscriptionStore
+	var usageStore httpapi.UsageStore
+	var routingStore httpapi.RoutingStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
@@ -65,6 +68,8 @@ func main() {
 		forwardStore = forwardRepository
 		forwardPolicyStore = forwardRepository
 		entitlementStore = entitlement.NewPostgresRepository(pool)
+		usageStore = billing.NewPostgresRepository(pool)
+		routingStore = routing.NewPostgresRepository(pool)
 		credentialCipher, err := proxyaccess.NewCredentialCipher(cfg.ProxyCredentialKey)
 		if err != nil {
 			logger.Error("proxy credential encryption unavailable", "error", err)
@@ -79,6 +84,8 @@ func main() {
 	handler := httpapi.NewHandlerWithStores(logger, db.HealthCheck{Database: pool}, sessions, httpapi.RouteStores{
 		Catalog: catalogStore, Entitlements: entitlementStore, Accounts: accountStore, Lines: lineStore,
 		Forward: forwardStore, Policies: forwardPolicyStore, AgentTokens: agentTokenStore, ProxyAccess: proxyAccessStore, Subscriptions: subscriptionStore,
+		Usage: usageStore,
+		Routing: routingStore,
 	})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {

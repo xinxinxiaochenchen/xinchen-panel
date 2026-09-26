@@ -115,7 +115,7 @@ func (r *PostgresRepository) UpdateOwn(ctx context.Context, owner, subID string,
 	if err != nil {
 		return Subscription{}, err
 	}
-	input := NewSubscription{Name: before.Name, NameTemplate: before.NameTemplate, ProxyAccessIDs: before.ProxyAccessIDs, Enabled: &before.Enabled}
+	input := NewSubscription{Name: before.Name, NameTemplate: before.NameTemplate, ProxyAccessIDs: before.ProxyAccessIDs, RoutingProfileID: before.RoutingProfileID, Enabled: &before.Enabled}
 	if patch.Name != nil {
 		input.Name = *patch.Name
 	}
@@ -124,6 +124,9 @@ func (r *PostgresRepository) UpdateOwn(ctx context.Context, owner, subID string,
 	}
 	if patch.ProxyAccessIDs != nil {
 		input.ProxyAccessIDs = *patch.ProxyAccessIDs
+	}
+	if patch.RoutingProfileID.Set {
+		input.RoutingProfileID = patch.RoutingProfileID.Value
 	}
 	if patch.Enabled != nil {
 		input.Enabled = patch.Enabled
@@ -144,7 +147,12 @@ func (r *PostgresRepository) UpdateOwn(ctx context.Context, owner, subID string,
 		}
 		grantExpires = ends
 	}
-	if _, err := tx.Exec(ctx, `UPDATE subscriptions SET name=$2,name_template=$3,enabled=$4,updated_at=clock_timestamp() WHERE id=$1`, subID, normalized.Name, normalized.NameTemplate, normalized.Enabled); err != nil {
+	if normalized.Enabled && normalized.RoutingProfileID != nil {
+		if err := authorizeProfile(ctx, tx, owner, normalized.RoutingProfileID); err != nil {
+			return Subscription{}, err
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE subscriptions SET name=$2,name_template=$3,routing_profile_id=$4,enabled=$5,updated_at=clock_timestamp() WHERE id=$1`, subID, normalized.Name, normalized.NameTemplate, normalized.RoutingProfileID, normalized.Enabled); err != nil {
 		return Subscription{}, databaseError(err)
 	}
 	if patch.ProxyAccessIDs != nil {

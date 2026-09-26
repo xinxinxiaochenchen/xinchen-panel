@@ -19,6 +19,7 @@ type DialFunc func(context.Context, string) (net.Conn, error)
 type Options struct {
 	BindHost             string
 	RequireMetering      bool
+	Meter                TrafficMeter
 	ProxyTLSConfig       *tls.Config
 	Resolve              Resolver
 	DialTCP              DialFunc
@@ -95,13 +96,56 @@ func New(options Options) *Runtime {
 		proxies: make(map[int]*proxyEndpoint), closeDone: make(chan struct{})}
 }
 
+// SetTrafficMeter attaches the authenticated stream-backed meter before any
+// traffic snapshot is applied. Existing listeners keep their current meter;
+// production callers set it immediately after creating a Runtime.
+func (r *Runtime) SetTrafficMeter(meter TrafficMeter) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return errors.New("forward runtime is closed")
+	}
+	if meter == nil && r.options.RequireMetering {
+		return errors.New("traffic metering is required")
+	}
+	r.options.Meter = meter
+	return nil
+}
+
+// HandleUsageAck forwards a persisted usage acknowledgement to a stream-backed
+// meter. It is optional so test runtimes and non-metered deployments remain
+// small; production meters use it to settle connections that already stopped.
+func (r *Runtime) HandleUsageAck(batchID string) error {
+	r.mu.Lock()
+	meter := r.options.Meter
+	r.mu.Unlock()
+	if handler, ok := meter.(interface{ HandleUsageAck(string) error }); ok {
+		return handler.HandleUsageAck(batchID)
+	}
+	return nil
+}
+
+func (r *Runtime) SettleRecovered(ctx context.Context) error {
+	r.mu.Lock()
+	meter := r.options.Meter
+	r.mu.Unlock()
+	if handler, ok := meter.(interface{ SettleRecovered(context.Context) error }); ok {
+		return handler.SettleRecovered(ctx)
+	}
+	return nil
+}
+
 func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 	wanted, err := ValidateSnapshot(snapshot)
 	if err != nil {
 		return err
 	}
-	if r.options.RequireMetering && (len(wanted) > 0 || len(snapshot.ProxyConfig) > 0) {
+	if r.options.RequireMetering && r.options.Meter == nil && (len(wanted) > 0 || len(snapshot.ProxyConfig) > 0) {
 		return errors.New("traffic metering is not configured")
+	}
+	for key, destination := range wanted {
+		destination.revision = snapshot.Revision
+		wanted[key] = destination
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -145,7 +189,7 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 		if err != nil {
 			return fmt.Errorf("bind proxy TLS port %d: %w", port, err)
 		}
-		stagedProxies[port] = newProxyEndpoint(tls.NewListener(raw, r.options.ProxyTLSConfig), accesses)
+		stagedProxies[port] = newProxyEndpoint(tls.NewListener(raw, r.options.ProxyTLSConfig), accesses, snapshot.Revision)
 	}
 	for key, destination := range wanted {
 		if _, exists := r.listeners[key]; exists {
@@ -182,6 +226,7 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 			continue
 		}
 		listener.mu.Lock()
+		listener.revision = snapshot.Revision
 		if !maps.Equal(listener.accesses, accesses) {
 			listener.accesses = accesses
 			for session, previous := range listener.sessions {
@@ -275,6 +320,9 @@ func (e *endpoint) close() {
 	e.udpMu.Unlock()
 	for _, session := range sessions {
 		_ = session.conn.Close()
+		if session.meter != nil {
+			_ = session.meter.Close()
+		}
 	}
 }
 
@@ -291,5 +339,8 @@ func (e *endpoint) swapUDPTarget(destination *target) {
 	e.udpMu.Unlock()
 	for _, session := range sessions {
 		_ = session.conn.Close()
+		if session.meter != nil {
+			_ = session.meter.Close()
+		}
 	}
 }

@@ -50,6 +50,20 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 	var pending *agentproto.ConfigSnapshot
 	var inFlight *agentproto.UsageBatch
 	var usageSentAt time.Time
+	recoveryDone := c.config.LeaseStore == nil
+	recoveryStarted := false
+	recoveryResult := make(chan error, 1)
+	startRecovery := func() {
+		if recoveryDone || recoveryStarted || c.config.UsageOutbox == nil || len(c.config.UsageOutbox.Pending()) != 0 {
+			return
+		}
+		recoveryStarted = true
+		if recoverer, ok := runtime.(interface{ SettleRecovered(context.Context) error }); ok {
+			go func() { recoveryResult <- recoverer.SettleRecovered(ctx) }()
+		} else {
+			recoveryResult <- errors.New("runtime cannot settle recovered leases")
+		}
+	}
 	var leaseUntil time.Time
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
@@ -80,12 +94,18 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 	if err := sendUsage(); err != nil {
 		return err
 	}
+	startRecovery()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-timer.C:
 			return errors.New("Agent configuration lease expired")
+		case err := <-recoveryResult:
+			if err != nil {
+				return err
+			}
+			recoveryDone = true
 		case <-ticker.C:
 			if inFlight != nil && time.Since(usageSentAt) >= 10*time.Second {
 				return errors.New("Agent usage acknowledgement timed out")
@@ -93,6 +113,7 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 			if err := sendUsage(); err != nil {
 				return err
 			}
+			startRecovery()
 		case item := <-incoming:
 			if item.err != nil {
 				return item.err
@@ -134,10 +155,18 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 				if err := c.config.UsageOutbox.Acknowledge(ack); err != nil {
 					return err
 				}
+				if handler, ok := runtime.(interface{ HandleUsageAck(string) error }); ok {
+					go func() {
+						if err := handler.HandleUsageAck(ack.BatchID); err != nil {
+							cancel()
+						}
+					}()
+				}
 				inFlight = nil
 				if err := sendUsage(); err != nil {
 					return err
 				}
+				startRecovery()
 			case agentproto.TypeConfigSnapshot:
 				snapshot, err := agentproto.DecodeConfigSnapshot(message.Payload, time.Now())
 				if err != nil {
@@ -162,7 +191,7 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 		}
 		// Reconcile reports left by a previous runtime before opening listeners.
 		// Once running, revocations must still apply immediately even with usage pending.
-		if pending == nil || (applied == 0 && inFlight != nil) {
+		if pending == nil || (applied == 0 && (inFlight != nil || !recoveryDone)) {
 			continue
 		}
 		snapshot := *pending

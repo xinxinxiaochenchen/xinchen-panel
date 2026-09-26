@@ -40,6 +40,7 @@ type Config struct {
 	ReconnectMax      time.Duration
 	ProxyReady        bool
 	UsageOutbox       *FileUsageOutbox
+	LeaseStore        *FileLeaseStore
 }
 
 type Client struct {
@@ -175,6 +176,19 @@ func (c *Client) RunOnce(ctx context.Context) error {
 	}()
 	quota := NewQuotaExchange(send)
 	defer quota.Close()
+	if c.config.UsageOutbox != nil && c.config.LeaseStore != nil {
+		meter := NewRuntimeQuotaMeter(NewRuntimeQuotaService(quota), c.config.UsageOutbox, c.config.LeaseStore)
+		if err := meter.(*RuntimeQuotaMeter).PrepareRecovery(); err != nil {
+			return err
+		}
+		if setter, ok := runtime.(interface {
+			SetTrafficMeter(agentruntime.TrafficMeter) error
+		}); ok {
+			if err := setter.SetTrafficMeter(meter); err != nil {
+				return err
+			}
+		}
+	}
 	return c.serveMessages(ctx, conn, runtime, send, quota)
 }
 
