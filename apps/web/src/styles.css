@@ -371,6 +371,12 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .admin-membership-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; }
 .admin-membership-form > div { display: flex; flex-direction: column; gap: 7px; }
 .admin-membership-form label { color: var(--muted); font-size: 11px; font-weight: 700; }
+.admin-geo-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin-bottom: 20px; }
+.admin-geo-form > div { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.admin-geo-form label { color: var(--muted); font-size: 11px; font-weight: 700; }
+.admin-geo-form input, .admin-geo-form select { min-height: 42px; border: 1px solid var(--border); border-radius: 9px; padding: 0 10px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; min-width: 0; }
+.admin-geo-form small { color: var(--muted); font-size: 10px; }
+.admin-geo-form button { align-self: end; justify-content: center; min-height: 42px; }
 .admin-membership-form input, .admin-membership-form select { height: 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); color: var(--text); padding: 0 12px; font: inherit; font-size: 12px; min-width: 0; }
 .account-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .account-settings-value { display: flex; flex-direction: column; gap: 5px; padding: 14px 0; border-bottom: 1px solid var(--border); }
@@ -433,6 +439,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
   .admin-section { padding: 19px; }
   .admin-section-head { align-items: flex-start; flex-direction: column; }
   .admin-card-grid, .admin-membership-form { grid-template-columns: 1fr; }
+  .admin-geo-form { grid-template-columns: 1fr; }
   .admin-row { align-items: flex-start; flex-direction: column; gap: 7px; }
   .admin-row span:not(.catalog-icon) { margin-left: 0; }
   .proxy-panel-head { align-items: flex-start; flex-direction: column; }

@@ -70,6 +70,7 @@ type RouteStores struct {
 	Subscriptions SubscriptionStore
 	Usage         UsageStore
 	Routing       RoutingStore
+	GeoRuleSets   GeoRuleSetStore
 }
 
 func NewHandlerWithProxyAccess(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, proxy ProxyAccessStore) http.Handler {
@@ -139,6 +140,9 @@ func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions Id
 		}
 		if stores.Routing != nil {
 			registerRoutingRoutes(mux, sessions, stores.Routing)
+		}
+		if stores.GeoRuleSets != nil {
+			registerGeoRuleSetRoutes(mux, sessions, stores.GeoRuleSets)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

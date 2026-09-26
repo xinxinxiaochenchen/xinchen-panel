@@ -15,6 +15,7 @@ import (
 	"controlplane/internal/catalog"
 	"controlplane/internal/entitlement"
 	"controlplane/internal/forward"
+	"controlplane/internal/georules"
 	"controlplane/internal/identity"
 	"controlplane/internal/orchestration"
 	"controlplane/internal/platform/config"
@@ -57,6 +58,7 @@ func main() {
 	var subscriptionStore httpapi.SubscriptionStore
 	var usageStore httpapi.UsageStore
 	var routingStore httpapi.RoutingStore
+	var geoRuleSetStore httpapi.GeoRuleSetStore
 	if cfg.BrowserAuthEnabled {
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
@@ -70,6 +72,7 @@ func main() {
 		entitlementStore = entitlement.NewPostgresRepository(pool)
 		usageStore = billing.NewPostgresRepository(pool)
 		routingStore = routing.NewPostgresRepository(pool)
+		geoRuleSetStore = georules.NewPostgresRepository(pool)
 		credentialCipher, err := proxyaccess.NewCredentialCipher(cfg.ProxyCredentialKey)
 		if err != nil {
 			logger.Error("proxy credential encryption unavailable", "error", err)
@@ -84,8 +87,9 @@ func main() {
 	handler := httpapi.NewHandlerWithStores(logger, db.HealthCheck{Database: pool}, sessions, httpapi.RouteStores{
 		Catalog: catalogStore, Entitlements: entitlementStore, Accounts: accountStore, Lines: lineStore,
 		Forward: forwardStore, Policies: forwardPolicyStore, AgentTokens: agentTokenStore, ProxyAccess: proxyAccessStore, Subscriptions: subscriptionStore,
-		Usage: usageStore,
-		Routing: routingStore,
+		Usage:       usageStore,
+		Routing:     routingStore,
+		GeoRuleSets: geoRuleSetStore,
 	})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {

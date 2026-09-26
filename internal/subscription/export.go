@@ -3,6 +3,7 @@ package subscription
 import (
 	"context"
 	"controlplane/internal/catalog"
+	"controlplane/internal/georules"
 	"controlplane/internal/subscriptionconfig"
 	"errors"
 	"fmt"
@@ -121,7 +122,7 @@ func loadExportPolicy(ctx context.Context, tx pgx.Tx, sub Subscription, targets 
 		}
 		return nil, err
 	}
-	policy := &subscriptionconfig.RoutingPolicy{Fallback: subscriptionconfig.Action{Kind: kind}}
+	policy := &subscriptionconfig.RoutingPolicy{Fallback: subscriptionconfig.Action{Kind: kind}, RuleSets: map[string]subscriptionconfig.RuleSet{}}
 	if line != nil {
 		policy.Fallback.LineID = *line
 	}
@@ -145,6 +146,22 @@ func loadExportPolicy(ctx context.Context, tx pgx.Tx, sub Subscription, targets 
 	rows.Close()
 	if err != nil {
 		return nil, err
+	}
+	for _, rule := range policy.Rules {
+		if rule.MatchType != "geosite" && rule.MatchType != "geoip" {
+			continue
+		}
+		set, err := georules.LoadEnabled(ctx, tx, rule.MatchType, rule.MatchValue)
+		if err == nil {
+			policy.RuleSets[rule.MatchType+":"+rule.MatchValue] = subscriptionconfig.RuleSet{Kind: set.Kind, Code: set.Code, Version: set.Version, SHA256: set.SHA256, Entries: set.Entries}
+			continue
+		}
+		if !errors.Is(err, georules.ErrNotFound) {
+			return nil, err
+		}
+		if rule.MatchType == "geosite" {
+			return nil, ErrUnavailable
+		}
 	}
 	available := map[string]bool{}
 	for _, target := range targets {

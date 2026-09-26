@@ -1,5 +1,7 @@
 # 架构设计发现
 
+- 2026-09-27：现有分流数据库与 UI 可保存 GeoSite，但订阅导出一律拒绝；Clash/Mihomo/Surge 原生支持 GeoIP，sing-box 1.12 需要 CIDR 展开。受控规则集可按版本存于 PostgreSQL，以同一只读事务加载并将 GeoSite/GeoIP 展开成客户端原生域名/CIDR 条目；缺失活跃集时继续拒绝 GeoSite 与 sing-box GeoIP。
+
 - 工作区为空 Git 仓库，没有 AGENTS.md 或现有产品代码。
 - 用户明确要求先交付架构，不应创建业务实现。
 - 节点、线路、转发需要独立实体；多跳路径由有序步骤表达。

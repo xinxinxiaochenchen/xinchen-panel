@@ -61,6 +61,45 @@ func TestRenderSingBoxRoutingAndUnsupportedGeo(t *testing.T) {
 	}
 }
 
+func TestRenderManagedGeoRulesExpandToPortableClientRules(t *testing.T) {
+	a := target("Japan")
+	a.LineID = "line-jp"
+	policy := &RoutingPolicy{
+		Fallback: Action{Kind: "direct"},
+		RuleSets: map[string]RuleSet{
+			"geosite:ai": {Kind: "geosite", Code: "ai", Entries: []string{"domain:openai.com", "suffix:anthropic.com"}},
+			"geoip:cn":   {Kind: "geoip", Code: "cn", Entries: []string{"1.0.1.0/24", "240e::/16"}},
+		},
+		Rules: []Rule{
+			{MatchType: "geosite", MatchValue: "ai", Action: Action{Kind: "line", LineID: a.LineID}},
+			{MatchType: "geoip", MatchValue: "cn", Action: Action{Kind: "direct"}},
+		},
+	}
+	for _, format := range []string{"clash", "mihomo", "sing-box", "surge"} {
+		data, _, err := RenderWithRouting(format, "{name}", []Target{a}, policy)
+		if err != nil {
+			t.Fatalf("%s rejected managed geo rules: %v", format, err)
+		}
+		text := string(data)
+		for _, want := range []string{"openai.com", "anthropic.com", "1.0.1.0/24", "240e::/16"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("%s missing expanded entry %q in %s", format, want, text)
+			}
+		}
+	}
+}
+
+func TestRenderManagedGeoRulesRejectsInvalidEntries(t *testing.T) {
+	a := target("Japan")
+	a.LineID = "line-jp"
+	for _, entry := range []string{"example.com,REJECT", "domain:bad domain", "suffix:evil.com\nMATCH,REJECT"} {
+		policy := &RoutingPolicy{Fallback: Action{Kind: "direct"}, Rules: []Rule{{MatchType: "geosite", MatchValue: "ai", Action: Action{Kind: "direct"}}}, RuleSets: map[string]RuleSet{"geosite:ai": {Kind: "geosite", Code: "ai", Entries: []string{entry}}}}
+		if _, _, err := RenderWithRouting("mihomo", "{name}", []Target{a}, policy); err == nil {
+			t.Fatalf("accepted invalid managed entry %q", entry)
+		}
+	}
+}
+
 func TestRenderRoutingRejectsMissingExportedLine(t *testing.T) {
 	a := target("Japan")
 	a.LineID = "line-jp"

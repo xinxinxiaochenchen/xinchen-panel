@@ -24,6 +24,19 @@ export type ForwardPolicyDraft = {
   portStart: number;
   portEnd: number;
 };
+export type GeoRuleSetRecord = {
+  id: string;
+  kind: "geosite" | "geoip";
+  code: string;
+  name: string;
+  version: string;
+  source: string;
+  sha256: string;
+  entry_count: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
 export function buildForwardPolicyInput(draft: ForwardPolicyDraft) {
   if (draft.kind === "node" && !draft.groupID) throw new Error("节点目标策略必须选择资源域。");
@@ -79,6 +92,8 @@ const adminPermissions = [
   "lines.write",
   "agents.write",
   "forward_policies.write",
+  "routing_rulesets.read",
+  "routing_rulesets.write",
 ];
 
 export function hasAdminAccess(permissions: string[]): boolean {

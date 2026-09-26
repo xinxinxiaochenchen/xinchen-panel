@@ -124,6 +124,13 @@ func RenderWithRouting(format, template string, targets []Target, policy *Routin
 		used[strings.ToUpper(name)] = true
 		names[i] = name
 	}
+	if policy != nil {
+		var err error
+		policy, err = expandManagedGeoRules(format, policy)
+		if err != nil {
+			return nil, "", err
+		}
+	}
 	if err := validateRouting(format, targets, policy); err != nil {
 		return nil, "", err
 	}
@@ -330,9 +337,86 @@ type Rule struct {
 	MatchType, MatchValue string
 	Action                Action
 }
+type RuleSet struct {
+	Kind    string
+	Code    string
+	Version string
+	SHA256  string
+	Entries []string
+}
 type RoutingPolicy struct {
 	Fallback Action
 	Rules    []Rule
+	RuleSets map[string]RuleSet
+}
+
+func expandManagedGeoRules(format string, policy *RoutingPolicy) (*RoutingPolicy, error) {
+	out := &RoutingPolicy{Fallback: policy.Fallback, RuleSets: policy.RuleSets}
+	out.Rules = make([]Rule, 0, len(policy.Rules))
+	for _, rule := range policy.Rules {
+		if rule.MatchType != "geosite" && rule.MatchType != "geoip" {
+			out.Rules = append(out.Rules, rule)
+			continue
+		}
+		set, ok := policy.RuleSets[rule.MatchType+":"+rule.MatchValue]
+		if !ok && rule.MatchType == "geoip" && format != "sing-box" {
+			out.Rules = append(out.Rules, rule)
+			continue
+		}
+		if !ok || set.Kind != rule.MatchType || set.Code != rule.MatchValue || len(set.Entries) == 0 {
+			return nil, fmt.Errorf("%s requires a managed rule-set", rule.MatchType)
+		}
+		for _, entry := range set.Entries {
+			expanded, err := managedEntryRule(rule.MatchType, entry, rule.Action)
+			if err != nil {
+				return nil, err
+			}
+			out.Rules = append(out.Rules, expanded)
+		}
+	}
+	return out, nil
+}
+
+func managedEntryRule(kind, raw string, action Action) (Rule, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return Rule{}, fmt.Errorf("%s rule-set contains an empty entry", kind)
+	}
+	if kind == "geoip" {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil || !prefix.IsValid() {
+			return Rule{}, fmt.Errorf("geoip rule-set contains invalid CIDR %q", value)
+		}
+		return Rule{MatchType: "cidr", MatchValue: prefix.Masked().String(), Action: action}, nil
+	}
+	matchType := "domain_suffix"
+	if strings.HasPrefix(value, "domain:") {
+		matchType, value = "domain", strings.TrimPrefix(value, "domain:")
+	} else if strings.HasPrefix(value, "suffix:") {
+		value = strings.TrimPrefix(value, "suffix:")
+	}
+	value = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
+	if !validManagedDomain(value) {
+		return Rule{}, fmt.Errorf("geosite rule-set contains invalid domain %q", value)
+	}
+	return Rule{MatchType: matchType, MatchValue: value, Action: action}, nil
+}
+
+func validManagedDomain(value string) bool {
+	if len(value) == 0 || len(value) > 253 || strings.ContainsAny(value, "/\\,\r\n\t ") {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if !(char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func lineTag(line string) string { return "LINE:" + line }
