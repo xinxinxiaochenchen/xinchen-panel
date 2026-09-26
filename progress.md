@@ -144,3 +144,8 @@
 - 本地完整 Go 测试、Go vet、前端 26 项测试、TypeScript/生产构建、OpenAPI YAML 解析与 diff 检查通过。服务器独立 PostgreSQL 16 测试库完成迁移 1–18 和角色生命周期测试，随后删除临时库。
 - 经 Termark 发布到 `us dmit` 的 `/opt/network-control-plane/releases/release-f2c21db`，发布包 SHA-256 `b511e1e3692a035ede8ff81c27b7ddf30db96ac11f00a48a8c55f7c735a44039`。正式库升级前备份 `ncp-before-f2c21db.dump` 权限 0600，迁移版本 18。API/DB healthy、重启 0；公网首页/ready 200，明文登录和未认证角色 API 404；Agent TLS 18443 仍仅绑定回环。正式库仍为 0 用户、0 节点、0 Agent；磁盘剩余约 1.2 GB。
 - 继续开发可执行多跳与线路权重切换。正式管理员登录及生产节点验收仍需受信任 HTTPS 管理入口和首个正式节点位置。
+
+## 2026-09-27 RBAC 前端权限边界修复
+
+- 提交 `c6bd719`：管理 UI 隐藏保留给系统管理员的 `roles.write` 权限，并同步 OpenAPI 说明；新增前端回归测试。
+- 前端 27 项测试、TypeScript/生产构建、OpenAPI YAML 解析和 diff 检查通过。经 Termark 发布到 `/opt/network-control-plane/releases/release-c6bd719`，包 SHA-256 `ed908a1d00f6d45086679281779b28fe20d12502cafe87ca4ac856f0c9005bc8`；升级前正式库备份 `ncp-before-c6bd719.dump` 权限 0600，迁移保持 18。API/DB 最终 healthy、重启 0，公网首页/ready 200、登录 404，18443 仅绑定回环；正式库仍无用户、节点、Agent。
