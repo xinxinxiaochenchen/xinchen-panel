@@ -124,3 +124,4 @@
 - 在服务器独立 PostgreSQL 16 测试库通过账户状态和 Agent 转发撤销集成测试；临时库与测试二进制已清理，正式库仍为 0 用户、0 节点、0 Agent。Go 全量测试、相关包 race 测试、vet、前端 20 项测试、生产构建和 OpenAPI YAML 解析通过。
 - 经 Termark 发布到 `us dmit` 的 `release-34f44bc`，发布包 SHA-256 `8ccc8bbe1ce891fe2f5c64fed4e1bd44a8a93ff180cd683e20ba9e9609861580`。升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-34f44bc.dump` 权限 0600；迁移版本 16，API/DB healthy 且重启 0。公网 IP 首页、live、ready 均为 200，明文登录 404，回环 mTLS 续签在无证书时为 401；现有 Nginx Proxy Manager 仍运行。
 - 公网纯 IP 入口仍关闭浏览器认证；正式管理员、节点与 Agent 尚未创建，真实数据面和计费闭环不能在正式环境验收。
+- 在服务器上使用独立 PostgreSQL 测试库完成真实 Agent 冒烟：创建临时管理员和 forward 节点，签发一次性令牌，完成 mTLS 证书登记；Agent WebSocket 上线并成功应用配置版本 1。测试数据库、临时 Agent 控制面容器、证书和脚本均已删除；正式库用户、节点和 Agent 计数仍为 0。
