@@ -129,3 +129,4 @@
 - 隔离 UDP 验收先确认数据报回环成功；考虑 UDP 关联默认 60 秒空闲结算后重跑，账本落库 1 条事件，上传 13、下载 13 字节。Termark 单次命令 60 秒超时只影响脚本等待返回，不影响已核对的数据库结果；随后删除临时数据库、容器、工作目录和脚本，正式库计数仍为 0。
 - 本地验证：在受限沙箱中运行 Go 全量测试会因回环监听权限失败；使用允许回环网络的执行环境后 `go test ./... -count=1` 全部通过。前端 `npm --prefix apps/web test` 20 项通过，`npm --prefix apps/web run build` 成功，`go vet ./...` 成功。
 - 独立 PostgreSQL 16 测试库中的 Trojan TLS 代理验收通过：临时 proxy 节点及共享单跳线路下发配置版本 1；Trojan TCP CONNECT 到服务器 HTTP ready 接口得到 200；用量账本上传 79、下载 191、计费 270 字节。临时 API 容器、测试库、Agent 凭据和脚本已删除，正式库仍为 0 用户、0 节点、0 Agent。
+- 使用 Clash Verge 内置 Mihomo Meta `v1.19.31` 原生 `-t` 校验生成的 Clash 和 Mihomo YAML，两个配置均通过；新增可选 `CONTROL_TEST_MIHOMO_BINARY` 回归测试，未设置时跳过，不影响普通开发环境。

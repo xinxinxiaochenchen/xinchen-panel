@@ -86,4 +86,4 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 `GET /api/v1/subscriptions/{id}/url?format=clash|mihomo|sing-box|surge` 返回 origin-relative `path`，前端用当前配置的 HTTPS 地址组合显示。`preview` 输出相同配置。`GET /sub/{token}/{format}` 每次检查有效套餐、资源授权、启停、45 秒 Agent 在线窗口和已 ACK 的凭据摘要；没有可用连接返回 503，不生成直连兜底。控制面日志会脱敏订阅路径，后续 Nginx 的访问日志也需配置相同脱敏规则。公开订阅按 Token 和全局限流；部署 HTTPS 反代时，应在可信 Nginx 层设置按真实客户端 IP 的限流，控制面不信任外部 Forwarded 头。
 
-当前提供 Clash/Mihomo YAML、sing-box 1.12+ JSON 与 Surge 文本配置，均只生成 Trojan TCP、证书校验及代理选择组。Clash 使用本地 HTTP 7890 与 SOCKS5 7891 入口，Mihomo/sing-box 使用 127.0.0.1:7890 混合入口，Surge 使用本地 HTTP 6152 与 SOCKS5 6153 入口。名称模板支持 `{name}`、`{line}`、`{region}`、`{index}`；重复名称自动区分。订阅页提供格式切换、地址复制、Token 重置、启停及预览。格式结构测试已运行，原生客户端二进制兼容性尚未验证。GeoSite 受控规则集仍待实现。纯 IP 预览保持订阅和浏览器认证入口关闭。
+当前提供 Clash/Mihomo YAML、sing-box 1.12+ JSON 与 Surge 文本配置，均只生成 Trojan TCP、证书校验及代理选择组。Clash 使用本地 HTTP 7890 与 SOCKS5 7891 入口，Mihomo/sing-box 使用 127.0.0.1:7890 混合入口，Surge 使用本地 HTTP 6152 与 SOCKS5 6153 入口。名称模板支持 `{name}`、`{line}`、`{region}`、`{index}`；重复名称自动区分。订阅页提供格式切换、地址复制、Token 重置、启停及预览。生成的 Clash/Mihomo YAML 已用 Clash Verge 内置 Mihomo Meta v1.19.31 原生配置检查验证。GeoSite 受控规则集仍待实现。纯 IP 预览保持订阅和浏览器认证入口关闭。
