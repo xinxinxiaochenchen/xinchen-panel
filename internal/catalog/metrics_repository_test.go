@@ -48,6 +48,13 @@ VALUES ($1,3600,12.5,1048576,2000,3000,7,'running')`, nodeID); err != nil {
 	if err != nil || fresh.AgentStatus != "online" || !fresh.Fresh || fresh.Metrics == nil || fresh.Metrics.Connections != 7 || fresh.Metrics.CPUPct != 12.5 {
 		t.Fatalf("fresh metrics = %+v, %v", fresh, err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE agents SET last_seen_at=clock_timestamp()+interval '1 second' WHERE node_id=$1`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	reconnected, err := repo.GetNodeMetrics(ctx, nodeID)
+	if err != nil || reconnected.AgentStatus != "online" || reconnected.Fresh || reconnected.Metrics == nil {
+		t.Fatalf("pre-heartbeat reconnect metrics = %+v, %v", reconnected, err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE agents SET last_seen_at=now()-interval '2 minutes' WHERE node_id=$1`, nodeID); err != nil {
 		t.Fatal(err)
 	}

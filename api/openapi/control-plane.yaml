@@ -561,7 +561,7 @@ paths:
     get:
       operationId: getAdminNodeMetrics
       summary: Read the latest Agent telemetry for a node
-      description: Requires nodes.write or agents.write. Metrics are fresh only when both the Agent and telemetry were observed within 45 seconds. RX and TX are cumulative network interface counters, separate from billed user traffic.
+      description: Requires nodes.write or agents.write. Metrics are fresh only when both the Agent and telemetry were observed within 45 seconds and the telemetry is from the latest connection. RX and TX are cumulative network interface counters, separate from billed user traffic.
       security: [{browserSession: []}]
       parameters:
         - in: path

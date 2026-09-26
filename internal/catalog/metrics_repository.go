@@ -16,7 +16,8 @@ CASE WHEN a.status='revoked' THEN 'revoked'
      WHEN a.id IS NULL THEN 'unknown' ELSE 'offline' END,
 a.last_seen_at,
 COALESCE(a.status='online' AND a.last_seen_at >= now()-interval '45 seconds'
-         AND m.observed_at >= now()-interval '45 seconds', false),
+         AND m.observed_at >= now()-interval '45 seconds'
+         AND m.observed_at >= a.last_seen_at, false),
 m.observed_at,m.uptime_seconds,m.cpu_pct,m.memory_used_bytes,m.rx_bytes,m.tx_bytes,m.connections,m.engine_status
 FROM nodes n LEFT JOIN agents a ON a.node_id=n.id LEFT JOIN agent_metrics m ON m.node_id=n.id
 WHERE n.id=$1`
