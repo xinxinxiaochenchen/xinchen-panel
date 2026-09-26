@@ -23,6 +23,6 @@
 
 ### Task 3: Verification and release
 
-- [ ] Run web tests, typecheck, build, Go tests and vet, and diff check.
+- [x] Run web tests, typecheck, build, Go tests and vet, and diff check.
 - [x] Use a localhost mock session for desktop and mobile browser QA; keep public HTTP read-only.
-- [ ] Package and deploy only after the preceding checks pass, then verify server and public IP health.
+- [x] Package and deploy only after the preceding checks pass, then verify server and public IP health.
