@@ -24,6 +24,7 @@
 
 - 2026-09-26 发布 `1f98d29`：增加显式 Agent TLS IP 监听开关和可选 Compose 覆盖配置。发布包 SHA-256 `192a79387a8cb1d7534b43ba0a5605182964f34304a74f5db17ac96a8db40af2`，升级前正式库备份 `ncp-before-1f98d29.dump` 为 0600。服务器生成专用 Ed25519 CA 与服务器证书，证书匹配回环和公网 IP，私钥权限 0600；证书有效至 2027-09-26。覆盖配置仅将 18443 映射到主机 `127.0.0.1`；可信 CA 的 TLS 请求到 Agent 入网路径返回 405，证明握手和路由可用。公网首页/live/ready 200、登录 404，API/DB healthy、重启 0，迁移 15，节点/Agent 仍为 0。
 - 2026-09-27 发布 `15f7a55`：新增本机 `node-bootstrap`。发布包 SHA-256 `43c3a7427bc61f221f03f74223cb765a5838d34704c3583ddedbdd23d815ae2c`；正式库升级前备份 `/opt/network-control-plane/backups/ncp-before-15f7a55.dump`，权限 0600。独立 PostgreSQL 16 测试库通过幂等、禁用资源组拒绝和审计失败回滚测试，测试库已删除。正式 API/DB healthy、API 重启 0，迁移 15；公网首页/live/ready 为 200，登录 404；Agent TLS 回环入网路径返回 405。正式库用户、资源组、节点、Agent 均为 0，尚未进行真实入网或数据面验收。
+- 2026-09-27 发布 `4b5b657` 与 `34df875`：订阅增加经典 Clash YAML 格式，完成 GeoIP/IPv6 CIDR、线路选择和规则注入边界测试；随后加入可选同机 Agent Compose overlay。最终发布包 SHA-256 `d7bd61a4645a476044f49330c21e0b4835ada284048ddfc455253622bfe1bbcb`，正式库备份 `/opt/network-control-plane/backups/ncp-before-34df875.dump`，权限 0600。服务器 API/DB healthy、重启 0，迁移 15，公网首页/live/ready 200，登录 404；Agent overlay 仅完成 Compose 解析验证，未启动 Agent，正式库仍无用户、节点和 Agent。
 
 ## 布局与边界
 
