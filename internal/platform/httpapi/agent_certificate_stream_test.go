@@ -4,11 +4,15 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"log/slog"
 	"math/big"
@@ -30,6 +34,7 @@ import (
 	"controlplane/internal/agentruntime"
 	"controlplane/internal/orchestration"
 	"github.com/coder/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type handoverEnrollment struct {
@@ -56,7 +61,7 @@ type handoverState struct{}
 func (handoverState) Save(agentproto.ConfigSnapshot) error { return nil }
 
 func TestAgentRuntimeSurvivesOriginalCertificateExpiryAfterHandover(t *testing.T) {
-	oldPair, renewedPEM, caPEM, keyPEM, roots := rotatingStreamCertificates(t)
+	oldPair, renewedPEM, caPEM, keyPEM, roots, _ := rotatingStreamCertificates(t, 3*time.Second)
 	echo, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -71,20 +76,47 @@ func TestAgentRuntimeSurvivesOriginalCertificateExpiryAfterHandover(t *testing.T
 			go func() { defer connection.Close(); _, _ = io.Copy(connection, connection) }()
 		}
 	}()
+	udpEcho, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udpEcho.Close()
+	go func() {
+		buffer := make([]byte, 2048)
+		for {
+			count, address, err := udpEcho.ReadFrom(buffer)
+			if err != nil {
+				return
+			}
+			_, _ = udpEcho.WriteTo(buffer[:count], address)
+		}
+	}()
 	reserved, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	port := reserved.Addr().(*net.TCPAddr).Port
 	_ = reserved.Close()
+	proxyReserved, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyPort := proxyReserved.Addr().(*net.TCPAddr).Port
+	_ = proxyReserved.Close()
+	if proxyPort == port {
+		t.Fatal("proxy port collides with forward port")
+	}
 	rule := agentruntime.Rule{ID: "handover-tcp", IngressPort: port, TargetHost: "example.org",
-		TargetPort: 443, Protocol: "TCP", Enabled: true}
-	_, digest, err := agentproto.CanonicalForwardConfig([]agentruntime.Rule{rule})
+		TargetPort: 443, Protocol: "BOTH", Enabled: true}
+	proxy := agentruntime.ProxyAccess{ID: "handover-proxy", UserID: "handover-user", LineID: "handover-line",
+		IngressPort: proxyPort, CredentialHash: strings.Repeat("a", 56), ExpiresAt: time.Now().Add(time.Hour)}
+	_, digest, err := agentproto.CanonicalConfig([]agentruntime.Rule{rule}, []agentruntime.ProxyAccess{proxy})
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := &streamStore{desired: orchestration.DesiredRevision{NodeID: certificateTestNodeID, Revision: 1,
-		Digest: digest, Snapshot: agentruntime.Snapshot{Revision: 1, Rules: []agentruntime.Rule{rule}}},
+		Digest: digest, Snapshot: agentruntime.Snapshot{Revision: 1, Rules: []agentruntime.Rule{rule},
+			ProxyConfig: []agentruntime.ProxyAccess{proxy}}},
 		results: make(chan agentproto.ConfigResult, 100), heartbeats: make(chan agentproto.Heartbeat, 100)}
 	auth := &streamAuthenticator{roots: roots}
 	stream := NewAgentStreamHandler(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), auth, store, store)
@@ -108,14 +140,18 @@ func TestAgentRuntimeSurvivesOriginalCertificateExpiryAfterHandover(t *testing.T
 		t.Fatal(err)
 	}
 	runtime := agentruntime.New(agentruntime.Options{BindHost: "127.0.0.1",
+		ProxyTLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, Certificates: server.TLS.Certificates},
 		Resolve: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
 		}, DialTCP: func(context.Context, string) (net.Conn, error) {
 			return net.Dial("tcp", echo.Addr().String())
+		}, DialUDP: func(context.Context, string) (net.Conn, error) {
+			return net.Dial("udp", udpEcho.LocalAddr().String())
 		}})
 	client, err := agentclient.New(agentclient.Config{URL: "wss" + strings.TrimPrefix(server.URL, "https") + "/api/v1/agent/stream",
 		NodeID: certificateTestNodeID, Version: "v1", RootCAs: serverRoots, Certificate: oldPair,
-		CertFile: certPath, KeyFile: keyPath, HeartbeatInterval: 100 * time.Millisecond}, func() agentclient.Runtime { return runtime }, handoverState{})
+		CertFile: certPath, KeyFile: keyPath, HeartbeatInterval: 100 * time.Millisecond, ProxyReady: true},
+		func() agentclient.Runtime { return runtime }, handoverState{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,11 +186,61 @@ func TestAgentRuntimeSurvivesOriginalCertificateExpiryAfterHandover(t *testing.T
 		}
 	}
 	checkEcho("before")
+	udp, err := net.Dial("udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udp.Close()
+	checkUDP := func(value string) {
+		t.Helper()
+		if err := udp.SetDeadline(time.Now().Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := udp.Write([]byte(value)); err != nil {
+			t.Fatal(err)
+		}
+		got := make([]byte, len(value))
+		if _, err := io.ReadFull(udp, got); err != nil || string(got) != value {
+			t.Fatalf("UDP session response = %q, %v", got, err)
+		}
+	}
+	checkUDP("before")
+	proxyClient, err := tls.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(proxyPort)),
+		&tls.Config{MinVersion: tls.VersionTLS12, RootCAs: serverRoots})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxyClient.Close()
+	proxyRequest := append([]byte(proxy.CredentialHash+"\r\n"), 1, 3, byte(len("example.org")))
+	proxyRequest = append(proxyRequest, "example.org"...)
+	proxyRequest = binary.BigEndian.AppendUint16(proxyRequest, 443)
+	proxyRequest = append(proxyRequest, '\r', '\n')
+	checkProxy := func(value string) {
+		t.Helper()
+		if err := proxyClient.SetDeadline(time.Now().Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		payload := []byte(value)
+		if proxyRequest != nil {
+			payload = append(proxyRequest, payload...)
+			proxyRequest = nil
+		}
+		if _, err := proxyClient.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+		got := make([]byte, len(value))
+		if _, err := io.ReadFull(proxyClient, got); err != nil || string(got) != value {
+			t.Fatalf("Trojan session response = %q, %v", got, err)
+		}
+	}
+	checkProxy("before")
 	oldCert, _ := x509.ParseCertificate(oldPair.Certificate[0])
 	if delay := time.Until(oldCert.NotAfter.Add(350 * time.Millisecond)); delay > 0 {
 		time.Sleep(delay)
 	}
 	checkEcho("after")
+	checkUDP("after")
+	checkProxy("after")
 	select {
 	case err := <-done:
 		t.Fatalf("Agent stopped after renewal: %v", err)
@@ -168,7 +254,7 @@ func TestAgentRuntimeSurvivesOriginalCertificateExpiryAfterHandover(t *testing.T
 	}
 }
 
-func rotatingStreamCertificates(t *testing.T) (tls.Certificate, []byte, []byte, []byte, *x509.CertPool) {
+func rotatingStreamCertificates(t *testing.T, oldLifetime time.Duration) (tls.Certificate, []byte, []byte, []byte, *x509.CertPool, []byte) {
 	t.Helper()
 	caPublic, caPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -203,8 +289,8 @@ func rotatingStreamCertificates(t *testing.T) (tls.Certificate, []byte, []byte, 
 		}
 		return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	}
-	oldPEM := issue(2, now.Add(3*time.Second))
-	newPEM := issue(3, now.Add(time.Hour))
+	oldPEM := issue(2, now.Add(oldLifetime))
+	newPEM := issue(3, now.Add(90*time.Minute))
 	keyDER, err := x509.MarshalPKCS8PrivateKey(private)
 	if err != nil {
 		t.Fatal(err)
@@ -213,8 +299,13 @@ func rotatingStreamCertificates(t *testing.T) (tls.Certificate, []byte, []byte, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	caKeyDER, err := x509.MarshalPKCS8PrivateKey(caPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return pair, newPEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}),
-		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), roots
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), roots,
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: caKeyDER})
 }
 
 func TestAgentStreamRemainsAuthorizedAfterOriginalCertificateExpires(t *testing.T) {
@@ -225,7 +316,7 @@ func TestAgentStreamRemainsAuthorizedAfterOriginalCertificateExpires(t *testing.
 	store := &streamStore{desired: orchestration.DesiredRevision{NodeID: certificateTestNodeID, Revision: 1,
 		Digest: digest, Snapshot: agentruntime.Snapshot{Revision: 1}},
 		results: make(chan agentproto.ConfigResult, 1), heartbeats: make(chan agentproto.Heartbeat, 1)}
-	pair, renewedPEM, _, _, roots := rotatingStreamCertificates(t)
+	pair, renewedPEM, _, _, roots, _ := rotatingStreamCertificates(t, 3*time.Second)
 	auth := &streamAuthenticator{roots: roots}
 	stream := NewAgentStreamHandler(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), auth, store, store)
 	stream.recheckEvery = 25 * time.Millisecond
@@ -308,5 +399,101 @@ func TestAgentStreamCertificateUpdateRequiresSameKeyAndCurrentAuthorization(t *t
 	auth.mu.Unlock()
 	if _, _, err := stream.acceptCertificateUpdate(context.Background(), certificateTestNodeID, certificate, certificate, body); err == nil {
 		t.Fatal("revoked certificate accepted")
+	}
+}
+
+func TestAgentStreamCertificateUpdateChecksDatabaseGrantsAndNodeState(t *testing.T) {
+	databaseURL := os.Getenv("CONTROL_TEST_DATABASE_URL")
+	if databaseURL == "" && os.Getenv("CONTROL_TEST_DB_NAME") != "" && os.Getenv("POSTGRES_PASSWORD") != "" {
+		databaseURL = (&url.URL{Scheme: "postgres", User: url.UserPassword("controlplane", os.Getenv("POSTGRES_PASSWORD")),
+			Host: "127.0.0.1:5432", Path: "/" + os.Getenv("CONTROL_TEST_DB_NAME")}).String()
+	}
+	if databaseURL == "" {
+		t.Skip("test PostgreSQL database is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	oldPair, renewedPEM, caPEM, _, _, caKeyPEM := rotatingStreamCertificates(t, time.Hour)
+	issuer, err := agentidentity.NewIssuer(caPEM, caKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := agentidentity.NewEnrollmentService(pool, issuer)
+	stream := NewAgentStreamHandler(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), service, nil, nil)
+	oldCert, err := x509.ParseCertificate(oldPair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	newBlock, _ := pem.Decode(renewedPEM)
+	newCert, err := x509.ParseCertificate(newBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldFingerprint := sha256.Sum256(oldCert.Raw)
+	newFingerprint := sha256.Sum256(newCert.Raw)
+	var groupID string
+	if err := pool.QueryRow(ctx, `INSERT INTO resource_groups(id,code,name,region)
+VALUES(gen_random_uuid(),gen_random_uuid()::text,'Handover test','US') RETURNING id::text`).Scan(&groupID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM agents WHERE node_id=$1`, certificateTestNodeID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM nodes WHERE id=$1`, certificateTestNodeID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM resource_groups WHERE id=$1`, groupID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO nodes(id,group_id,name,region,host,capabilities)
+VALUES($1,$2,'Handover test node','US','handover.example.org',ARRAY['forward'])`, certificateTestNodeID, groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agents(id,node_id,cert_fingerprint,cert_expires_at,status)
+VALUES(gen_random_uuid(),$1,$2,$3,'online')`, certificateTestNodeID, hex.EncodeToString(oldFingerprint[:]), oldCert.NotAfter); err != nil {
+		t.Fatal(err)
+	}
+	message, err := json.Marshal(agentproto.CertificateUpdate{CertificatePEM: string(renewedPEM)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accept := func() error {
+		_, _, err := stream.acceptCertificateUpdate(ctx, certificateTestNodeID, oldCert, oldCert, message)
+		return err
+	}
+	if err := accept(); !errors.Is(err, agentidentity.ErrAgentUnauthorized) {
+		t.Fatalf("ungranted renewal accepted: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_certificate_grants(node_id,fingerprint,parent_fingerprint,certificate_pem,expires_at)
+VALUES($1,$2,$3,$4,$5)`, certificateTestNodeID, hex.EncodeToString(newFingerprint[:]),
+		hex.EncodeToString(oldFingerprint[:]), renewedPEM, newCert.NotAfter); err != nil {
+		t.Fatal(err)
+	}
+	if err := accept(); err != nil {
+		t.Fatalf("granted renewal rejected: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE agents SET status='revoked' WHERE node_id=$1`, certificateTestNodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := accept(); !errors.Is(err, agentidentity.ErrAgentUnauthorized) {
+		t.Fatalf("revoked Agent accepted: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE agents SET status='online' WHERE node_id=$1`, certificateTestNodeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE nodes SET enabled=false WHERE id=$1`, certificateTestNodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := accept(); !errors.Is(err, agentidentity.ErrAgentUnauthorized) {
+		t.Fatalf("disabled node accepted: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE nodes SET enabled=true WHERE id=$1`, certificateTestNodeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM agent_certificate_grants WHERE node_id=$1`, certificateTestNodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := accept(); !errors.Is(err, agentidentity.ErrAgentUnauthorized) {
+		t.Fatalf("deleted renewal grant accepted: %v", err)
 	}
 }
