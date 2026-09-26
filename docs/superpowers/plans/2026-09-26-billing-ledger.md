@@ -38,8 +38,8 @@ Files: `migrations/000011_billing_ledger.{up,down}.sql`, `internal/billing/{mode
 
 Files: `internal/billing/{lease_repository,worker}.go`, matching tests, migration as necessary.
 
-- [ ] 发放/续约/结算事务并发测试：多个 Agent 不超发，重试不重复预留，过期不无条件回收未确认用量。
-- [ ] 周期 worker 幂等创建新账期并重新编译授权；用户停用、到期和零额度拒绝新租约。
+- [x] 发放/续约/结算事务并发测试：多个 Agent 不超发，重试不重复预留，过期不无条件回收未确认用量。
+- [x] 周期 worker 幂等创建新账期并重新编译授权；用户停用、到期和零额度拒绝新租约。
 
 ## Task 4: Agent 用量与执行
 
@@ -72,3 +72,24 @@ Database tests require `CONTROL_TEST_DATABASE_URL` targeting a disposable Postgr
 - 全量 Go 测试、billing race、vet 均通过。本地未配置数据库时 PostgreSQL 测试会跳过，数据库结论来自上述独立服务器测试。
 - 新建订购记录冻结 `period_months`，续期创建冻结最新套餐快照；当前授权快照推进由 Task 3 worker 完成。Task 2 仅负责账本，不能单独提供额度执行保证。
 - 正式部署仍为 `a40cd29` / 数据库迁移 10。此阶段未升级正式库或开放登录/Agent/真实代理。
+
+## Task 3 租约事务约定
+
+- `GrantLease(agent_id, period_id, request_id, requested_bytes)` 使用数据库时钟，单次最多 1 MiB、有效期最多 30 秒且不超过账期/订购到期。同请求 ID 同内容返回原租约（包括原到期时间）；不同内容冲突。剩余额度不足时可部分发放，零余额返回额度耗尽。
+- 同账期预留、用量、结算事务统一先锁账期行，再锁连接/租约。账期保留 `reserved_bytes`。发放满足 `charged_bytes + reserved_bytes + granted_bytes <= quota_bytes`。
+- 每个用量批次引用一个租约。连接创建必须绑定首个租约，续用租约允许同一 Agent/账期的连接继续上报；Agent 需在切换租约时先冻结旧批次。重试同时校验租约 ID、累计计数及微秒精度观察时间。
+- 实际用量优先入账：某批次若有边界超额，完整记录实际计费，从预留中仅减去尚未消耗的部分；后续可发额度因此降低或归零。Agent 后续实现负责限制单次越界规模，账本不丢弃已经发生的流量。
+- `SettleLease(agent_id, lease_id, expected_consumed_bytes)` 只接受与账本一致的最终已消费值。结算后释放余量，禁止新批次继续使用该租约；之前已入账的相同批次仍可幂等 ACK。Agent 必须先停止使用租约并完成报告 ACK，才能请求结算。
+- 到期不自动释放预留，迟到报告按租约有效时段的观察时间补账。永久失联租约保留在原账期，不能借此超发新租约；新账期使用独立额度。
+- 本阶段数据库原语不暴露到公网，通信与 Agent 持久化重放在 Task 4 接通。
+
+### 租约截止时间语义
+
+新连接必须在 `[issued_at, expires_at)` 内创建；累计用量快照允许 `observed_at = expires_at`，表示截止瞬间已经传输的字节。Agent 不得因此在截止后继续转发。数据库保留实际发生的边界超额，不把超出的字节丢弃；后续发放按照实际计费量计算，Agent 运行时负责限制越界规模。
+
+## 2026-09-26 额度租约与周期推进验证
+
+- Task 3 的数据库与后台部分已完成：迁移 12、最多 1 MiB/30 秒租约、按账期行锁预留、幂等请求、部分发放、报告扣减、显式结算，以及到期未对账余量保留。`GrantLease` 的新请求 ID 即续用额度；旧请求 ID 重试始终返回原租约和到期时间。
+- 账期 worker 在启动及每分钟扫描，激活时将冻结授权同步到当前订购并发送 `billing.period_renewed` outbox，配置收敛 worker 接管事件。历史账期迟到创建从 `initial_snapshot_json` 读取原始快照，不回退当前授权；已关闭账期仍接收其合法迟到用量。
+- 独立 PostgreSQL 16.10 数据库验证迁移 12 up/down/up、旧账本与套餐生命周期、两个 Agent 并发总发放、重复请求、额度不足、过期不回收、离线/禁用/零额度拒发、用量报告及结算、边界超额入账、历史快照、续期 outbox 和配置收敛。测试库已删除。完整 Go 测试、billing/orchestration race 和 vet 通过。
+- 数据库原语仍未暴露给 Agent；没有 Task 4 的本地额度执行与用量重放前，真实代理保持关闭。

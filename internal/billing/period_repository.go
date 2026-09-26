@@ -9,27 +9,49 @@ import (
 
 	"controlplane/internal/entitlement"
 	"controlplane/internal/platform/id"
+	"github.com/jackc/pgx/v5"
 )
 
-// EnsurePeriod is for control-plane callers, not Agent-supplied timestamps. It
-// serializes by membership and freezes a period snapshot exactly once. The
-// caller must also reconcile the membership's active authorization snapshot.
+// EnsurePeriod creates immutable accounting history. Only PeriodWorker activates
+// the current period's authorizations; querying historical periods never does.
 func (r *PostgresRepository) EnsurePeriod(ctx context.Context, membershipID string, at time.Time) (Period, error) {
-	if !uuidPattern.MatchString(membershipID) {
-		return Period{}, ErrNotFound
-	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return Period{}, err
 	}
 	defer tx.Rollback(ctx)
+	p, err := ensurePeriod(ctx, tx, membershipID, at)
+	if err != nil {
+		return Period{}, err
+	}
+	return p, tx.Commit(ctx)
+}
+
+func ensurePeriod(ctx context.Context, tx pgx.Tx, membershipID string, at time.Time) (Period, error) {
+	if !uuidPattern.MatchString(membershipID) {
+		return Period{}, ErrNotFound
+	}
 	var schedule Schedule
 	var userID, planID string
 	var snapshotJSON []byte
-	err = tx.QueryRow(ctx, `SELECT m.user_id::text,m.plan_id::text,m.starts_at,m.ends_at,m.anchor_day,m.timezone,m.period_months,m.snapshot_json
- FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.id=$1 AND m.status='active' AND u.status='active' FOR UPDATE OF m FOR SHARE OF u`, membershipID).Scan(&userID, &planID, &schedule.StartsAt, &schedule.EndsAt, &schedule.AnchorDay, &schedule.Timezone, &schedule.PeriodMonths, &snapshotJSON)
+	var locked string
+	err := tx.QueryRow(ctx, `SELECT user_id::text FROM memberships WHERE id=$1`, membershipID).Scan(&userID)
+	if err != nil {
+		return Period{}, databaseError(err)
+	}
+	err = tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id=$1 AND status='active' FOR SHARE`, userID).Scan(&locked)
+	if err != nil {
+		return Period{}, databaseError(err)
+	}
+	err = tx.QueryRow(ctx, `SELECT m.user_id::text,m.plan_id::text,m.starts_at,m.ends_at,m.anchor_day,m.timezone,m.period_months,COALESCE(m.initial_snapshot_json,m.snapshot_json)
+ FROM memberships m WHERE m.id=$1 AND m.status='active' FOR UPDATE`, membershipID).Scan(&userID, &planID, &schedule.StartsAt, &schedule.EndsAt, &schedule.AnchorDay, &schedule.Timezone, &schedule.PeriodMonths, &snapshotJSON)
 	if err != nil {
 		return Period{}, fmt.Errorf("load billing membership: %w", databaseError(err))
+	}
+	if at.IsZero() {
+		if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&at); err != nil {
+			return Period{}, err
+		}
 	}
 	window, err := schedule.PeriodAt(at)
 	if err != nil {
@@ -37,7 +59,7 @@ func (r *PostgresRepository) EnsurePeriod(ctx context.Context, membershipID stri
 	}
 	existing, err := scanPeriod(tx.QueryRow(ctx, `SELECT `+periodColumns+` FROM billing_periods WHERE membership_id=$1 AND starts_at=$2`, membershipID, window.StartsAt))
 	if err == nil {
-		return existing, tx.Commit(ctx)
+		return existing, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return Period{}, err
@@ -69,9 +91,6 @@ func (r *PostgresRepository) EnsurePeriod(ctx context.Context, membershipID stri
  VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING `+periodColumns, periodID, membershipID, userID, window.StartsAt, window.EndsAt, snapshot.QuotaBytes, snapshotJSON))
 	if err != nil {
 		return Period{}, fmt.Errorf("create billing period: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Period{}, databaseError(err)
 	}
 	return period, nil
 }

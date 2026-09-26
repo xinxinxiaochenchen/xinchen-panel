@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"controlplane/internal/agentidentity"
+	"controlplane/internal/billing"
 	"controlplane/internal/catalog"
 	"controlplane/internal/entitlement"
 	"controlplane/internal/forward"
@@ -103,6 +104,7 @@ func main() {
 	if cfg.BrowserAuthEnabled {
 		go identity.RunSessionJanitor(ctx, identity.NewPostgresRepository(pool), logger)
 	}
+	go billing.NewPeriodWorker(billing.NewPostgresRepository(pool)).Run(ctx, logger)
 	go orchestration.NewConvergenceWorker(pool, orchestration.NewRevisionRepository(pool)).Run(ctx, logger)
 	go func() {
 		<-ctx.Done()

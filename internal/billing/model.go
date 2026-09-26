@@ -6,9 +6,11 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("billing resource not found")
-	ErrConflict = errors.New("billing resource conflict")
-	ErrSequence = errors.New("usage report sequence gap")
+	ErrNotFound       = errors.New("billing resource not found")
+	ErrConflict       = errors.New("billing resource conflict")
+	ErrSequence       = errors.New("usage report sequence gap")
+	ErrQuotaExhausted = errors.New("billing quota exhausted")
+	ErrLeaseClosed    = errors.New("billing lease closed")
 )
 
 type Period struct {
@@ -27,6 +29,7 @@ type Period struct {
 type Connection struct {
 	ID              string
 	PeriodID        string
+	LeaseID         string
 	AgentID         string
 	IngressNodeID   string
 	LineID          string
@@ -36,6 +39,7 @@ type Connection struct {
 
 type UsageReport struct {
 	ConnectionID string
+	LeaseID      string
 	Sequence     int64
 	Counters
 	ObservedAt time.Time
@@ -49,4 +53,24 @@ type UsageEvent struct {
 	UploadedBytes   int64
 	DownloadedBytes int64
 	ChargedBytes    int64
+}
+
+type LeaseRequest struct {
+	AgentID        string
+	PeriodID       string
+	RequestID      string
+	RequestedBytes int64
+}
+
+type Lease struct {
+	ID             string
+	AgentID        string
+	PeriodID       string
+	RequestID      string
+	RequestedBytes int64
+	GrantedBytes   int64
+	ConsumedBytes  int64
+	IssuedAt       time.Time
+	ExpiresAt      time.Time
+	State          string
 }

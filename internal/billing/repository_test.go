@@ -85,8 +85,11 @@ func TestPostgresBillingLedger(t *testing.T) {
 	if err != nil || again.QuotaBytes != 2000 {
 		t.Fatalf("period changed: %+v %v", again, err)
 	}
+	leaseID := add(`INSERT INTO quota_leases(id,billing_period_id,agent_id,request_id,requested_bytes,granted_bytes,issued_at,expires_at)
+    VALUES(gen_random_uuid(),$1,$2,gen_random_uuid(),1000,1000,$3,$4) RETURNING id::text`, period.ID, agent, at, at.Add(30*time.Second))
+	exec(`UPDATE billing_periods SET reserved_bytes=1000 WHERE id=$1`, period.ID)
 	connectionID := "00000000-0000-4000-8000-000000000001"
-	input := Connection{ID: connectionID, PeriodID: period.ID, AgentID: agent, IngressNodeID: node, MultiplierMilli: 500, StartedAt: at.Add(123 * time.Nanosecond)}
+	input := Connection{ID: connectionID, PeriodID: period.ID, LeaseID: leaseID, AgentID: agent, IngressNodeID: node, MultiplierMilli: 500, StartedAt: at.Add(123 * time.Nanosecond)}
 	registrationErrors := make(chan error, 8)
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
@@ -108,7 +111,7 @@ func TestPostgresBillingLedger(t *testing.T) {
 		t.Fatalf("changed frozen multiplier: %v", err)
 	}
 	exec(`UPDATE nodes SET multiplier_milli=2000 WHERE id=$1`, node)
-	report := UsageReport{ConnectionID: connectionID, Sequence: 1, Counters: Counters{UploadedBytes: 1}, ObservedAt: at.Add(time.Second + 345*time.Nanosecond)}
+	report := UsageReport{ConnectionID: connectionID, LeaseID: leaseID, Sequence: 1, Counters: Counters{UploadedBytes: 1}, ObservedAt: at.Add(time.Second + 345*time.Nanosecond)}
 	event, err := repo.RecordUsage(ctx, agent, report)
 	if err != nil || event.ChargedBytes != 0 {
 		t.Fatalf("first report: %+v %v", event, err)
@@ -146,7 +149,7 @@ func TestPostgresBillingLedger(t *testing.T) {
 	if _, err := repo.RecordUsage(ctx, agent, report); err != nil {
 		t.Fatal(err)
 	}
-	concurrent := UsageReport{ConnectionID: connectionID, Sequence: 4, Counters: Counters{UploadedBytes: 5, DownloadedBytes: 2}, ObservedAt: at.Add(4 * time.Second)}
+	concurrent := UsageReport{ConnectionID: connectionID, LeaseID: leaseID, Sequence: 4, Counters: Counters{UploadedBytes: 5, DownloadedBytes: 2}, ObservedAt: at.Add(4 * time.Second)}
 	var reportWG sync.WaitGroup
 	resultIDs := make(chan string, 8)
 	for i := 0; i < 8; i++ {

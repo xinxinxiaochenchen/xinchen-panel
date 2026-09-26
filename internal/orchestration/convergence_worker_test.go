@@ -224,3 +224,22 @@ func TestConvergenceWorkerOnlyClaimsRelevantKinds(t *testing.T) {
 		t.Fatalf("unrelated event retained = %t, %v", retained, err)
 	}
 }
+
+func TestConvergenceWorkerConsumesBillingPeriodEvent(t *testing.T) {
+	fixture := newConvergenceFixture(t, 1)
+	ctx := context.Background()
+	repo := NewRevisionRepository(fixture.pool)
+	worker := NewConvergenceWorker(fixture.pool, repo)
+	event := fixture.addEvent(t, "billing.period_renewed", `{"user_id":"00000000-0000-4000-8000-000000000001"}`)
+	processed, err := worker.ProcessOne(ctx)
+	if err != nil || !processed {
+		t.Fatalf("billing event: %t %v", processed, err)
+	}
+	if _, err := repo.Desired(ctx, fixture.nodes[0]); err != nil {
+		t.Fatalf("billing renewal did not reconcile Agent: %v", err)
+	}
+	var done bool
+	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at IS NOT NULL FROM outbox_events WHERE id=$1`, event).Scan(&done); err != nil || !done {
+		t.Fatalf("billing event not acknowledged: %t %v", done, err)
+	}
+}
