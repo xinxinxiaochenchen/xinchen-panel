@@ -4,7 +4,8 @@
 
 ## 当前状态（2026-09-27）
 
-- 当前运行 `ea205ff`，套餐 `max_hops` 按上限检查，配置为 2 时仍可创建单跳线路。发布包 SHA-256 `a276c3098bf212fd4edd665b226ae9080ec90362afbe82969fb4acd51115422b`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-ea205ff.dump` 权限 0600。迁移保持 18，服务器首页与 ready 为 200、明文登录为 404，Agent TLS 18443 仅监听回环。此版本尚未实现多跳线路，也尚未完成正式 Agent 入网与数据面验收。
+- 当前运行 `24bba90`，增加管理员审计列表、`audit.read` 权限入口、游标分页和迁移 19 的排序索引；审计 API 只返回元数据，不返回前后状态快照。发布包 SHA-256 `ce2ce683d9e0f08a8bd4a9fea4b2848578e0428c4b10136bcacd46cc6f0112a8`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-24bba90.dump` 权限 0600，已用 PostgreSQL 16.10 `pg_restore --list` 校验。API/DB healthy、重启 0；迁移版本 19、审计索引存在；服务器回环首页/live/ready 200，明文登录与审计 API 404，18443 仅绑定回环。正式库用户、节点、Agent 均为 0。临时上传包已清理，磁盘剩余约 1.1 GB。
+- 上一版本 `ea205ff`，套餐 `max_hops` 按上限检查，配置为 2 时仍可创建单跳线路。发布包 SHA-256 `a276c3098bf212fd4edd665b226ae9080ec90362afbe82969fb4acd51115422b`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-ea205ff.dump` 权限 0600。迁移保持 18，服务器首页与 ready 为 200、明文登录为 404，Agent TLS 18443 仅监听回环。此版本尚未实现多跳线路，也尚未完成正式 Agent 入网与数据面验收。
 - 上一版本 `c6bd719`，管理 UI 不再列出保留的 `roles.write` 权限，OpenAPI 同步写明系统管理员边界。发布包 SHA-256 `ed908a1d00f6d45086679281779b28fe20d12502cafe87ca4ac856f0c9005bc8`；升级前备份 `/opt/network-control-plane/backups/ncp-before-c6bd719.dump` 权限 0600。迁移保持 18，API/DB healthy、重启 0，公网首页/ready 200、登录 404，Agent TLS 18443 仅监听回环。清理有对应解压目录的旧上传包后磁盘可用约 1.5 GB；正式库仍无用户、节点和 Agent。
 - 已发布 `f2c21db` 至 `/opt/network-control-plane/releases/release-f2c21db`，新增自定义 RBAC 角色、权限目录、普通用户角色分配、审计和会话权限即时刷新；自定义角色不能持有 `roles.write`，写操作限定系统管理员。发布包 SHA-256 `b511e1e3692a035ede8ff81c27b7ddf30db96ac11f00a48a8c55f7c735a44039`；升级前正式库备份 `/opt/network-control-plane/backups/ncp-before-f2c21db.dump` 权限 0600。正式库迁移版本 18，API/DB healthy、重启 0；公网首页/ready 200，明文登录与未认证角色 API 404，18443 仍仅监听 `127.0.0.1`。正式库用户、节点、Agent 均为 0；既有 Nginx Proxy Manager 未改动，磁盘可用空间约 1.2 GB。
 

@@ -149,3 +149,9 @@
 
 - 提交 `c6bd719`：管理 UI 隐藏保留给系统管理员的 `roles.write` 权限，并同步 OpenAPI 说明；新增前端回归测试。
 - 前端 27 项测试、TypeScript/生产构建、OpenAPI YAML 解析和 diff 检查通过。经 Termark 发布到 `/opt/network-control-plane/releases/release-c6bd719`，包 SHA-256 `ed908a1d00f6d45086679281779b28fe20d12502cafe87ca4ac856f0c9005bc8`；升级前正式库备份 `ncp-before-c6bd719.dump` 权限 0600，迁移保持 18。API/DB 最终 healthy、重启 0，公网首页/ready 200、登录 404，18443 仅绑定回环；正式库仍无用户、节点、Agent。
+
+## 2026-09-27 管理员审计查看发布
+
+- 提交 `24bba90`：增加 `audit.read` 保护的审计分页 API 和管理页，只返回操作元数据，不查询或返回前后状态快照；迁移 19 增加全局时间与 ID 排序索引。独立 PostgreSQL 16 测试库完成迁移 1–18 后的审计分页集成测试，另一个临时库验证索引 up/down；临时库均已清理。
+- 全量 Go 测试、Go vet、前端 27 项测试、TypeScript/生产构建、OpenAPI YAML 解析通过。服务器包 SHA-256 `ce2ce683d9e0f08a8bd4a9fea4b2848578e0428c4b10136bcacd46cc6f0112a8`；升级前正式库备份 `ncp-before-24bba90.dump` 权限 0600，并经 PostgreSQL 16.10 `pg_restore --list` 验证可读取。发布后 API/DB healthy、重启 0，迁移版本 19、索引存在；回环首页/live/ready 为 200，明文登录和审计接口为 404，Agent TLS 18443 仅绑定回环。正式库用户、节点和 Agent 均为 0。
+- 仍需首个正式管理员、受信任 HTTPS 管理入口、正式 Agent 入网与真实数据面验收；可执行多跳与线路权重尚未实现。
