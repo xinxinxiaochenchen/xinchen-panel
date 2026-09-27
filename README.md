@@ -38,11 +38,11 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 套餐与订购开发状态
 
-管理员可通过 `/api/v1/admin/plans` 创建带明确资源组、共享单跳线路授权与额度限制的套餐，并通过 `/api/v1/admin/memberships` 为已有用户创建立即生效的订购。订购事务把额度、倍率、限制和授权 ID 冻结在快照中；同一用户不能同时拥有两个有效订购。`/api/v1/my/membership` 和 `/api/v1/my/entitlements` 只读取登录用户自己的有效订购。套餐授权共享线路时要求单跳出口节点属于授权资源组；私有线路不得授予其他用户。创建订购要求结束时间至少比数据库当前时间晚五分钟。接口契约见 [OpenAPI](api/openapi/control-plane.yaml)。
+管理员可通过 `/api/v1/admin/plans` 创建带明确资源组、共享线路授权与额度限制的套餐，并通过 `/api/v1/admin/memberships` 为已有用户创建立即生效的订购。订购事务把额度、倍率、限制和授权 ID 冻结在快照中；同一用户不能同时拥有两个有效订购。`/api/v1/my/membership` 和 `/api/v1/my/entitlements` 只读取登录用户自己的有效订购。套餐授权共享线路时要求整条线路的每个 hop 属于授权资源组，节点能力、端口和 `max_hops` 均满足套餐限制；私有线路不得授予其他用户。创建订购要求结束时间至少比数据库当前时间晚五分钟。接口契约见 [OpenAPI](api/openapi/control-plane.yaml)。
 
 ## 线路开发状态
 
-管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。2–8 跳 TCP 线路可启用，入口须有 `proxy` 和 `forward` 能力及两个独立端口，后续节点须有 `forward` 能力和中继端口。每跳均检查资源组授权及套餐 `max_hops`。用户可在启用线路上创建代理连接；只有各跳 Agent 在线、证书有效、下游应用当前世代且入口应用代理配置后，订阅才会导出。计费准入沿整条线路复核这些条件，仅在入口建立一条用量会话并冻结线路与倍率；独立 PostgreSQL 集成验收已通过并发布到 `us bwg`。线路权重目前只有确定性排序器，尚未接入代理运行时。启用多跳数据面须配置 `CONTROL_RELAY_SECRET_KEY_FILE` 和 Agent mTLS；公网纯 HTTP 预览保持关闭管理路由。
+管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。2–8 跳 TCP 线路可启用，入口须有 `proxy` 和 `forward` 能力及两个独立端口，后续节点须有 `forward` 能力和中继端口。每跳均检查资源组授权及套餐 `max_hops`。用户可在启用线路上创建代理连接；只有各跳 Agent 在线、证书有效、下游应用当前世代且入口应用代理配置后，订阅才会导出。计费准入沿整条线路复核这些条件，仅在入口建立一条用量会话并冻结线路与倍率；独立 PostgreSQL 集成验收已通过并发布到 `us bwg`。线路权重目前已用于订阅导出的稳定线路顺序；由于代理连接实体仍绑定单条线路，入口候选池的运行时自动选路仍待接入。启用多跳数据面须配置 `CONTROL_RELAY_SECRET_KEY_FILE` 和 Agent mTLS；公网纯 HTTP 预览保持关闭管理路由。
 线路详情可通过 `GET /api/v1/admin/lines/{id}/health` 或授权用户的 `GET /api/v1/lines/{id}/health` 查看。健康状态包含 `disabled`、`unavailable`、`converging`、`ready`，并返回每一跳的 Agent 在线、控制证书/中继证书、期望与已应用配置版本及多跳中继应用状态；线路页会显示不可用原因和每跳收敛进度。
 
 ## 转发规则开发状态

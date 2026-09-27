@@ -50,7 +50,7 @@ func (r *PostgresRepository) export(ctx context.Context, owner, subID, hash, for
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := tx.Query(ctx, `SELECT a.id::text,a.name,a.line_id::text,l.name,COALESCE(l.owner_user_id::text,''),
+	rows, err := tx.Query(ctx, `SELECT a.id::text,a.name,a.line_id::text,l.name,l.priority,l.weight,COALESCE(l.owner_user_id::text,''),
 ARRAY(SELECT nh.group_id::text FROM line_hops lh JOIN nodes nh ON nh.id=lh.node_id WHERE lh.line_id=l.id ORDER BY lh.position),
 n.region,COALESCE(host(n.public_ip),n.host),n.host,n.proxy_port,a.credential_ciphertext
 FROM subscription_proxy_targets t JOIN proxy_accesses a ON a.id=t.proxy_access_id AND a.user_id=t.user_id
@@ -78,12 +78,13 @@ ORDER BY t.sort_order`, sub.ID, sub.UserID)
 	if err != nil {
 		return nil, "", fmt.Errorf("query subscription targets: %w", err)
 	}
-	targets := make([]subscriptionconfig.Target, 0)
+	targets := make([]exportTarget, 0)
 	for rows.Next() {
 		var v subscriptionconfig.Target
 		var lineOwner, sealed string
 		var groups []string
-		if err := rows.Scan(&v.ID, &v.Name, &v.LineID, &v.LineName, &lineOwner, &groups, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed); err != nil {
+		var priority, weight int
+		if err := rows.Scan(&v.ID, &v.Name, &v.LineID, &v.LineName, &priority, &weight, &lineOwner, &groups, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed); err != nil {
 			rows.Close()
 			return nil, "", err
 		}
@@ -96,7 +97,7 @@ ORDER BY t.sort_order`, sub.ID, sub.UserID)
 			return nil, "", fmt.Errorf("decrypt subscription target: %w", err)
 		}
 		v.Password = password
-		targets = append(targets, v)
+		targets = append(targets, exportTarget{Target: v, Priority: priority, Weight: weight})
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -106,14 +107,18 @@ ORDER BY t.sort_order`, sub.ID, sub.UserID)
 	if len(targets) == 0 {
 		return nil, "", ErrUnavailable
 	}
-	if err := checkExpiry(ctx, tx, ends); err != nil {
-		return nil, "", ErrNotFound
-	}
-	policy, err := loadExportPolicy(ctx, tx, sub, targets)
+	orderedTargets, err := orderExportTargets(sub.ID, targets)
 	if err != nil {
 		return nil, "", err
 	}
-	body, contentType, err := subscriptionconfig.RenderWithRouting(format, sub.NameTemplate, targets, policy)
+	if err := checkExpiry(ctx, tx, ends); err != nil {
+		return nil, "", ErrNotFound
+	}
+	policy, err := loadExportPolicy(ctx, tx, sub, orderedTargets)
+	if err != nil {
+		return nil, "", err
+	}
+	body, contentType, err := subscriptionconfig.RenderWithRouting(format, sub.NameTemplate, orderedTargets, policy)
 	if err != nil {
 		return nil, "", ValidationError{"routing_profile_id", err.Error()}
 	}

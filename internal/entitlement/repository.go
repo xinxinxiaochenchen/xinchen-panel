@@ -111,18 +111,31 @@ VALUES ($1,$2)`, planID, groupID); err != nil {
 		if ownerID != nil || !lineEnabled {
 			return Plan{}, ErrNotFound
 		}
-		var hopCount int
-		var allowed bool
-		err = tx.QueryRow(ctx, `SELECT count(*),COALESCE(bool_and(
-  h.position=0 AND h.role='egress' AND n.enabled AND g.enabled
-  AND 'proxy'=ANY(n.capabilities) AND n.group_id::text=ANY($2::text[])),false)
-FROM line_hops h JOIN nodes n ON n.id=h.node_id
-JOIN resource_groups g ON g.id=n.group_id WHERE h.line_id=$1`, lineID, input.ResourceGroupIDs).Scan(&hopCount, &allowed)
+		rows, err := tx.Query(ctx, `SELECT h.position,h.role,n.group_id::text,n.enabled,g.enabled,
+COALESCE('proxy'=ANY(n.capabilities),false),COALESCE('forward'=ANY(n.capabilities),false),
+n.proxy_port IS NOT NULL,n.relay_port IS NOT NULL
+FROM line_hops h JOIN nodes n ON n.id=h.node_id JOIN resource_groups g ON g.id=n.group_id
+WHERE h.line_id=$1 ORDER BY h.position FOR SHARE OF n,g`, lineID)
 		if err != nil {
 			return Plan{}, fmt.Errorf("validate grant line hops: %w", err)
 		}
-		if hopCount != 1 || !allowed {
-			return Plan{}, ValidationError{"line_ids", "shared line must have one enabled authorized proxy hop"}
+		hops := make([]planLineHop, 0, 8)
+		for rows.Next() {
+			var hop planLineHop
+			if err := rows.Scan(&hop.Position, &hop.Role, &hop.GroupID, &hop.NodeEnabled, &hop.GroupEnabled,
+				&hop.ProxyCapable, &hop.ForwardCapable, &hop.ProxyPortReady, &hop.RelayPortReady); err != nil {
+				rows.Close()
+				return Plan{}, fmt.Errorf("scan grant line hop: %w", err)
+			}
+			hops = append(hops, hop)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return Plan{}, fmt.Errorf("read grant line hops: %w", err)
+		}
+		if !planLineGrantAllowed(hops, input.ResourceGroupIDs, limits.MaxHops) {
+			return Plan{}, ValidationError{"line_ids", "shared line must have enabled authorized hops within plan limits"}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO plan_line_grants(plan_id,line_id)
 VALUES ($1,$2)`, planID, lineID); err != nil {
