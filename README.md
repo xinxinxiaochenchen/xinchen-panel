@@ -83,7 +83,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 后续阶段
 
-下一阶段重点是在隔离 PostgreSQL 验证线路绑定转发的迁移、授权、配置下发与计费准入，再接入线路权重运行时选择。Agent 已具备经认证的 TCP/UDP 多跳线路绑定转发执行能力，UDP 节点间数据报帧和回环通流已有测试；用户 API、控制面快照和计费准入代码已接通，尚未通过真实数据库验证。隔离数据库和临时 Agent 此前已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+下一阶段重点是在隔离 PostgreSQL 验证线路绑定转发的完整迁移、授权、配置下发与计费准入，并接入线路候选池的运行时选择。迁移 24 的 up/down 约束已用 PGlite SQL 冒烟验证；Agent 已具备经认证的 TCP/UDP 多跳线路绑定转发执行能力，UDP 节点间数据报帧和回环通流已有测试；线路绑定转发的真实 PostgreSQL 集成和公网 Agent 通流仍待完成。隔离数据库和临时 Agent 此前已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前 `us bwg` 的纯 IP 只读预览见[部署说明](docs/deployment/us-bwg-preview.md)；旧 `us dmit` 的历史部署见[历史记录](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 
