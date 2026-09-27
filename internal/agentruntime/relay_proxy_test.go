@@ -231,6 +231,77 @@ func TestThreeRuntimeProxyRelaysAndMetersOnlyIngress(t *testing.T) {
 	}
 }
 
+func TestRuntimeRelayEgressDialsUDPAfterAuthenticatedOpen(t *testing.T) {
+	roots, issue := runtimeRelayAuthority(t)
+	const ingressID = "11111111-1111-4111-8111-111111111111"
+	const egressID = "33333333-3333-4333-8333-333333333333"
+	clientCert, serverCert := issue(ingressID, false), issue(egressID, true)
+	serverTLS, err := agentrelay.ServerTLSConfig(func() (*tls.Certificate, error) { return &serverCert, nil }, roots,
+		func(id, fingerprint string) bool {
+			return id == ingressID && fingerprint == runtimeFingerprint(clientCert)
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := agentrelay.ClientTLSConfig(func() (*tls.Certificate, error) { return &clientCert, nil }, roots,
+		"127.0.0.1", egressID, []string{runtimeFingerprint(serverCert)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	echo, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer echo.Close()
+	go func() {
+		buffer := make([]byte, 2048)
+		for {
+			count, peer, readErr := echo.ReadFrom(buffer)
+			if readErr != nil {
+				return
+			}
+			_, _ = echo.WriteTo(buffer[:count], peer)
+		}
+	}()
+	var dials atomic.Int64
+	runtime := New(Options{BindHost: "127.0.0.1", RelayPort: unusedTCPPort(t), RelayTLSConfig: serverTLS,
+		Resolve: func(context.Context, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+		}, DialUDP: func(ctx context.Context, address string) (net.Conn, error) {
+			if address != "8.8.8.8:53" {
+				return nil, errors.New("unexpected target")
+			}
+			dials.Add(1)
+			return (&net.Dialer{}).DialContext(ctx, "udp", echo.LocalAddr().String())
+		}})
+	defer runtime.Close()
+	const lineID = "44444444-4444-4444-8444-444444444444"
+	secret := bytes.Repeat([]byte{7}, 32)
+	if err := runtime.Apply(context.Background(), Snapshot{Revision: 1, RelayConfig: []RelayConfig{{
+		LineID: lineID, Generation: 1, Role: RelayEgress, PreviousNodeID: ingressID,
+		PreviousSecret: secret, PreviousFingerprints: []string{runtimeFingerprint(clientCert)},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	connection, err := agentrelay.DialLine(context.Background(), agentrelay.NextHop{
+		Address: net.JoinHostPort("127.0.0.1", strconv.Itoa(runtime.options.RelayPort)), TLSConfig: clientTLS, Secret: secret,
+	}, agentrelay.Open{Version: 1, Type: "open_udp", LineID: lineID,
+		ConnectionID: "55555555-5555-4555-8555-555555555555", Generation: 1,
+		TargetHost: "example.com", TargetPort: 53, SentAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	_ = connection.SetDeadline(time.Now().Add(3 * time.Second))
+	if err := agentrelay.WriteDatagram(connection, []byte("dns packet")); err != nil {
+		t.Fatal(err)
+	}
+	response, err := agentrelay.ReadDatagram(connection)
+	if err != nil || !bytes.Equal(response, []byte("dns packet")) || dials.Load() != 1 {
+		t.Fatalf("UDP relay response=%q, dials=%d, err=%v", response, dials.Load(), err)
+	}
+}
+
 func TestRelayProxySnapshotCannotSilentlyDialDirect(t *testing.T) {
 	proxy := testProxyConfig()
 	proxy.RelayGeneration = 2

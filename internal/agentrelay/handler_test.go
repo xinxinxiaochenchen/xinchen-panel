@@ -173,3 +173,78 @@ func TestEgressHandlerRejectsPrivateResolutionBeforeDial(t *testing.T) {
 		t.Fatalf("private resolution response = %+v, %v", response, err)
 	}
 }
+
+func TestEgressDatagramHandlerForwardsBoundedPackets(t *testing.T) {
+	roots, clientCert, serverCert := relayTLSFixture(t)
+	serverTLS, err := ServerTLSConfig(func() (*tls.Certificate, error) { return &serverCert, nil }, roots,
+		func(id, fingerprint string) bool {
+			return id == tlsIngressID && fingerprint == certFingerprint(clientCert)
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := ClientTLSConfig(func() (*tls.Certificate, error) { return &clientCert, nil }, roots,
+		"relay.example.com", tlsEgressID, []string{certFingerprint(serverCert)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := bytes.Repeat([]byte{0x73}, 32)
+	route := &Route{LineID: testLineID, Generation: 7, PreviousNodeID: tlsIngressID,
+		PreviousSecret: secret, Window: NewReplayWindow(16), Context: context.Background(), ExpiresAt: time.Now().Add(time.Minute)}
+	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udp.Close()
+	go func() {
+		buffer := make([]byte, MaxDatagramPayloadBytes)
+		for {
+			count, peer, readErr := udp.ReadFromUDP(buffer)
+			if readErr != nil {
+				return
+			}
+			_, _ = udp.WriteToUDP(buffer[:count], peer)
+		}
+	}()
+	handler := &Handler{
+		Routes:  func(lineID string) (*Route, bool) { return route, lineID == testLineID },
+		Resolve: func(context.Context, string) (netip.Addr, error) { return netip.MustParseAddr("93.184.215.14"), nil },
+		DialDatagramTarget: func(ctx context.Context, address string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "udp", udp.LocalAddr().String())
+		},
+	}
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+	finished := make(chan error, 1)
+	go func() { finished <- handler.HandleConn(context.Background(), tls.Server(right, serverTLS)) }()
+	client := tls.Client(left, clientTLS)
+	defer closeImmediately(client)
+	request := validOpen(time.Now())
+	request.Type = "open_udp"
+	request, err = SignOpen(request, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteOpen(client, request); err != nil {
+		t.Fatal(err)
+	}
+	response, err := ReadOpenResponse(client)
+	if err != nil || response.Type != "open_ok" {
+		t.Fatalf("UDP relay response = %+v, %v", response, err)
+	}
+	payload := []byte("UDP packet")
+	if err := WriteDatagram(client, payload); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadDatagram(client)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("UDP relay payload = %q, %v", got, err)
+	}
+	_ = client.Close()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("UDP relay handler did not stop")
+	}
+}

@@ -32,10 +32,11 @@ type Route struct {
 }
 
 type Handler struct {
-	Routes     func(lineID string) (*Route, bool)
-	Resolve    func(context.Context, string) (netip.Addr, error)
-	DialTarget func(context.Context, string) (net.Conn, error)
-	DialRelay  func(context.Context, string) (net.Conn, error)
+	Routes             func(lineID string) (*Route, bool)
+	Resolve            func(context.Context, string) (netip.Addr, error)
+	DialTarget         func(context.Context, string) (net.Conn, error)
+	DialDatagramTarget func(context.Context, string) (net.Conn, error)
+	DialRelay          func(context.Context, string) (net.Conn, error)
 }
 
 // HandleConn owns an already accepted TLS connection. TLS must use
@@ -62,6 +63,9 @@ func (handler *Handler) HandleConn(parent context.Context, client *tls.Conn) err
 	request, err := ReadOpen(client)
 	if err != nil {
 		return errors.New("relay open frame is invalid")
+	}
+	if request.Type == "open_udp" {
+		return handler.handleDatagramOpen(ctx, client, state, peerID, request)
 	}
 	reject := func(code string) error {
 		_ = WriteOpenResponse(client, OpenResponse{Version: 1, Type: "open_err", ConnectionID: request.ConnectionID, ErrorCode: code})

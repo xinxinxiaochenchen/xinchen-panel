@@ -206,8 +206,9 @@ func (r *Runtime) applyRelay(configs []RelayConfig) error {
 			Resolve: func(resolveCtx context.Context, host string) (netip.Addr, error) {
 				return ResolvePublic(resolveCtx, host, r.options.Resolve)
 			},
-			DialTarget: r.options.DialTCP,
-			DialRelay:  dialRelay,
+			DialTarget:         r.options.DialTCP,
+			DialDatagramTarget: r.options.DialUDP,
+			DialRelay:          dialRelay,
 		}
 		r.relay = newRelayEndpoint(context.Background(), tls.NewListener(listener, r.options.RelayTLSConfig.Clone()), handler, r.options.MaxTCPConnections)
 	}

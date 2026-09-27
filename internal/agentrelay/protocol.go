@@ -37,7 +37,7 @@ type OpenResponse struct {
 }
 
 func validateOpen(value Open) error {
-	if value.Version != 1 || value.Type != "open" || !uuidPattern.MatchString(value.LineID) ||
+	if value.Version != 1 || value.Type != "open" && value.Type != "open_udp" || !uuidPattern.MatchString(value.LineID) ||
 		!uuidPattern.MatchString(value.ConnectionID) || value.Generation == 0 ||
 		len(value.TargetHost) == 0 || len(value.TargetHost) > 253 || !forward.ValidPublicHost(value.TargetHost) ||
 		value.TargetPort < 1 || value.TargetPort > 65535 || value.SentAt.IsZero() {

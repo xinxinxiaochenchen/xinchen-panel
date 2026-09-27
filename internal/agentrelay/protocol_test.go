@@ -44,6 +44,32 @@ func TestOpenFrameRoundTripAndReplayProtection(t *testing.T) {
 	}
 }
 
+func TestUDPOpenIsAuthenticatedAndCannotBeRecastAsTCP(t *testing.T) {
+	now := time.Now().UTC()
+	secret := bytes.Repeat([]byte{0x69}, 32)
+	request := validOpen(now)
+	request.Type = "open_udp"
+	signed, err := SignOpen(request, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire bytes.Buffer
+	if err := WriteOpen(&wire, signed); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := ReadOpen(&wire)
+	if err != nil || decoded != signed {
+		t.Fatalf("UDP OPEN round trip = %+v, %v", decoded, err)
+	}
+	if err := VerifyOpen(decoded, secret, testLineID, 7, NewReplayWindow(8), now); err != nil {
+		t.Fatal(err)
+	}
+	decoded.Type = "open"
+	if err := VerifyOpen(decoded, secret, testLineID, 7, NewReplayWindow(8), now); err == nil {
+		t.Fatal("UDP proof was accepted for TCP")
+	}
+}
+
 func TestOpenRejectsForgedOrStaleRequests(t *testing.T) {
 	now := time.Now().UTC()
 	secret := bytes.Repeat([]byte{0x32}, 32)
