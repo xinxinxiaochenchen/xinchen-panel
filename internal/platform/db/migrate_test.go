@@ -78,8 +78,8 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 22 {
-		t.Fatalf("expected relay secret migration 22; found %d migrations", len(migrations))
+	if len(migrations) != 23 {
+		t.Fatalf("expected Agent relay capability migration 23; found %d migrations", len(migrations))
 	}
 	for i, migration := range migrations {
 		if migration.Version != int64(i+1) {

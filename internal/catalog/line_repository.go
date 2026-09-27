@@ -61,18 +61,18 @@ func lockLineNodes(ctx context.Context, tx pgx.Tx, hops []LineHop) ([]string, er
 		var nodeEnabled, groupEnabled bool
 		var capabilities []string
 		var proxyPort pgtype.Int4
-		err := tx.QueryRow(ctx, `SELECT n.group_id::text,n.enabled,g.enabled,n.capabilities,n.proxy_port
+		var relayPort pgtype.Int4
+		err := tx.QueryRow(ctx, `SELECT n.group_id::text,n.enabled,g.enabled,n.capabilities,n.proxy_port,n.relay_port
 FROM nodes n JOIN resource_groups g ON g.id=n.group_id WHERE n.id=$1 FOR SHARE OF n,g`, hop.NodeID).Scan(
-			&groupID, &nodeEnabled, &groupEnabled, &capabilities, &proxyPort)
+			&groupID, &nodeEnabled, &groupEnabled, &capabilities, &proxyPort, &relayPort)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		if err != nil {
 			return nil, fmt.Errorf("lock line node: %w", err)
 		}
-		if !nodeEnabled || !groupEnabled ||
-			(hop.Role == "ingress" && (!proxyPort.Valid || !slices.Contains(capabilities, "proxy"))) ||
-			(hop.Role != "ingress" && !slices.Contains(capabilities, "forward")) {
+		if !nodeEnabled || !groupEnabled || !relayPort.Valid || !slices.Contains(capabilities, "forward") ||
+			(hop.Role == "ingress" && (!proxyPort.Valid || !slices.Contains(capabilities, "proxy"))) {
 			return nil, ErrNotFound
 		}
 		groupsByNode[hop.NodeID] = groupID
@@ -222,8 +222,14 @@ AND NOT EXISTS(SELECT 1 FROM line_hops ah JOIN nodes an ON an.id=ah.node_id WHER
 AND NOT COALESCE((m.snapshot_json->'resource_group_ids') ? an.group_id::text,false))
 AND (topology.hop_count=1 OR COALESCE((m.snapshot_json #>> '{limits,max_hops}')::int,0)>=topology.hop_count)
 AND ((l.owner_user_id=$1 AND (m.snapshot_json #>> '{limits,allow_custom_lines}')::boolean=true)
-OR (l.owner_user_id IS NULL AND topology.hop_count=1 AND l.enabled AND n.enabled AND g.enabled AND n.proxy_port IS NOT NULL
-AND 'proxy'=ANY(n.capabilities) AND (m.snapshot_json->'line_ids') ? l.id::text)))`
+OR (l.owner_user_id IS NULL AND l.enabled AND (m.snapshot_json->'line_ids') ? l.id::text)))`
+
+const usableLineWhere = ` l.enabled AND NOT EXISTS (
+SELECT 1 FROM line_hops uh JOIN nodes un ON un.id=uh.node_id JOIN resource_groups ug ON ug.id=un.group_id
+WHERE uh.line_id=l.id AND (NOT un.enabled OR NOT ug.enabled OR
+(topology.hop_count=1 AND (uh.role<>'egress' OR un.proxy_port IS NULL OR NOT 'proxy'=ANY(un.capabilities))) OR
+(topology.hop_count>1 AND (un.relay_port IS NULL OR NOT 'forward'=ANY(un.capabilities) OR
+(uh.position=0 AND (uh.role<>'ingress' OR un.proxy_port IS NULL OR NOT 'proxy'=ANY(un.capabilities)))))))`
 
 func scanLine(row pgx.Row) (Line, error) {
 	var line Line
@@ -298,9 +304,7 @@ func (r *PostgresRepository) GetLine(ctx context.Context, lineID string) (Line, 
 }
 
 func (r *PostgresRepository) GetUsableLine(ctx context.Context, userID, lineID string) (Line, error) {
-	line, err := scanLine(r.pool.QueryRow(ctx, lineSelect+allowedLineWhere+` AND`+singleHopWhere+`
-AND l.enabled AND n.enabled AND g.enabled AND n.proxy_port IS NOT NULL
-AND 'proxy'=ANY(n.capabilities) AND l.id=$2`, userID, lineID))
+	line, err := scanLine(r.pool.QueryRow(ctx, lineSelect+allowedLineWhere+` AND`+usableLineWhere+` AND l.id=$2`, userID, lineID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Line{}, ErrNotFound
 	}

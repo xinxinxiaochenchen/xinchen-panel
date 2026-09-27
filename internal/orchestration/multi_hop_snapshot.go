@@ -33,6 +33,7 @@ type RelayHopFact struct {
 	ProxyCapable      bool
 	AgentFingerprints []string
 	RelayFingerprints []string
+	AppliedRelay      bool
 }
 type RelayLineFacts struct {
 	LineID     string
@@ -100,6 +101,10 @@ func CompileRelaySnapshots(ctx context.Context, lines []RelayLineFacts, secrets 
 			edgeSecrets[edge] = append([]byte(nil), value...)
 		}
 		for index, hop := range line.Hops {
+			if index == 0 && !downstreamRelayApplied(line) {
+				diagnostics = append(diagnostics, RelayDiagnostic{line.LineID, "downstream relay generation is not applied"})
+				continue
+			}
 			config := agentruntime.RelayConfig{LineID: line.LineID, Generation: line.Generation, Role: hop.Role}
 			if index > 0 {
 				config.PreviousNodeID = line.Hops[index-1].NodeID
@@ -121,6 +126,15 @@ func CompileRelaySnapshots(ctx context.Context, lines []RelayLineFacts, secrets 
 		result[node] = configs
 	}
 	return result, diagnostics, nil
+}
+
+func downstreamRelayApplied(line RelayLineFacts) bool {
+	for _, hop := range line.Hops[1:] {
+		if !hop.AppliedRelay {
+			return false
+		}
+	}
+	return true
 }
 func validateRelayLineFacts(line RelayLineFacts) string {
 	if !relayLineIDPattern.MatchString(line.LineID) {

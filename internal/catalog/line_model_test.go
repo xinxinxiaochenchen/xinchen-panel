@@ -61,7 +61,6 @@ func TestNormalizeLineTopology(t *testing.T) {
 	for _, input := range []NewLine{
 		{Name: "missing"},
 		{Name: "both", NodeID: lineNodeID, Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "egress"}}},
-		{Name: "enabled", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 1, NodeID: lineExitID, Role: "egress"}}},
 		{Name: "single alternate", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "egress"}}, Enabled: boolPtr(false)},
 		{Name: "reordered", Hops: []LineHop{{Position: 1, NodeID: lineExitID, Role: "egress"}, {Position: 0, NodeID: lineNodeID, Role: "ingress"}}, Enabled: boolPtr(false)},
 		{Name: "gap", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 2, NodeID: lineExitID, Role: "egress"}}, Enabled: boolPtr(false)},
@@ -72,6 +71,14 @@ func TestNormalizeLineTopology(t *testing.T) {
 		if _, err := NormalizeLine(input, false); err == nil {
 			t.Fatalf("accepted invalid topology: %+v", input)
 		}
+	}
+}
+
+func TestNormalizeEnabledMultiHopTopology(t *testing.T) {
+	hops := []LineHop{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 1, NodeID: lineExitID, Role: "egress"}}
+	line, err := NormalizeLine(NewLine{Name: "Enabled route", Hops: hops, Enabled: boolPtr(true)}, false)
+	if err != nil || !line.Enabled || !reflect.DeepEqual(line.Hops, hops) {
+		t.Fatalf("enabled route = %+v, %v", line, err)
 	}
 }
 

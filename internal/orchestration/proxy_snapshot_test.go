@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"controlplane/internal/agentruntime"
 )
 
 func TestProxySnapshotFiltersAuthorizationAndRevocations(t *testing.T) {
@@ -20,18 +22,18 @@ func TestProxySnapshotFiltersAuthorizationAndRevocations(t *testing.T) {
 	ungrouped.ID = "ungrouped"
 	ungrouped.CredentialHash = strings.Repeat("c", 56)
 	ungrouped.MemberGroupIDs = nil
-	compiled, err := CompileProxySnapshot(node, []ProxyFacts{disabled, ungrouped, base}, 1)
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{disabled, ungrouped, base}, nil, 1)
 	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 || compiled.Snapshot.ProxyConfig[0].ID != "allowed" {
 		t.Fatalf("unexpected proxy config: %+v, %v", compiled, err)
 	}
 	node.Enabled = false
-	revoked, err := CompileProxySnapshot(node, []ProxyFacts{base}, 2)
+	revoked, err := CompileProxySnapshot(node, []ProxyFacts{base}, nil, 2)
 	if err != nil || len(revoked.Snapshot.ProxyConfig) != 0 {
 		t.Fatalf("disabled node retained proxy: %+v, %v", revoked, err)
 	}
 	base.MembershipActive = false
 	node.Enabled = true
-	revoked, err = CompileProxySnapshot(node, []ProxyFacts{base}, 3)
+	revoked, err = CompileProxySnapshot(node, []ProxyFacts{base}, nil, 3)
 	if err != nil || len(revoked.Snapshot.ProxyConfig) != 0 {
 		t.Fatalf("expired membership retained proxy: %+v, %v", revoked, err)
 	}
@@ -45,10 +47,43 @@ func TestProxySnapshotFiltersAuthorizationAndRevocations(t *testing.T) {
 	} {
 		denied := base
 		mutate(&denied)
-		got, err := CompileProxySnapshot(node, []ProxyFacts{denied}, 4)
+		got, err := CompileProxySnapshot(node, []ProxyFacts{denied}, nil, 4)
 		if err != nil || len(got.Snapshot.ProxyConfig) != 0 {
 			t.Fatalf("unauthorized proxy compiled: %+v, %v", got, err)
 		}
+	}
+}
+
+func TestProxySnapshotIncludesOnlyReadyMultiHopIngress(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	base := ProxyFacts{ID: "multi", OwnerID: "user", LineID: "line", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"line"}, LineEnabled: true,
+		RelayGeneration: 7, RelayReady: true, HopCount: 2, MaxHops: 2, HopGroupIDs: []string{"group", "group"},
+		ExpiresAt: time.Now().Add(time.Hour)}
+	relay := agentruntime.RelayConfig{LineID: "line", Generation: 7, Role: agentruntime.RelayIngress,
+		Next: &agentruntime.RelayNextHop{NodeID: "next", Address: "relay.example.com:24443", Port: 24443,
+			Secret: []byte(strings.Repeat("s", 32)), Fingerprints: []string{strings.Repeat("a", 64)}}}
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{base}, []agentruntime.RelayConfig{relay}, 1)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 || compiled.Snapshot.ProxyConfig[0].RelayGeneration != 7 {
+		t.Fatalf("ready multi-hop proxy missing: %+v, %v", compiled, err)
+	}
+	base.RelayReady = false
+	compiled, err = CompileProxySnapshot(node, []ProxyFacts{base}, []agentruntime.RelayConfig{relay}, 2)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 0 || len(compiled.Rejected) != 1 {
+		t.Fatalf("unacknowledged multi-hop proxy was compiled: %+v, %v", compiled, err)
+	}
+	base.RelayReady = true
+	base.HopGroupIDs = []string{"group", "outside"}
+	compiled, err = CompileProxySnapshot(node, []ProxyFacts{base}, []agentruntime.RelayConfig{relay}, 3)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 0 {
+		t.Fatalf("unauthorized downstream group was compiled: %+v, %v", compiled, err)
+	}
+	base.HopGroupIDs = []string{"group", "group"}
+	base.MaxHops = 1
+	compiled, err = CompileProxySnapshot(node, []ProxyFacts{base}, []agentruntime.RelayConfig{relay}, 4)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 0 {
+		t.Fatalf("hop limit was ignored: %+v, %v", compiled, err)
 	}
 }
 

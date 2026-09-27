@@ -90,10 +90,7 @@ WHERE user_id=$1 AND status='active' AND starts_at<=clock_timestamp() AND ends_a
 		}
 	}
 	if patch.Enabled != nil && *patch.Enabled {
-		if len(before.Hops) > 1 {
-			return Line{}, ErrNotFound
-		}
-		_, err := lockUsableProxyNode(ctx, tx, before.Hops[0].NodeID)
+		_, err := lockLineNodes(ctx, tx, before.Hops)
 		if err != nil {
 			return Line{}, err
 		}

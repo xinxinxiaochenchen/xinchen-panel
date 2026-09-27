@@ -5,7 +5,7 @@ import { customRolePermissions, loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 import { draftLinePayload } from '../src/features/catalog/lineDraft.ts'
 
-test('multi-hop draft payload preserves hop roles and cannot be enabled', () => {
+test('multi-hop draft payload preserves hop roles before activation', () => {
   assert.deepEqual(draftLinePayload(' Japan relay ', ['ingress-id', 'relay-id', 'egress-id'], 20, 3), {
     name: 'Japan relay', enabled: false, priority: 20, weight: 3,
     hops: [

@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。`us bwg` 纯 IP 预览继续关闭浏览器认证与 Agent TLS。独立测试库已验证真实 TCP/UDP 转发、Trojan TLS 代理和计费入账；正式库仍未创建管理员、节点或 Agent。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与多跳 TCP 线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。`us bwg` 纯 IP 预览继续关闭浏览器认证与 Agent TLS。独立测试库已验证真实 TCP/UDP 转发、Trojan TLS 代理和计费入账；正式库仍未创建管理员、节点或 Agent。
 
 ## 本地运行
 
@@ -26,11 +26,11 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。`us bwg` 纯 IP 预览的新库已应用至版本 22；线路中继世代和密钥持久化结构已入库，但多跳数据面未开放。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。迁移 23 允许 Agent 上报 `relay` 能力；正式部署版本以部署记录为准。
 
 ## 资源目录开发状态
 
-节点支持可选 `relay_port`，预留该节点 TCP/UDP 端口用于后续中继；须具备 `forward` 能力且与代理端口不同。握手契约见 [Agent 中继协议](docs/agent-relay-protocol.md)。配置流与执行器尚未接入中继。
+节点支持可选 `relay_port`，预留该节点 TCP/UDP 端口用于中继；须具备 `forward` 能力且与代理端口不同。握手契约见 [Agent 中继协议](docs/agent-relay-protocol.md)。多跳 TCP 的配置流和 Agent 执行器已接入，正式节点端到端验收仍待完成。
 
 管理员可通过 `/api/v1/admin/resource-groups` 和 `/api/v1/admin/nodes` 创建及分页查询资源组、节点。普通用户通过 `/api/v1/nodes` 和 `/api/v1/nodes/{id}` 只能读取有效套餐快照授权的已启用节点。写请求要求 `nodes.write` 权限及 CSRF 令牌，创建操作与审计记录在同一事务中。列表参数 `limit` 和 `cursor` 见 [OpenAPI](api/openapi/control-plane.yaml)。这些路由随浏览器身份认证开关一起启用；公网纯 HTTP 预览上仍关闭。
 
@@ -40,7 +40,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 线路开发状态
 
-管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。单跳线路可执行；2–8 跳只可保存为停用拓扑草稿，创建时检查每个节点能力、资源组授权、套餐 `max_hops` 和自建线路数。草稿不能启用，也不会进入代理连接、订阅或计费数据面。管理列表保留停用的自有线路；实际连接使用应调用 `GetUsableLine` 复核启用、节点能力和当前授权。线路权重目前只有确定性排序器，尚未接入代理运行时。配置 `CONTROL_RELAY_SECRET_KEY_FILE` 后，控制面会把线路世代和每条中继边的密钥加密持久化，并在同一事务读取拓扑、Agent 在线状态及证书授权；当前仍未开放多跳线路启用。公网纯 HTTP 预览保持关闭这些路由。
+管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。2–8 跳 TCP 线路可启用，入口须有 `proxy` 和 `forward` 能力及两个独立端口，后续节点须有 `forward` 能力和中继端口。每跳均检查资源组授权及套餐 `max_hops`。用户可在启用线路上创建代理连接；只有各跳 Agent 在线、证书有效、下游应用当前世代且入口应用代理配置后，订阅才会导出。线路权重目前只有确定性排序器，尚未接入代理运行时。启用多跳数据面须配置 `CONTROL_RELAY_SECRET_KEY_FILE` 和 Agent mTLS；公网纯 HTTP 预览保持关闭管理路由。
 
 ## 直达转发规则开发状态
 
@@ -48,7 +48,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## Trojan 代理连接开发状态
 
-`proxy_accesses` 迁移 8 提供每连接随机凭据、Trojan SHA-224 摘要和 AES-256-GCM 加密存储。创建与启用时复核当前有效订购、单跳线路、出口节点和资源组授权；用户只能查询和管理自己的连接，凭据只经专门的授权响应返回。创建、轮换、更新和删除写审计及待收敛事件。启用浏览器身份认证前必须提供权限为 `0600` 的绝对路径 `CONTROL_PROXY_CREDENTIAL_KEY_FILE`，文件内容为 32 字节密钥的无填充 base64url 编码。缺少密钥时启动会拒绝开启浏览器身份路由。控制面能按节点和授权生成哈希凭据配置，经 mTLS 下发给 Agent；Agent 使用单独的 TLS 服务端证书执行 Trojan TCP CONNECT，仅允许公网目标，凭据轮换和停用可断开旧连接。订阅、用量计费和额度租约已有实现；正式环境仍需节点入网及真实流量验收。
+`proxy_accesses` 迁移 8 提供每连接随机凭据、Trojan SHA-224 摘要和 AES-256-GCM 加密存储。创建与启用时复核当前有效订购、线路每跳节点能力和资源组授权；用户只能查询和管理自己的连接，凭据只经专门的授权响应返回。创建、轮换、更新和删除写审计及待收敛事件。启用浏览器身份认证前必须提供权限为 `0600` 的绝对路径 `CONTROL_PROXY_CREDENTIAL_KEY_FILE`，文件内容为 32 字节密钥的无填充 base64url 编码。缺少密钥时启动会拒绝开启浏览器身份路由。控制面能按节点和授权生成哈希凭据配置，经 mTLS 下发给 Agent；Agent 使用单独的 TLS 服务端证书执行 Trojan TCP CONNECT，仅允许公网目标，凭据轮换和停用可断开旧连接。订阅、用量计费和额度租约已有实现；正式环境仍需节点入网及真实流量验收。
 
 Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_PROXY_KEY_FILE` 指定，必须是绝对路径，私钥权限不超过 `0600`。Agent 收到代理配置但没有 TLS 服务端证书时会 NACK 并保留旧配置。控制面每分钟续期五分钟的执行配置租约；断线或租约到期时 Agent 关闭监听，套餐到期也会关闭相应连接。该租约不代表流量额度控制。
 

@@ -153,7 +153,7 @@ export function AdminNodeForm({
               <input id="admin-node-relay-port" type="number" min={1024} max={65535}
                 value={relayPort ?? ""} onChange={(event) => setRelayPort(event.target.value === "" ? null : Number(event.target.value))}
                 placeholder="例如 24443" />
-              <small className="catalog-form-note">预留给后续 Agent 节点间中继；当前多跳草稿仍不能执行。</small>
+              <small className="catalog-form-note">用于 Agent 节点间中继。多跳线路的每个节点都须设置中继端口。</small>
             </>}
             {error && (
               <div className="auth-error" role="alert">

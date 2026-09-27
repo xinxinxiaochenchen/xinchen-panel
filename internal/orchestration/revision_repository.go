@@ -51,6 +51,34 @@ func NewRevisionRepositoryWithRelaySecrets(pool *pgxpool.Pool, secrets RelaySecr
 	return &RevisionRepository{pool: pool, relaySecrets: secrets}
 }
 
+// ReconcileRelayDependents restages ingress nodes whose enabled multi-hop
+// lines include nodeID. A downstream Agent ACK can therefore make an ingress
+// proxy connection executable immediately instead of waiting for the sweep.
+func (r *RevisionRepository) ReconcileRelayDependents(ctx context.Context, nodeID string) error {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT ingress.node_id::text
+FROM lines l
+JOIN line_hops downstream ON downstream.line_id=l.id AND downstream.node_id=$1 AND downstream.position>0
+JOIN line_hops ingress ON ingress.line_id=l.id AND ingress.position=0
+WHERE l.enabled ORDER BY ingress.node_id::text`, nodeID)
+	if err != nil {
+		return fmt.Errorf("query relay dependents: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ingress string
+		if err := rows.Scan(&ingress); err != nil {
+			return fmt.Errorf("scan relay dependent: %w", err)
+		}
+		if _, _, err := r.Reconcile(ctx, ingress); err != nil && !errors.Is(err, ErrAgentNotFound) {
+			return fmt.Errorf("reconcile relay dependent %s: %w", ingress, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate relay dependents: %w", err)
+	}
+	return nil
+}
+
 // Reconcile locks the Agent before reading source facts. Each attempt uses one
 // database snapshot, and PostgreSQL serialization failures retry the complete
 // read so an older worker cannot publish stale facts after a newer worker.
@@ -95,28 +123,30 @@ func (r *RevisionRepository) reconcileOnce(ctx context.Context, nodeID string) (
 	if err != nil {
 		return DesiredRevision{}, false, err
 	}
-	if node.Enabled && node.GroupEnabled && node.ProxyCapable && slices.Contains(capabilities, "proxy") {
-		proxyFacts, err := readProxyFacts(ctx, tx, nodeID)
+	var relayLines []RelayLineFacts
+	relayConfigs := make(map[string][]agentruntime.RelayConfig)
+	if r.relaySecrets != nil && node.Enabled && node.GroupEnabled && slices.Contains(capabilities, "relay") {
+		relayLines, err = readRelayLineFacts(ctx, tx, nodeID)
 		if err != nil {
 			return DesiredRevision{}, false, err
 		}
-		proxyConfig, err := CompileProxySnapshot(node, proxyFacts, uint64(current)+1)
+		relayConfigs, _, err = CompileRelaySnapshots(ctx, relayLines, r.relaySecrets)
+		if err != nil {
+			return DesiredRevision{}, false, err
+		}
+		compiled.Snapshot.RelayConfig = relayConfigs[nodeID]
+	}
+	if node.Enabled && node.GroupEnabled && node.ProxyCapable && slices.Contains(capabilities, "proxy") {
+		proxyFacts, err := readProxyFacts(ctx, tx, nodeID, relayLines, relayConfigs)
+		if err != nil {
+			return DesiredRevision{}, false, err
+		}
+		proxyConfig, err := CompileProxySnapshot(node, proxyFacts, compiled.Snapshot.RelayConfig, uint64(current)+1)
 		if err != nil {
 			return DesiredRevision{}, false, err
 		}
 		compiled.Snapshot.ProxyConfig = proxyConfig.Snapshot.ProxyConfig
 		compiled.Rejected = append(compiled.Rejected, proxyConfig.Rejected...)
-	}
-	if r.relaySecrets != nil && node.Enabled && node.GroupEnabled && slices.Contains(capabilities, "relay") {
-		lines, err := readRelayLineFacts(ctx, tx, nodeID)
-		if err != nil {
-			return DesiredRevision{}, false, err
-		}
-		relays, _, err := CompileRelaySnapshots(ctx, lines, r.relaySecrets)
-		if err != nil {
-			return DesiredRevision{}, false, err
-		}
-		compiled.Snapshot.RelayConfig = relays[nodeID]
 	}
 	payload, digest, err := CanonicalForwardPayload(compiled)
 	if err != nil {

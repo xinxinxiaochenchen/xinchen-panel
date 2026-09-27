@@ -32,8 +32,8 @@ func TestCompileRelaySnapshotsGatesAndSharesOnlyAdjacentSecrets(t *testing.T) {
 	store := &relaySecretMemory{}
 	facts := RelayLineFacts{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 7, Enabled: true, Hops: []RelayHopFact{
 		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true},
-		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayMiddle, Host: "mid.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true},
-		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e426", Role: agentruntime.RelayEgress, Host: "eg.example.com", RelayPort: 24443, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true},
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayMiddle, Host: "mid.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, AppliedRelay: true},
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e426", Role: agentruntime.RelayEgress, Host: "eg.example.com", RelayPort: 24443, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, AppliedRelay: true},
 	}}
 	compiled, diags, err := CompileRelaySnapshots(context.Background(), []RelayLineFacts{facts}, store)
 	if err != nil {
@@ -74,6 +74,29 @@ func TestCompileRelaySnapshotsOmitsIncompleteLinesAndReportsReason(t *testing.T)
 	_, diag, err = CompileRelaySnapshots(context.Background(), []RelayLineFacts{line}, store)
 	if err != nil || len(diag) != 1 {
 		t.Fatalf("disabled line diag=%v err=%v", diag, err)
+	}
+}
+
+func TestCompileRelaySnapshotsStagesDownstreamBeforeIngress(t *testing.T) {
+	store := &relaySecretMemory{}
+	line := RelayLineFacts{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 9, Enabled: true, Hops: []RelayHopFact{
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true},
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayMiddle, Host: "mid.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("c", 64)}, RelayFingerprints: []string{strings.Repeat("d", 64)}, Online: true, RelayCapable: true},
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e426", Role: agentruntime.RelayEgress, Host: "eg.example.com", RelayPort: 24443, AgentFingerprints: []string{strings.Repeat("e", 64)}, RelayFingerprints: []string{strings.Repeat("f", 64)}, Online: true, RelayCapable: true},
+	}}
+	staged, diagnostics, err := CompileRelaySnapshots(context.Background(), []RelayLineFacts{line}, store)
+	if err != nil || len(staged[line.Hops[0].NodeID]) != 0 || len(staged[line.Hops[1].NodeID]) != 1 || len(staged[line.Hops[2].NodeID]) != 1 || len(diagnostics) != 1 {
+		t.Fatalf("premature ingress: staged=%v diagnostics=%v error=%v", staged, diagnostics, err)
+	}
+	line.Hops[2].AppliedRelay = true
+	staged, _, err = CompileRelaySnapshots(context.Background(), []RelayLineFacts{line}, store)
+	if err != nil || len(staged[line.Hops[0].NodeID]) != 0 {
+		t.Fatalf("middle missing ACK still allowed ingress: %v, %v", staged, err)
+	}
+	line.Hops[1].AppliedRelay = true
+	staged, diagnostics, err = CompileRelaySnapshots(context.Background(), []RelayLineFacts{line}, store)
+	if err != nil || len(staged[line.Hops[0].NodeID]) != 1 || len(diagnostics) != 0 {
+		t.Fatalf("fully applied downstream did not allow ingress: %v, %v, %v", staged, diagnostics, err)
 	}
 }
 func TestCompileRelaySnapshotsRejectsSecretStoreFailure(t *testing.T) {

@@ -27,6 +27,7 @@ type accessEntitlement struct {
 	LineIDs          []string `json:"line_ids"`
 	Limits           struct {
 		AllowCustomLines bool `json:"allow_custom_lines"`
+		MaxHops          int  `json:"max_hops"`
 	} `json:"limits"`
 }
 
@@ -114,24 +115,65 @@ WHERE user_id=$1 AND status='active' AND starts_at<=clock_timestamp() AND ends_a
 		return "", fmt.Errorf("decode proxy access entitlement: %w", err)
 	}
 	var lineOwner *string
-	var groupID string
-	var lineEnabled, nodeEnabled, groupEnabled bool
-	var proxyPort *int
-	var capabilities []string
-	err = tx.QueryRow(ctx, `SELECT l.owner_user_id::text,n.group_id::text,l.enabled,n.enabled,g.enabled,n.proxy_port,n.capabilities
-FROM lines l JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role='egress'
-JOIN nodes n ON n.id=h.node_id JOIN resource_groups g ON g.id=n.group_id
-WHERE l.id=$1 AND NOT EXISTS (SELECT 1 FROM line_hops extra WHERE extra.line_id=l.id AND extra.position<>0)
-FOR SHARE OF l,n,g`, lineID).Scan(&lineOwner, &groupID, &lineEnabled, &nodeEnabled, &groupEnabled, &proxyPort, &capabilities)
+	var lineEnabled bool
+	err = tx.QueryRow(ctx, `SELECT owner_user_id::text,enabled FROM lines WHERE id=$1 FOR SHARE`, lineID).Scan(&lineOwner, &lineEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", fmt.Errorf("lock proxy access line: %w", err)
 	}
-	if !lineEnabled || !nodeEnabled || !groupEnabled || proxyPort == nil || !slices.Contains(capabilities, "proxy") ||
-		!slices.Contains(entitlement.ResourceGroupIDs, groupID) {
+	if !lineEnabled {
 		return "", ErrNotFound
+	}
+	rows, err := tx.Query(ctx, `SELECT h.position,h.role,n.group_id::text,n.enabled,g.enabled,n.proxy_port,n.relay_port,n.capabilities
+FROM line_hops h JOIN nodes n ON n.id=h.node_id JOIN resource_groups g ON g.id=n.group_id
+WHERE h.line_id=$1 ORDER BY h.position FOR SHARE OF n,g`, lineID)
+	if err != nil {
+		return "", fmt.Errorf("lock proxy line hops: %w", err)
+	}
+	type hop struct {
+		position                  int
+		role, group               string
+		nodeEnabled, groupEnabled bool
+		proxyPort, relayPort      *int
+		capabilities              []string
+	}
+	hops := make([]hop, 0, 8)
+	for rows.Next() {
+		var h hop
+		if err := rows.Scan(&h.position, &h.role, &h.group, &h.nodeEnabled, &h.groupEnabled, &h.proxyPort, &h.relayPort, &h.capabilities); err != nil {
+			rows.Close()
+			return "", fmt.Errorf("scan proxy line hop: %w", err)
+		}
+		hops = append(hops, h)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return "", fmt.Errorf("read proxy line hops: %w", err)
+	}
+	if len(hops) == 0 || len(hops) > 8 || (len(hops) > 1 && entitlement.Limits.MaxHops < len(hops)) {
+		return "", ErrNotFound
+	}
+	for position, h := range hops {
+		expectedRole := "relay"
+		if position == 0 && len(hops) > 1 {
+			expectedRole = "ingress"
+		}
+		if position == len(hops)-1 {
+			expectedRole = "egress"
+		}
+		if h.position != position || h.role != expectedRole || !h.nodeEnabled || !h.groupEnabled || !slices.Contains(entitlement.ResourceGroupIDs, h.group) {
+			return "", ErrNotFound
+		}
+		if len(hops) == 1 {
+			if h.proxyPort == nil || !slices.Contains(h.capabilities, "proxy") {
+				return "", ErrNotFound
+			}
+		} else if h.relayPort == nil || !slices.Contains(h.capabilities, "forward") || position == 0 && (h.proxyPort == nil || !slices.Contains(h.capabilities, "proxy")) {
+			return "", ErrNotFound
+		}
 	}
 	if lineOwner == nil {
 		if !slices.Contains(entitlement.LineIDs, lineID) {

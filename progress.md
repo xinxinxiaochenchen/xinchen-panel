@@ -1,5 +1,7 @@
 # 进度
 
+- 2026-09-27：`us bwg` 升级到 `release-multihop-20260927`。线路启用 API、整条线路的套餐授权、代理连接创建、订阅导出和下游 ACK 后入口重新收敛已接通；新增 migration 23 允许 Agent `relay` 能力。独立 PostgreSQL 16.10 测试库验证了线路启用、每跳授权、订阅仅在当前世代全跳 ACK 后导出、ACK 触发入口重新收敛，测试库与临时包已清理。Go 全量测试、vet、前端 29 项测试与生产构建、OpenAPI YAML 解析通过。发布包 SHA-256 `924d11e95a0c35291f51e355bcb5c34ac4222b7e2b8ae4002fec2eabc490a136`，升级前正式库备份 0600 并经 `pg_restore --list` 校验；迁移版本 23、API/DB healthy、API 重启 0，公网首页/ready 200、登录 404。正式库用户/节点/Agent 均为 0，真实三 Agent 公网通流、线路健康状态 UI 和权重运行时选择仍待完成。
+
 - 2026-09-27：按用户确认将纯 IP 预览部署到 Termark 资产 `us bwg`（`144.34.238.89`），使用独立目录 `/opt/network-control-plane/releases/release-e69c44d` 与独立 Compose 项目。Linux amd64 发布包 SHA-256 `6a9566331a7b69d4c52e8b4211e91652e9cb6ee1c60b2f2a16f15367c0849e91`，上传后复核一致；服务器新建 PostgreSQL 16.10 数据卷，真实迁移应用至版本 22。API/DB 均 healthy、重启 0，公网首页和 ready 返回 200，明文登录返回 404；正式库用户、节点、Agent 均为 0。原有 Nginx Proxy Manager 80/81/443 与 embyproxy 8787 保持运行。当前仅为只读预览，多跳线路仍不能启用，真实 Agent 通流与 HTTPS 管理入口尚未验收。
 
 - 2026-09-27：多跳正式配置收敛接入的基础阶段：迁移 22 为线路增加持久 `relay_generation`（现有线路默认 1）；控制面在同一配置事务内读取有序多跳拓扑、节点与 Agent 能力、45 秒在线窗口及现行证书授权。设置 0600、32 字节 base64url 的 `CONTROL_RELAY_SECRET_KEY_FILE` 后，配置仓储可以从 PostgreSQL 加密存储读取每条边密钥并编译对应节点路由；未设置时保持该路径关闭。PGlite 验证迁移 22 的 up/down 与拓扑查询语法，尚未完成真实 PostgreSQL 16 迁移及多节点 ACK 门控，因此多跳仍不能通过 API 启用。完整 Go 测试、vet、前端 29 项测试、类型检查与构建通过。Termark 目标资产名仍待用户确认；Mac 锁屏使后续服务器只读检查暂停，服务器未修改。

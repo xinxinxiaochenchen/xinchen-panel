@@ -50,10 +50,11 @@ func (r *PostgresRepository) export(ctx context.Context, owner, subID, hash, for
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := tx.Query(ctx, `SELECT a.id::text,a.name,a.line_id::text,l.name,COALESCE(l.owner_user_id::text,''),n.group_id::text,
+	rows, err := tx.Query(ctx, `SELECT a.id::text,a.name,a.line_id::text,l.name,COALESCE(l.owner_user_id::text,''),
+ARRAY(SELECT nh.group_id::text FROM line_hops lh JOIN nodes nh ON nh.id=lh.node_id WHERE lh.line_id=l.id ORDER BY lh.position),
 n.region,COALESCE(host(n.public_ip),n.host),n.host,n.proxy_port,a.credential_ciphertext
 FROM subscription_proxy_targets t JOIN proxy_accesses a ON a.id=t.proxy_access_id AND a.user_id=t.user_id
-JOIN lines l ON l.id=a.line_id JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role='egress'
+JOIN lines l ON l.id=a.line_id JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role IN ('egress','ingress')
 JOIN nodes n ON n.id=h.node_id JOIN resource_groups g ON g.id=n.group_id
 JOIN agents ag ON ag.node_id=n.id JOIN config_revisions cr ON cr.node_id=ag.node_id AND cr.revision=ag.applied_revision
 WHERE t.subscription_id=$1 AND t.user_id=$2 AND a.enabled AND a.apply_status='active'
@@ -61,7 +62,18 @@ AND l.enabled AND n.enabled AND g.enabled AND 'proxy'=ANY(n.capabilities) AND n.
 AND ag.status='online' AND ag.last_seen_at>clock_timestamp()-interval '45 seconds'
 AND cr.status='applied' AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(cr.payload_json->'proxy_config','[]'::jsonb)) p
 WHERE p->>'id'=a.id::text AND p->>'credential_hash'=a.credential_hash)
-AND NOT EXISTS(SELECT 1 FROM line_hops h2 WHERE h2.line_id=l.id AND h2.position<>0)
+AND (h.role='egress' OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(cr.payload_json->'relay_config','[]'::jsonb)) rc
+WHERE rc->>'line_id'=l.id::text AND rc->>'generation'=l.relay_generation::text AND rc->>'role'='ingress'))
+AND NOT EXISTS(SELECT 1 FROM line_hops h2 JOIN nodes n2 ON n2.id=h2.node_id
+JOIN resource_groups g2 ON g2.id=n2.group_id
+LEFT JOIN agents a2 ON a2.node_id=n2.id
+LEFT JOIN config_revisions cr2 ON cr2.node_id=n2.id AND cr2.revision=a2.applied_revision
+WHERE h2.line_id=l.id AND (NOT n2.enabled OR NOT g2.enabled OR
+(h.role='ingress' AND (n2.relay_port IS NULL OR NOT 'forward'=ANY(n2.capabilities) OR
+a2.status IS DISTINCT FROM 'online' OR a2.last_seen_at<=clock_timestamp()-interval '45 seconds' OR
+a2.desired_revision IS DISTINCT FROM a2.applied_revision OR cr2.status IS DISTINCT FROM 'applied' OR
+NOT EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(cr2.payload_json->'relay_config','[]'::jsonb)) rc2
+WHERE rc2->>'line_id'=l.id::text AND rc2->>'generation'=l.relay_generation::text)))))
 ORDER BY t.sort_order`, sub.ID, sub.UserID)
 	if err != nil {
 		return nil, "", fmt.Errorf("query subscription targets: %w", err)
@@ -69,12 +81,13 @@ ORDER BY t.sort_order`, sub.ID, sub.UserID)
 	targets := make([]subscriptionconfig.Target, 0)
 	for rows.Next() {
 		var v subscriptionconfig.Target
-		var lineOwner, group, sealed string
-		if err := rows.Scan(&v.ID, &v.Name, &v.LineID, &v.LineName, &lineOwner, &group, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed); err != nil {
+		var lineOwner, sealed string
+		var groups []string
+		if err := rows.Scan(&v.ID, &v.Name, &v.LineID, &v.LineName, &lineOwner, &groups, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed); err != nil {
 			rows.Close()
 			return nil, "", err
 		}
-		if !lineAllowed(sub.UserID, v.LineID, lineOwner, group, grant) {
+		if !lineAllowedHops(sub.UserID, v.LineID, lineOwner, groups, grant) {
 			continue
 		}
 		password, err := r.cipher.Open(v.ID, sub.UserID, sealed)

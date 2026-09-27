@@ -250,6 +250,15 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 				if err := s.revisions.RecordResult(ctx, nodeID, value.Revision, value.SHA256, value.Status, value.ErrorCode, value.ErrorMessage); err != nil {
 					return err
 				}
+				if value.Status == "applied" {
+					if dependents, ok := s.revisions.(interface {
+						ReconcileRelayDependents(context.Context, string) error
+					}); ok {
+						if err := dependents.ReconcileRelayDependents(ctx, nodeID); err != nil {
+							s.logger.Warn("reconcile relay ingress after Agent result failed", "node_id", nodeID, "error", err)
+						}
+					}
+				}
 				if value.Status == "applied" && value.Revision > appliedRevision {
 					appliedRevision = value.Revision
 				}

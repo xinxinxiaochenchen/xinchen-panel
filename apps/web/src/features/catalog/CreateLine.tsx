@@ -78,8 +78,8 @@ export function CreateLine({ user, onSaved }: { user: User; onSaved: () => void 
     <button className="primary-button catalog-create-button" type="button" onClick={() => setOpen(true)}><Plus size={16} />创建线路</button>
     {open && <div className="catalog-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }}>
       <form className="catalog-dialog" onSubmit={(event) => void submit(event)} aria-label="创建线路">
-        <div className="catalog-dialog-head"><span className="section-overline">NEW LINE</span><h2>{multiHop ? '创建多跳草稿' : '创建单跳线路'}</h2><p>选择套餐允许的节点，组成自己的线路。</p></div>
-        <label htmlFor="line-mode">线路类型</label><select id="line-mode" value={multiHop ? 'draft' : 'single'} onChange={(event) => setMultiHop(event.target.value === 'draft')}><option value="single">单跳线路</option><option value="draft">多跳拓扑（停用草稿）</option></select>
+        <div className="catalog-dialog-head"><span className="section-overline">NEW LINE</span><h2>{multiHop ? '创建多跳线路' : '创建单跳线路'}</h2><p>选择套餐允许的节点，组成自己的线路。</p></div>
+        <label htmlFor="line-mode">线路类型</label><select id="line-mode" value={multiHop ? 'draft' : 'single'} onChange={(event) => setMultiHop(event.target.value === 'draft')}><option value="single">单跳线路</option><option value="draft">多跳线路（创建后启用）</option></select>
         <label htmlFor="line-name">线路名称</label><input id="line-name" required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 日本日常线路" />
         {multiHop ? <LineHopFields ids={hopIDs} nodes={nodes} onChange={setHopIDs} /> : <><label htmlFor="line-node">出口节点</label><select id="line-node" required value={nodeID} onChange={(event) => setNodeID(event.target.value)}><option value="">请选择节点</option>{nodes.filter((node) => node.enabled && node.capabilities.includes('proxy')).map((node) => <option key={node.id} value={node.id}>{node.name} · {node.group_code} · {node.region}</option>)}</select></>}
         {loadingNodes && <small className="catalog-form-note">正在加载可用节点…</small>}

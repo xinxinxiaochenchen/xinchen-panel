@@ -40,13 +40,13 @@ func (s lineSessions) VerifyCSRF(ctx context.Context, token, csrf string) (ident
 }
 
 type lineStub struct {
-	createdBy string
+	createdBy    string
 	createdInput catalog.LineInput
-	readFor   string
-	updatedBy string
-	deletedBy string
-	createErr error
-	lines     []catalog.Line
+	readFor      string
+	updatedBy    string
+	deletedBy    string
+	createErr    error
+	lines        []catalog.Line
 }
 
 func (s *lineStub) CreateSharedLine(_ context.Context, input catalog.LineInput, actorID, _ string) (catalog.Line, error) {
@@ -55,7 +55,7 @@ func (s *lineStub) CreateSharedLine(_ context.Context, input catalog.LineInput, 
 	}
 	s.createdBy = actorID
 	s.createdInput = input
-	return catalog.Line{ID: testLineID, Name: input.Name, Hops: []catalog.LineHop{{NodeID: input.NodeID, Role: "egress"}}}, nil
+	return catalog.Line{ID: testLineID, Name: input.Name, Enabled: input.Enabled, Hops: input.Hops}, nil
 }
 func (s *lineStub) CreateCustomLine(_ context.Context, input catalog.LineInput, ownerID, _ string) (catalog.Line, error) {
 	if s.createErr != nil {
@@ -63,10 +63,10 @@ func (s *lineStub) CreateCustomLine(_ context.Context, input catalog.LineInput, 
 	}
 	s.createdBy = ownerID
 	s.createdInput = input
-	return catalog.Line{ID: testLineID, OwnerUserID: &ownerID, Name: input.Name, Hops: []catalog.LineHop{{NodeID: input.NodeID, Role: "egress"}}}, nil
+	return catalog.Line{ID: testLineID, OwnerUserID: &ownerID, Name: input.Name, Enabled: input.Enabled, Hops: input.Hops}, nil
 }
 
-func TestLineRoutesAcceptDisabledMultiHopTopologyOnly(t *testing.T) {
+func TestLineRoutesAcceptEnabledMultiHopTopology(t *testing.T) {
 	store := &lineStub{}
 	handler := NewHandlerWithLines(testLogger(), nil, lineSessions{}, nil, nil, nil, store)
 	hops := `[{"position":0,"node_id":"11111111-1111-7111-8111-111111111111","role":"ingress"},{"position":1,"node_id":"33333333-3333-7333-8333-333333333333","role":"egress"}]`
@@ -75,8 +75,12 @@ func TestLineRoutesAcceptDisabledMultiHopTopologyOnly(t *testing.T) {
 	if accepted.Code != 201 || store.createdBy != "member-id" || len(store.createdInput.Hops) != 2 || store.createdInput.Enabled {
 		t.Fatalf("disabled multi-hop route = %d %+v %s", accepted.Code, store.createdInput, accepted.Body.String())
 	}
+	active := httptest.NewRecorder()
+	handler.ServeHTTP(active, catalogRequest(http.MethodPost, "/api/v1/lines", "member-token", "valid-csrf", `{"name":"Active","hops":`+hops+`}`))
+	if active.Code != 201 || !store.createdInput.Enabled || len(store.createdInput.Hops) != 2 {
+		t.Fatalf("enabled multi-hop route = %d %+v %s", active.Code, store.createdInput, active.Body.String())
+	}
 	for _, body := range []string{
-		`{"name":"Active","hops":` + hops + `}`,
 		`{"name":"Both","node_id":"` + testLineNodeID + `","enabled":false,"hops":` + hops + `}`,
 	} {
 		response := httptest.NewRecorder()

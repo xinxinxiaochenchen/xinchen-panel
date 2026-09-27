@@ -71,9 +71,6 @@ func NormalizeLine(input NewLine, shared bool) (LineInput, error) {
 		if len(input.Hops) < 2 {
 			return LineInput{}, ValidationError{"hops", "use node_id for single-hop lines"}
 		}
-		if input.Enabled == nil || *input.Enabled {
-			return LineInput{}, ValidationError{"enabled", "multi-hop execution is not available; save disabled topology only"}
-		}
 	} else if !ValidID(input.NodeID) {
 		return LineInput{}, ValidationError{"node_id", "expected UUID"}
 	}

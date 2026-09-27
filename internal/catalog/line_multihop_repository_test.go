@@ -35,9 +35,9 @@ func TestPostgresMultiHopLineTopologyIsStoredButNotExecutable(t *testing.T) {
 	member := insertID(`INSERT INTO users(id,email,password_hash,status) VALUES(gen_random_uuid(),$1,'hash','active') RETURNING id::text`, "multi-user-"+suffix+"@example.invalid")
 	group := insertID(`INSERT INTO resource_groups(id,code,name,region) VALUES(gen_random_uuid(),$1,$1,'JP') RETURNING id::text`, "MULTI."+suffix)
 	otherGroup := insertID(`INSERT INTO resource_groups(id,code,name,region) VALUES(gen_random_uuid(),$1,$1,'US') RETURNING id::text`, "OTHER."+suffix)
-	ingress := insertID(`INSERT INTO nodes(id,group_id,name,region,host,proxy_port,capabilities) VALUES(gen_random_uuid(),$1,'Ingress','JP',$2,443,ARRAY['proxy']) RETURNING id::text`, group, "ingress-"+suffix+".example.invalid")
-	relay := insertID(`INSERT INTO nodes(id,group_id,name,region,host,capabilities) VALUES(gen_random_uuid(),$1,'Relay','JP',$2,ARRAY['forward']) RETURNING id::text`, group, "relay-"+suffix+".example.invalid")
-	egress := insertID(`INSERT INTO nodes(id,group_id,name,region,host,capabilities) VALUES(gen_random_uuid(),$1,'Egress','JP',$2,ARRAY['forward']) RETURNING id::text`, group, "egress-"+suffix+".example.invalid")
+	ingress := insertID(`INSERT INTO nodes(id,group_id,name,region,host,proxy_port,relay_port,capabilities) VALUES(gen_random_uuid(),$1,'Ingress','JP',$2,443,24441,ARRAY['proxy','forward']) RETURNING id::text`, group, "ingress-"+suffix+".example.invalid")
+	relay := insertID(`INSERT INTO nodes(id,group_id,name,region,host,relay_port,capabilities) VALUES(gen_random_uuid(),$1,'Relay','JP',$2,24442,ARRAY['forward']) RETURNING id::text`, group, "relay-"+suffix+".example.invalid")
+	egress := insertID(`INSERT INTO nodes(id,group_id,name,region,host,relay_port,capabilities) VALUES(gen_random_uuid(),$1,'Egress','JP',$2,24443,ARRAY['forward']) RETURNING id::text`, group, "egress-"+suffix+".example.invalid")
 	plan := insertID(`INSERT INTO plans(id,name,quota_bytes) VALUES(gen_random_uuid(),$1,1000000) RETURNING id::text`, "multi-plan-"+suffix)
 	snapshot, _ := json.Marshal(map[string]any{"resource_group_ids": []string{group}, "limits": map[string]any{"allow_custom_lines": true, "max_custom_lines": 2, "max_hops": 3}})
 	_, err = pool.Exec(ctx, `INSERT INTO memberships(id,user_id,plan_id,starts_at,ends_at,status,anchor_day,timezone,snapshot_json)
@@ -66,10 +66,13 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 		t.Fatalf("stored topology = %+v, %v", loaded, err)
 	}
 	if _, err := repo.GetUsableLine(ctx, member, owned.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("unimplemented multi-hop became usable: %v", err)
+		t.Fatalf("disabled multi-hop became usable: %v", err)
 	}
-	if _, err := repo.UpdateOwnLine(ctx, member, owned.ID, LinePatch{Enabled: boolPtr(true)}, "multi-enable"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("enabled unimplemented multi-hop: %v", err)
+	if enabled, err := repo.UpdateOwnLine(ctx, member, owned.ID, LinePatch{Enabled: boolPtr(true)}, "multi-enable"); err != nil || !enabled.Enabled {
+		t.Fatalf("enabled multi-hop: %+v, %v", enabled, err)
+	}
+	if _, err := repo.GetUsableLine(ctx, member, owned.ID); err != nil {
+		t.Fatalf("enabled multi-hop not usable: %v", err)
 	}
 	twoHops := []LineHop{hops[0], {Position: 1, NodeID: egress, Role: "egress"}}
 	shared, err := repo.CreateSharedLine(ctx, LineInput{Name: "Shared multi " + suffix, Hops: twoHops, Enabled: false, Priority: 20, Weight: 1, Tags: []string{}}, actor, "shared-multi")
@@ -91,7 +94,7 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 	}
 	for _, mutation := range []struct{ apply, restore string }{
 		{`UPDATE nodes SET enabled=false WHERE id=$1`, `UPDATE nodes SET enabled=true WHERE id=$1`},
-		{`UPDATE nodes SET capabilities=ARRAY['proxy'] WHERE id=$1`, `UPDATE nodes SET capabilities=ARRAY['forward'] WHERE id=$1`},
+		{`UPDATE nodes SET capabilities=ARRAY['proxy'],relay_port=NULL WHERE id=$1`, `UPDATE nodes SET capabilities=ARRAY['forward'],relay_port=24442 WHERE id=$1`},
 	} {
 		if _, err := pool.Exec(ctx, mutation.apply, relay); err != nil {
 			t.Fatal(err)

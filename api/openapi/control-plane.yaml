@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health, browser identity, user lifecycle, resource directory, entitlement, single-hop line, proxy access, direct forwarding and Agent enrollment contracts for the independently designed network control plane. Browser identity and Agent enrollment require HTTPS.
+  description: Health, browser identity, user lifecycle, resource directory, entitlement, multi-hop TCP lines, proxy access, direct forwarding and Agent enrollment contracts for the independently designed network control plane. Browser identity and Agent enrollment require HTTPS.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -865,14 +865,14 @@ paths:
   /api/v1/admin/lines:
     get:
       operationId: listAllLines
-      summary: List lines and disabled multi-hop topology drafts (administrator)
+      summary: List single-hop and multi-hop lines (administrator)
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
       responses:
         '200':
-          description: Lines and disabled topology drafts
+          description: Lines and saved topology drafts
           content:
             application/json:
               schema: {$ref: '#/components/schemas/LineList'}
@@ -881,7 +881,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createSharedLine
-      summary: Create a shared single-hop line or disabled multi-hop topology draft (administrator)
+      summary: Create a shared single-hop or multi-hop line (administrator)
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -907,7 +907,7 @@ paths:
       - {$ref: '#/components/parameters/LineID'}
     get:
       operationId: getLineAsAdmin
-      summary: Get a line or topology draft (administrator)
+      summary: Get a line (administrator)
       security: [{browserSession: []}]
       responses:
         '200':
@@ -960,7 +960,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createOwnLine
-      summary: Create an authorized owned single-hop line or disabled multi-hop topology draft
+      summary: Create an authorized owned single-hop or multi-hop line
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -1050,7 +1050,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createProxyAccess
-      summary: Create a Trojan proxy access on one authorized single-hop line
+      summary: Create a Trojan proxy access on one authorized line
       description: Requires an active membership and an enabled, authorized proxy line. The generated credential is shown only in this response and the owner's dedicated credential endpoint. The current pure IP preview does not expose this route.
       security: [{browserSession: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
@@ -1833,10 +1833,8 @@ components:
       oneOf:
         - required: [node_id]
           not: {required: [hops]}
-        - required: [hops, enabled]
+        - required: [hops]
           not: {required: [node_id]}
-          properties:
-            enabled: {const: false}
       properties:
         name: {type: string, minLength: 1, maxLength: 100}
         node_id: {type: string, format: uuid, description: 'Sole egress hop for an executable single-hop line.'}
@@ -1844,7 +1842,7 @@ components:
           type: array
           minItems: 2
           maxItems: 8
-          description: 'Disabled topology draft only. Positions must be contiguous from zero, nodes unique, roles ingress then relay nodes then egress. Every node and resource group is checked against current authorization; data-plane execution is not yet available.'
+          description: 'Positions must be contiguous from zero, nodes unique, roles ingress then relay nodes then egress. Every node and resource group is checked against current authorization. Multi-hop proxy access becomes exportable only after the Agent relay configuration is applied on every hop.'
           items: {$ref: '#/components/schemas/LineHop'}
         enabled: {type: boolean, default: true}
         priority: {type: integer, minimum: 0, maximum: 1000, default: 100}
