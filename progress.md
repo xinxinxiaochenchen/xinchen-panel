@@ -1,5 +1,7 @@
 # 进度
 
+- 2026-09-27：完成多跳计费准入版本在 `us bwg` 的独立验证与发布。Termark 资产 `3gT8EEbgstANh4T7` 上临时 PostgreSQL 16 测试库运行 `TestPostgresMultiHopAdmissionRequiresCurrentRouteAndChargesIngressOnce` 通过，迁移 1–23 后已删除临时库和测试程序。正式库升级前备份 `/opt/network-control-plane/backups/ncp-before-billing-multihop-20260927.dump` 权限 0600，并经 `pg_restore --list` 校验；发布目录为 `/opt/network-control-plane/releases/release-billing-multihop-20260927`。发布时发现归档漏掉 `apps/web/dist`，已补传并重建镜像。最终迁移版本 23，API/DB healthy、重启 0，首页/ready 返回 200、明文登录 404，正式库用户/节点/Agent 仍为 0。后续仍需真实三 Agent 公网 TCP 通流、线路权重运行时接入、正式管理员与受信任 HTTPS 入口；UDP 多跳尚未实现。
+
 - 2026-09-27：继续多跳计费准入：入口申请额度时增加整条线路的资源组、节点/Agent 能力、45 秒在线、控制与中继证书、每跳 ACK、线路世代及套餐 `max_hops` 校验；用量会话仍只归属入口并冻结线路与倍率。新增 PostgreSQL 集成回归，覆盖下游 ACK、线路世代、证书、资源组与跳数拒绝；在资源组停用的证书撤销后重建测试基线，防止误判。当前本地完整 Go 测试和 vet、前端 31 项测试与构建通过，Linux amd64 程序与发布包已构建。Mac 锁定导致 Termark 无法访问 `us bwg`，独立 PostgreSQL 集成测试与正式发布仍待执行；线上仍是 `release-line-health-20260927`。
 
 - 2026-09-27：线路健康详情已发布到 `us bwg` 的 `release-line-health-20260927`。新增管理员和授权用户线路健康 API，按单跳/多跳显示节点能力、Agent 在线、证书、配置 revision 与当前线路世代是否应用；线路页显示状态、原因和每跳进度。真实 PostgreSQL 16.10 独立临时库通过授权和在线状态集成测试后已清理；Go 全量测试、vet、前端 31 项测试、生产构建和 OpenAPI 解析通过。发布包 SHA-256 `2dfea9d7e7f5a96ae3d38db71b0dee8ef43cd559bcfb6979acdf49b6f906d42c`；正式库升级前备份 `ncp-before-line-health-20260927.dump` 权限 0600 且可读。发布后迁移版本仍为 23，API/DB healthy、重启 0，公网首页/ready 200、登录和未授权线路健康路由 404，正式库用户/节点/Agent 均为 0。真实三 Agent 公网通流、线路权重运行时接入、受信任 HTTPS 管理入口及正式节点入网仍待完成。
