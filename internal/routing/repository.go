@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 
 	"controlplane/internal/entitlement"
 	"controlplane/internal/platform/id"
@@ -382,12 +381,31 @@ func lockGrant(ctx context.Context, tx pgx.Tx, owner string) (entitlement.Snapsh
 	return s, nil
 }
 func lineAllowedTx(ctx context.Context, tx pgx.Tx, owner, line string, g entitlement.Snapshot) bool {
-	var lineOwner, group string
-	err := tx.QueryRow(ctx, `SELECT COALESCE(owner_user_id::text,''),n.group_id::text FROM lines l JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role='egress' JOIN nodes n ON n.id=h.node_id JOIN resource_groups g ON g.id=n.group_id WHERE l.id=$1 AND l.enabled AND n.enabled AND g.enabled AND 'proxy'=ANY(n.capabilities) AND n.proxy_port IS NOT NULL AND NOT EXISTS(SELECT 1 FROM line_hops h2 WHERE h2.line_id=l.id AND h2.position<>0)`, line).Scan(&lineOwner, &group)
+	var lineOwner string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(owner_user_id::text,'') FROM lines WHERE id=$1 AND enabled FOR SHARE`, line).Scan(&lineOwner); err != nil {
+		return false
+	}
+	rows, err := tx.Query(ctx, `SELECT h.position,h.role,n.group_id::text,n.enabled,g.enabled,
+COALESCE('proxy'=ANY(n.capabilities),false),COALESCE('forward'=ANY(n.capabilities),false),
+n.proxy_port IS NOT NULL,n.relay_port IS NOT NULL
+FROM line_hops h JOIN nodes n ON n.id=h.node_id JOIN resource_groups g ON g.id=n.group_id
+WHERE h.line_id=$1 ORDER BY h.position FOR SHARE OF n,g`, line)
 	if err != nil {
 		return false
 	}
-	return slices.Contains(g.ResourceGroupIDs, group) && ((lineOwner == owner && g.Limits.AllowCustomLines) || lineOwner == "" && slices.Contains(g.LineIDs, line))
+	hops := make([]routingLineHop, 0, 8)
+	for rows.Next() {
+		var hop routingLineHop
+		if err := rows.Scan(&hop.Position, &hop.Role, &hop.GroupID, &hop.NodeEnabled, &hop.GroupEnabled,
+			&hop.ProxyCapable, &hop.ForwardCapable, &hop.ProxyPortReady, &hop.RelayPortReady); err != nil {
+			rows.Close()
+			return false
+		}
+		hops = append(hops, hop)
+	}
+	err = rows.Err()
+	rows.Close()
+	return err == nil && routingLineAllowed(owner, line, lineOwner, hops, g)
 }
 func audit(ctx context.Context, tx pgx.Tx, owner, action, kind, object string, value any, request string) error {
 	raw, err := json.Marshal(value)
