@@ -61,6 +61,18 @@ func CompileProxySnapshot(node NodeFacts, facts []ProxyFacts, relays []agentrunt
 			!slices.Contains(fact.MemberGroupIDs, node.GroupID) || !fact.ExpiresAt.After(time.Now()) {
 			continue
 		}
+		if fact.HopCount < 1 || fact.HopCount > 8 || len(fact.HopGroupIDs) != fact.HopCount {
+			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "proxy line topology is incomplete"})
+			continue
+		}
+		if fact.HopCount == 1 && fact.HopGroupIDs[0] != node.GroupID {
+			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "proxy line does not start on this node"})
+			continue
+		}
+		if fact.HopCount > 1 && fact.RelayGeneration == 0 {
+			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "multi-hop line has no relay generation"})
+			continue
+		}
 		if fact.RelayGeneration != 0 {
 			if fact.HopCount < 2 || fact.HopCount > 8 || fact.MaxHops < fact.HopCount || len(fact.HopGroupIDs) != fact.HopCount {
 				result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "multi-hop topology exceeds membership limits"})

@@ -13,6 +13,7 @@ func TestProxySnapshotFiltersAuthorizationAndRevocations(t *testing.T) {
 	base := ProxyFacts{ID: "allowed", OwnerID: "user", LineID: "line", NodeID: "node", GroupID: "group",
 		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
 		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"line"}, LineEnabled: true,
+		HopCount: 1, HopGroupIDs: []string{"group"},
 		ExpiresAt: time.Now().Add(time.Hour)}
 	disabled := base
 	disabled.ID = "disabled"
@@ -50,6 +51,37 @@ func TestProxySnapshotFiltersAuthorizationAndRevocations(t *testing.T) {
 		got, err := CompileProxySnapshot(node, []ProxyFacts{denied}, nil, 4)
 		if err != nil || len(got.Snapshot.ProxyConfig) != 0 {
 			t.Fatalf("unauthorized proxy compiled: %+v, %v", got, err)
+		}
+	}
+}
+
+func TestProxySnapshotRejectsMultiHopWithoutRelayGeneration(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	fact := ProxyFacts{ID: "unsafe", OwnerID: "user", LineID: "line", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"line"}, LineEnabled: true,
+		HopCount: 2, MaxHops: 2, HopGroupIDs: []string{"group", "group"},
+		ExpiresAt: time.Now().Add(time.Hour)}
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{fact}, nil, 1)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 0 || len(compiled.Rejected) != 1 {
+		t.Fatalf("multi-hop line fell back to direct proxy: %+v, %v", compiled, err)
+	}
+}
+
+func TestProxySnapshotRejectsUnknownDirectTopology(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	fact := ProxyFacts{ID: "unsafe", OwnerID: "user", LineID: "line", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"line"}, LineEnabled: true,
+		ExpiresAt: time.Now().Add(time.Hour)}
+	for _, topology := range []struct {
+		hops   int
+		groups []string
+	}{{0, nil}, {1, nil}, {1, []string{"other"}}} {
+		fact.HopCount, fact.HopGroupIDs = topology.hops, topology.groups
+		compiled, err := CompileProxySnapshot(node, []ProxyFacts{fact}, nil, 1)
+		if err != nil || len(compiled.Snapshot.ProxyConfig) != 0 || len(compiled.Rejected) != 1 {
+			t.Fatalf("unknown topology fell back to direct proxy: %+v, %v", compiled, err)
 		}
 	}
 }

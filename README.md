@@ -2,6 +2,8 @@
 
 独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与多跳线路、转发、代理连接、订阅与分流、用量账本，以及登录后的 Web UI。`us bwg` 纯 IP 预览继续关闭浏览器认证；已部署服务状态以[部署记录](docs/deployment/us-bwg-preview.md)为准。独立测试库此前已验证真实直达 TCP/UDP 转发、Trojan TLS 代理和计费入账；线路绑定转发的数据库集成测试尚未执行。
 
+交付形态是部署在 VPS 上、通过浏览器访问的 Web 项目：React 前端由 Go 控制面提供静态资源，PostgreSQL 保存主数据，节点服务器运行独立 Go Agent。项目不包含原生手机或桌面 App，也不包含付费系统。当前纯 IP HTTP 地址用于只读预览；可操作的管理登录需要受信任的 HTTPS 入口，后续可由 Nginx 反代到回环绑定的控制面。
+
 ## 本地运行
 
 需要 Go 1.27.1 和 PostgreSQL。设置 `CONTROL_DATABASE_URL`，例如 `postgres://app:secret@127.0.0.1:5432/control`，再执行：

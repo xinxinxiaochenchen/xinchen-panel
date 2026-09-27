@@ -64,6 +64,13 @@ func TestPostgresLineHealthHonorsEntitlementAndAgentState(t *testing.T) {
 	}
 	exec(`INSERT INTO agents(id,node_id,cert_fingerprint,cert_expires_at,capabilities,status,last_seen_at) VALUES(gen_random_uuid(),$1,$2,now()+interval '1 day',ARRAY['proxy'],'online',now())`, node, fmt.Sprintf("%064x", 1))
 	health, err = repo.GetAllowedLineHealth(ctx, member, line)
+	if err != nil || health.State != "converging" || health.Reason != "config_pending" {
+		t.Fatalf("unenrolled configuration health = %+v, %v", health, err)
+	}
+	exec(`INSERT INTO config_revisions(node_id,revision,sha256,payload_json,status,applied_at)
+VALUES($1,1,$2,'{}'::jsonb,'applied',now())`, node, fmt.Sprintf("%064x", 2))
+	exec(`UPDATE agents SET desired_revision=1,applied_revision=1 WHERE node_id=$1`, node)
+	health, err = repo.GetAllowedLineHealth(ctx, member, line)
 	if err != nil || health.State != "ready" || health.Reason != "" {
 		t.Fatalf("ready health = %+v, %v", health, err)
 	}
@@ -92,6 +99,7 @@ func TestEvaluateLineHealth(t *testing.T) {
 		{"revision", true, mutateHealth(ready, 1, func(h *LineHopHealth) { h.DesiredRevision = 4 }), "converging", "relay_pending"},
 		{"node", true, mutateHealth(ready, 1, func(h *LineHopHealth) { h.NodeEnabled = false }), "unavailable", "node_disabled"},
 		{"single hop ready", true, []LineHopHealth{{Position: 0, Role: "egress", NodeEnabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPortReady: true, AgentOnline: true, CertificateReady: true, DesiredRevision: 2, AppliedRevision: 2}}, "ready", ""},
+		{"single hop without applied config", true, []LineHopHealth{{Position: 0, Role: "egress", NodeEnabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPortReady: true, AgentOnline: true, CertificateReady: true}}, "converging", "config_pending"},
 		{"single hop pending", true, []LineHopHealth{{Position: 0, Role: "egress", NodeEnabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPortReady: true, AgentOnline: true, CertificateReady: true, DesiredRevision: 3, AppliedRevision: 2}}, "converging", "config_pending"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

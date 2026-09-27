@@ -76,7 +76,7 @@ func evaluateLineHealth(enabled bool, hops []LineHopHealth) (string, string) {
 				return "converging", "relay_pending"
 			}
 		}
-	} else if hops[0].DesiredRevision != hops[0].AppliedRevision {
+	} else if hops[0].DesiredRevision < 1 || hops[0].AppliedRevision < 1 || hops[0].DesiredRevision != hops[0].AppliedRevision {
 		return "converging", "config_pending"
 	}
 	return "ready", ""
