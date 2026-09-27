@@ -30,6 +30,22 @@ func TestForwardConfigDigestIsOrderIndependent(t *testing.T) {
 	}
 }
 
+func TestCanonicalConfigAcceptsForwardBoundToIngressRelay(t *testing.T) {
+	line := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423"
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = 7
+	}
+	rule := agentruntime.Rule{ID: "forward", IngressPort: 24000, TargetHost: "example.org", TargetPort: 53,
+		Protocol: "UDP", Enabled: true, LineID: line, RelayGeneration: 1}
+	relay := agentruntime.RelayConfig{LineID: line, Generation: 1, Role: agentruntime.RelayIngress,
+		Next: &agentruntime.RelayNextHop{NodeID: "33333333-3333-4333-8333-333333333333",
+			Address: "relay.example.org:24443", Port: 24443, Secret: secret, Fingerprints: []string{strings.Repeat("a", 64)}}}
+	if _, _, err := CanonicalConfigWithRelay([]agentruntime.Rule{rule}, nil, []agentruntime.RelayConfig{relay}); err != nil {
+		t.Fatalf("canonical line-bound forward rejected: %v", err)
+	}
+}
+
 func TestDecodeConfigSnapshotChecksDigestAndExpiry(t *testing.T) {
 	rule := testForwardRule()
 	_, digest, err := CanonicalForwardConfig([]agentruntime.Rule{rule})

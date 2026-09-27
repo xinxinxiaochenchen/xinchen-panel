@@ -170,11 +170,17 @@ func (r *Runtime) relayTCP(listener *endpoint, session *tcpSession) {
 	}
 	ctx, cancel := context.WithTimeout(session.ctx, 10*time.Second)
 	defer cancel()
-	address, err := ResolvePublic(ctx, destination.host, r.options.Resolve)
-	if err != nil {
-		return
+	var upstream net.Conn
+	var err error
+	if destination.lineID != "" {
+		upstream, err = r.dialForwardRelay(ctx, *destination, "TCP")
+	} else {
+		address, resolveErr := ResolvePublic(ctx, destination.host, r.options.Resolve)
+		if resolveErr != nil {
+			return
+		}
+		upstream, err = r.options.DialTCP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(destination.port)))
 	}
-	upstream, err := r.options.DialTCP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(destination.port)))
 	if err != nil {
 		return
 	}

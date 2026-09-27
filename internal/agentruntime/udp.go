@@ -91,11 +91,17 @@ func (r *Runtime) udpAssociation(listener *endpoint, client net.Addr) *udpSessio
 			_ = metered.Close()
 		}
 	}()
-	address, err := ResolvePublic(ctx, destination.host, r.options.Resolve)
-	if err != nil {
-		return nil
+	var upstream net.Conn
+	var err error
+	if destination.lineID != "" {
+		upstream, err = r.dialForwardRelay(ctx, *destination, "UDP")
+	} else {
+		address, resolveErr := ResolvePublic(ctx, destination.host, r.options.Resolve)
+		if resolveErr != nil {
+			return nil
+		}
+		upstream, err = r.options.DialUDP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(destination.port)))
 	}
-	upstream, err := r.options.DialUDP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(destination.port)))
 	if err != nil {
 		return nil
 	}

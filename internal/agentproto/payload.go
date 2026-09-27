@@ -61,7 +61,7 @@ func CanonicalConfigWithRelay(input []agentruntime.Rule, proxyInput []agentrunti
 	}
 	sort.Slice(rules, func(left, right int) bool { return rules[left].ID < rules[right].ID })
 	sort.Slice(proxies, func(left, right int) bool { return proxies[left].ID < proxies[right].ID })
-	if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: 1, Rules: rules, ProxyConfig: proxies}); err != nil {
+	if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: 1, Rules: rules, ProxyConfig: proxies, RelayConfig: relays}); err != nil {
 		return nil, "", err
 	}
 	if err := agentruntime.ValidateRelayConfig(relays); err != nil {

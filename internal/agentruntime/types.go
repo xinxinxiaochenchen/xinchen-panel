@@ -13,12 +13,14 @@ import (
 )
 
 type Rule struct {
-	ID          string `json:"id"`
-	IngressPort int    `json:"ingress_port"`
-	TargetHost  string `json:"target_host"`
-	TargetPort  int    `json:"target_port"`
-	Protocol    string `json:"protocol"`
-	Enabled     bool   `json:"enabled"`
+	ID              string `json:"id"`
+	IngressPort     int    `json:"ingress_port"`
+	TargetHost      string `json:"target_host"`
+	TargetPort      int    `json:"target_port"`
+	Protocol        string `json:"protocol"`
+	Enabled         bool   `json:"enabled"`
+	LineID          string `json:"line_id,omitempty"`
+	RelayGeneration uint64 `json:"relay_generation,omitempty"`
 }
 
 type Snapshot struct {
@@ -46,10 +48,12 @@ type listenerKey struct {
 }
 
 type target struct {
-	host     string
-	port     int
-	id       string
-	revision uint64
+	host       string
+	port       int
+	id         string
+	revision   uint64
+	lineID     string
+	generation uint64
 }
 
 type Resolver func(context.Context, string) ([]netip.Addr, error)
@@ -64,6 +68,12 @@ func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 		return nil, err
 	}
 	listeners := make(map[listenerKey]target)
+	ingressRelays := make(map[string]uint64)
+	for _, relay := range snapshot.RelayConfig {
+		if relay.Role == RelayIngress {
+			ingressRelays[relay.LineID] = relay.Generation
+		}
+	}
 	ids := make(map[string]struct{}, len(snapshot.Rules))
 	for _, rule := range snapshot.Rules {
 		if rule.ID == "" || strings.TrimSpace(rule.ID) != rule.ID {
@@ -82,6 +92,9 @@ func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 		if rule.TargetHost != strings.TrimSpace(rule.TargetHost) || !forward.ValidPublicHost(rule.TargetHost) {
 			return nil, fmt.Errorf("forward rule %q has invalid target host", rule.ID)
 		}
+		if rule.LineID == "" && rule.RelayGeneration != 0 || rule.LineID != "" && (rule.RelayGeneration == 0 || ingressRelays[rule.LineID] != rule.RelayGeneration) {
+			return nil, fmt.Errorf("forward rule %q requires a matching ingress relay", rule.ID)
+		}
 		var protocols []string
 		switch rule.Protocol {
 		case "TCP", "UDP":
@@ -96,17 +109,11 @@ func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 			if _, ok := listeners[key]; ok {
 				return nil, fmt.Errorf("duplicate %s ingress port %d", protocol, rule.IngressPort)
 			}
-			listeners[key] = target{host: rule.TargetHost, port: rule.TargetPort, id: rule.ID}
+			listeners[key] = target{host: rule.TargetHost, port: rule.TargetPort, id: rule.ID, lineID: rule.LineID, generation: rule.RelayGeneration}
 		}
 	}
 	proxyIDs := make(map[string]struct{}, len(snapshot.ProxyConfig))
 	proxyHashes := make(map[string]struct{}, len(snapshot.ProxyConfig))
-	ingressRelays := make(map[string]uint64)
-	for _, relay := range snapshot.RelayConfig {
-		if relay.Role == RelayIngress {
-			ingressRelays[relay.LineID] = relay.Generation
-		}
-	}
 	for _, access := range snapshot.ProxyConfig {
 		if access.ID == "" || access.UserID == "" || access.LineID == "" ||
 			access.ID != strings.TrimSpace(access.ID) || access.IngressPort < 1 || access.IngressPort > 65535 ||

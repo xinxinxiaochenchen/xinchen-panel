@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+func TestValidateSnapshotRequiresMatchingIngressForRelayedForward(t *testing.T) {
+	rule := Rule{ID: "forward-1", IngressPort: 24000, TargetHost: "example.org", TargetPort: 53,
+		Protocol: "UDP", Enabled: true, LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", RelayGeneration: 1}
+	if _, err := ValidateSnapshot(Snapshot{Revision: 1, Rules: []Rule{rule}}); err == nil {
+		t.Fatal("relayed forward accepted without matching ingress route")
+	}
+	if _, err := ValidateSnapshot(Snapshot{Revision: 1, Rules: []Rule{rule}, RelayConfig: []RelayConfig{relayTestConfig(RelayIngress)}}); err != nil {
+		t.Fatalf("matching relayed forward rejected: %v", err)
+	}
+	rule.RelayGeneration = 0
+	if _, err := ValidateSnapshot(Snapshot{Revision: 1, Rules: []Rule{rule}}); err == nil {
+		t.Fatal("line-bound forward accepted without generation")
+	}
+}
+
 func TestValidateSnapshot(t *testing.T) {
 	base := Snapshot{Revision: 1, Rules: []Rule{{ID: "rule-1", IngressPort: 24000,
 		TargetHost: "example.org", TargetPort: 443, Protocol: "BOTH", Enabled: true}}}
