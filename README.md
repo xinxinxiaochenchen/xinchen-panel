@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。纯 IP 预览继续关闭浏览器认证；Agent TLS 已在服务器回环地址启用。独立测试库已验证真实 TCP/UDP 转发、Trojan TLS 代理和计费入账；正式库仍未创建管理员、节点或 Agent。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与单跳线路、直达转发、代理连接、订阅与分流、用量账本，以及登录后的资源操作页。`us bwg` 纯 IP 预览继续关闭浏览器认证与 Agent TLS。独立测试库已验证真实 TCP/UDP 转发、Trojan TLS 代理和计费入账；正式库仍未创建管理员、节点或 Agent。
 
 ## 本地运行
 
@@ -26,7 +26,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。当前纯 IP 预览的正式库已应用至版本 20，增加节点中继端口及原子端口预留，不启动中继服务。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。`us bwg` 纯 IP 预览的新库已应用至版本 22；线路中继世代和密钥持久化结构已入库，但多跳数据面未开放。
 
 ## 资源目录开发状态
 
@@ -82,7 +82,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 下一阶段重点是受信任 HTTPS 管理入口、正式管理员及节点入网，以及在正式节点上复核配置撤销和真实流量。隔离数据库和临时 Agent 已通过 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。可执行多跳和线路权重切换仍在开发。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
-当前基础服务的纯 IP 只读预览部署见[部署说明](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
+当前 `us bwg` 的纯 IP 只读预览见[部署说明](docs/deployment/us-bwg-preview.md)；旧 `us dmit` 的历史部署见[历史记录](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 
 ## 订阅（已纳入只读预览镜像，公网入口关闭）
 
