@@ -18,6 +18,7 @@ test("plan input converts GiB quota to integer bytes and preserves grants", () =
     maxRouting: 20,
     maxCustomLines: 2,
     maxHops: 3,
+    maxProxyLines: 2,
     groupIDs: ["group-id"],
     lineIDs: ["line-id"],
   });
@@ -26,7 +27,9 @@ test("plan input converts GiB quota to integer bytes and preserves grants", () =
   assert.deepEqual(input.resource_group_ids, ["group-id"]);
   assert.equal(input.limits.allow_custom_lines, true);
   assert.equal(input.limits.max_hops, 3);
+  assert.equal(input.limits.max_proxy_lines, 2);
   assert.throws(() => buildPlanInput({ name: "Bad", quotaGiB: 1, multiplier: 1, maxForward: 0, maxSubscriptions: 0, maxRouting: 0, maxCustomLines: 0, maxHops: 9, groupIDs: [], lineIDs: [] }));
+  assert.throws(() => buildPlanInput({ name: "Bad", quotaGiB: 1, multiplier: 1, maxForward: 0, maxSubscriptions: 0, maxRouting: 0, maxCustomLines: 0, maxProxyLines: 33, groupIDs: [], lineIDs: [] }));
 });
 
 test("membership dates use UTC instants and a bounded anchor day", () => {

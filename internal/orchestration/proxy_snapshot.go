@@ -30,6 +30,22 @@ type ProxyFacts struct {
 	HopGroupIDs      []string
 	ExpiresAt        time.Time
 	EligibilityError string
+	Candidates       []ProxyCandidateFacts
+}
+
+type ProxyCandidateFacts struct {
+	LineID          string
+	NodeID          string
+	GroupID         string
+	LineOwnerID     string
+	LineEnabled     bool
+	RelayGeneration uint64
+	RelayReady      bool
+	HopCount        int
+	MaxHops         int
+	HopGroupIDs     []string
+	Priority        int
+	Weight          int
 }
 
 type CompiledProxySnapshot struct {
@@ -57,53 +73,42 @@ func CompileProxySnapshot(node NodeFacts, facts []ProxyFacts, relays []agentrunt
 			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: fact.EligibilityError})
 			continue
 		}
-		if !fact.Enabled || !fact.OwnerActive || !fact.MembershipActive || !fact.LineEnabled ||
+		if !fact.Enabled || !fact.OwnerActive || !fact.MembershipActive ||
 			!slices.Contains(fact.MemberGroupIDs, node.GroupID) || !fact.ExpiresAt.After(time.Now()) {
 			continue
 		}
-		if fact.HopCount < 1 || fact.HopCount > 8 || len(fact.HopGroupIDs) != fact.HopCount {
-			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "proxy line topology is incomplete"})
-			continue
+		candidateFacts := fact.Candidates
+		if len(candidateFacts) == 0 && fact.LineEnabled {
+			candidateFacts = []ProxyCandidateFacts{{LineID: fact.LineID, NodeID: fact.NodeID, GroupID: fact.GroupID,
+				LineOwnerID: fact.LineOwnerID, LineEnabled: fact.LineEnabled, RelayGeneration: fact.RelayGeneration,
+				RelayReady: fact.RelayReady, HopCount: fact.HopCount, MaxHops: fact.MaxHops, HopGroupIDs: fact.HopGroupIDs, Weight: 1}}
 		}
-		if fact.HopCount == 1 && fact.HopGroupIDs[0] != node.GroupID {
-			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "proxy line does not start on this node"})
-			continue
-		}
-		if fact.HopCount > 1 && fact.RelayGeneration == 0 {
-			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "multi-hop line has no relay generation"})
-			continue
-		}
-		if fact.RelayGeneration != 0 {
-			if fact.HopCount < 2 || fact.HopCount > 8 || fact.MaxHops < fact.HopCount || len(fact.HopGroupIDs) != fact.HopCount {
-				result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "multi-hop topology exceeds membership limits"})
+		candidates := make([]agentruntime.ProxyLineCandidate, 0, len(candidateFacts))
+		for _, candidate := range candidateFacts {
+			if !proxyCandidateAllowed(node, fact, candidate, relayByLine) {
 				continue
 			}
-			authorized := true
-			for _, groupID := range fact.HopGroupIDs {
-				if !slices.Contains(fact.MemberGroupIDs, groupID) {
-					authorized = false
-					break
-				}
-			}
-			if !authorized {
-				result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "multi-hop node group is not authorized"})
-				continue
-			}
-			relay, ok := relayByLine[fact.LineID]
-			if !fact.RelayReady || !ok || relay.Generation != fact.RelayGeneration || relay.Role != agentruntime.RelayIngress {
-				result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "multi-hop line is not fully applied"})
-				continue
-			}
+			candidates = append(candidates, agentruntime.ProxyLineCandidate{LineID: candidate.LineID, RelayGeneration: candidate.RelayGeneration, Priority: candidate.Priority, Weight: candidate.Weight})
 		}
-		if fact.LineOwnerID == "" {
-			if !slices.Contains(fact.MemberLineIDs, fact.LineID) {
-				continue
-			}
-		} else if fact.LineOwnerID != fact.OwnerID || !fact.AllowCustomLines {
+		if len(candidates) == 0 {
+			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: "proxy has no authorized line candidates"})
 			continue
+		}
+		orderedCandidates, err := agentruntime.RankProxyLineCandidates(fact.ID, candidates)
+		if err != nil {
+			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: err.Error()})
+			continue
+		}
+		primaryGeneration := uint64(0)
+		for _, candidate := range orderedCandidates {
+			if candidate.LineID == fact.LineID {
+				primaryGeneration = candidate.RelayGeneration
+				break
+			}
 		}
 		access := agentruntime.ProxyAccess{ID: fact.ID, UserID: fact.OwnerID, LineID: fact.LineID,
-			RelayGeneration: fact.RelayGeneration, IngressPort: node.ProxyPort, CredentialHash: fact.CredentialHash, ExpiresAt: fact.ExpiresAt}
+			Candidates:      orderedCandidates,
+			RelayGeneration: primaryGeneration, IngressPort: node.ProxyPort, CredentialHash: fact.CredentialHash, ExpiresAt: fact.ExpiresAt}
 		trial := append(append([]agentruntime.ProxyAccess(nil), result.Snapshot.ProxyConfig...), access)
 		if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: revision, ProxyConfig: trial, RelayConfig: relays}); err != nil {
 			result.Rejected = append(result.Rejected, ForwardRejection{RuleID: fact.ID, Reason: err.Error()})
@@ -112,4 +117,35 @@ func CompileProxySnapshot(node NodeFacts, facts []ProxyFacts, relays []agentrunt
 		result.Snapshot.ProxyConfig = append(result.Snapshot.ProxyConfig, access)
 	}
 	return result, nil
+}
+
+func proxyCandidateAllowed(node NodeFacts, fact ProxyFacts, candidate ProxyCandidateFacts, relayByLine map[string]agentruntime.RelayConfig) bool {
+	if candidate.LineID == "" || candidate.NodeID != node.ID || candidate.GroupID != node.GroupID || !candidate.LineEnabled {
+		return false
+	}
+	if candidate.HopCount < 1 || candidate.HopCount > 8 || len(candidate.HopGroupIDs) != candidate.HopCount {
+		return false
+	}
+	if candidate.HopCount == 1 {
+		if candidate.HopGroupIDs[0] != node.GroupID || candidate.RelayGeneration != 0 {
+			return false
+		}
+	} else {
+		if candidate.RelayGeneration == 0 || !candidate.RelayReady || candidate.MaxHops < candidate.HopCount {
+			return false
+		}
+		relay, ok := relayByLine[candidate.LineID]
+		if !ok || relay.Role != agentruntime.RelayIngress || relay.Generation != candidate.RelayGeneration {
+			return false
+		}
+	}
+	for _, groupID := range candidate.HopGroupIDs {
+		if !slices.Contains(fact.MemberGroupIDs, groupID) {
+			return false
+		}
+	}
+	if candidate.LineOwnerID == "" {
+		return slices.Contains(fact.MemberLineIDs, candidate.LineID)
+	}
+	return candidate.LineOwnerID == fact.OwnerID && fact.AllowCustomLines
 }

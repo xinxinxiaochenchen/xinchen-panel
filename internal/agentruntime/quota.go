@@ -14,6 +14,13 @@ type TrafficMeter interface {
 	Open(context.Context, string, string, uint64) (MeteredConnection, error)
 }
 
+// LineTrafficMeter identifies the selected proxy line during quota admission.
+// Forward rules and older single-line meters continue using TrafficMeter.Open.
+type LineTrafficMeter interface {
+	TrafficMeter
+	OpenLine(context.Context, string, string, string, uint64) (MeteredConnection, error)
+}
+
 type MeteredConnection interface {
 	Copy(io.Writer, io.Reader, agentmeter.Direction) (int64, error)
 	WritePacket(io.Writer, []byte, agentmeter.Direction) (int, error)
@@ -34,6 +41,7 @@ type QuotaOpenRequest struct {
 	ConnectionID   string
 	ResourceKind   string
 	ResourceID     string
+	LineID         string
 	Revision       int64
 	RequestedBytes int64
 }

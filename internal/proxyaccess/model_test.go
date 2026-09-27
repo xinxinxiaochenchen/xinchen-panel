@@ -38,3 +38,43 @@ func TestNormalizeAccessPatchRequiresAChange(t *testing.T) {
 		t.Fatalf("normalized patch = %+v, %v", patch, err)
 	}
 }
+
+func TestNormalizeAccessLineCandidatesPreserveOrderAndRejectDuplicates(t *testing.T) {
+	first := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423"
+	second := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424"
+	input, err := NormalizeAccess(NewAccess{Name: "pool", LineIDs: []string{first, second}})
+	if err != nil || input.LineID != first || len(input.LineIDs) != 2 || input.LineIDs[1] != second {
+		t.Fatalf("normalized candidates = %+v, %v", input, err)
+	}
+	for _, invalid := range []NewAccess{
+		{Name: "pool", LineIDs: []string{}},
+		{Name: "pool", LineIDs: []string{first, first}},
+		{Name: "pool", LineID: second, LineIDs: []string{first, second}},
+		{Name: "pool", LineIDs: []string{first, "bad"}},
+	} {
+		if _, err := NormalizeAccess(invalid); err == nil {
+			t.Fatalf("invalid candidates accepted: %+v", invalid)
+		}
+	}
+}
+
+func TestNormalizeAccessLineOptionsRequireMatchingLinesAndBoundedWeights(t *testing.T) {
+	first := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423"
+	second := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424"
+	got, err := NormalizeAccess(NewAccess{Name: "pool", LineIDs: []string{first, second}, LineOptions: []LineOption{
+		{LineID: second, Priority: 20, Weight: 3}, {LineID: first, Priority: 10, Weight: 1},
+	}})
+	if err != nil || len(got.LineOptions) != 2 || got.LineOptions[0].LineID != first || got.LineOptions[0].Weight != 1 || got.LineOptions[1].LineID != second || got.LineOptions[1].Weight != 3 {
+		t.Fatalf("line options = %+v, %v", got, err)
+	}
+	for _, options := range [][]LineOption{
+		{{LineID: first, Priority: 10, Weight: 1}},
+		{{LineID: first, Priority: 10, Weight: 1}, {LineID: first, Priority: 20, Weight: 1}},
+		{{LineID: first, Priority: 10, Weight: 0}, {LineID: second, Priority: 20, Weight: 1}},
+		{{LineID: first, Priority: 10, Weight: 1}, {LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Priority: 20, Weight: 1}},
+	} {
+		if _, err := NormalizeAccess(NewAccess{Name: "pool", LineIDs: []string{first, second}, LineOptions: options}); err == nil {
+			t.Fatalf("invalid options accepted: %+v", options)
+		}
+	}
+}

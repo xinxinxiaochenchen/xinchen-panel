@@ -28,11 +28,12 @@ type accessEntitlement struct {
 	Limits           struct {
 		AllowCustomLines bool `json:"allow_custom_lines"`
 		MaxHops          int  `json:"max_hops"`
+		MaxProxyLines    int  `json:"max_proxy_lines"`
 	} `json:"limits"`
 }
 
 func (r *PostgresRepository) Create(ctx context.Context, ownerID string, input AccessInput, requestID string) (Access, string, error) {
-	input, err := NormalizeAccess(NewAccess{Name: input.Name, LineID: input.LineID, Enabled: &input.Enabled})
+	input, err := NormalizeAccess(NewAccess{Name: input.Name, LineID: input.LineID, LineIDs: input.LineIDs, LineOptions: input.LineOptions, Enabled: &input.Enabled})
 	if err != nil {
 		return Access{}, "", err
 	}
@@ -57,9 +58,30 @@ func (r *PostgresRepository) Create(ctx context.Context, ownerID string, input A
 		return Access{}, "", fmt.Errorf("begin proxy access creation: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	membershipID, err := authorizeProxyLine(ctx, tx, ownerID, input.LineID)
-	if err != nil {
-		return Access{}, "", err
+	var maxProxyLines int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE((snapshot_json->'limits'->>'max_proxy_lines')::int,1)
+FROM memberships WHERE user_id=$1 AND status='active' AND starts_at<=clock_timestamp() AND ends_at>clock_timestamp() FOR SHARE`, ownerID).Scan(&maxProxyLines); err != nil {
+		return Access{}, "", proxyDatabaseError(err)
+	}
+	if len(input.LineIDs) > maxProxyLines {
+		return Access{}, "", ValidationError{"line_ids", "exceeds plan proxy line limit"}
+	}
+	// Keep public activation gated until the PostgreSQL candidate admission and
+	// subscription export paths have been verified end to end.
+	if len(input.LineIDs) > 1 {
+		return Access{}, "", ValidationError{"line_ids", "multi-line proxy activation is not available yet"}
+	}
+	var membershipID string
+	for index, lineID := range input.LineIDs {
+		currentMembership, err := authorizeProxyLine(ctx, tx, ownerID, lineID)
+		if err != nil {
+			return Access{}, "", err
+		}
+		if index == 0 {
+			membershipID = currentMembership
+		} else if currentMembership != membershipID {
+			return Access{}, "", ErrConflict
+		}
 	}
 	applyStatus := "pending"
 	if !input.Enabled {
@@ -73,6 +95,14 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING created_at,updated_at`, access.ID, ac
 	if err != nil {
 		return Access{}, "", fmt.Errorf("insert proxy access: %w", proxyDatabaseError(err))
 	}
+	for index, option := range input.LineOptions {
+		if _, err := tx.Exec(ctx, `INSERT INTO proxy_access_lines(proxy_access_id,line_id,position,priority,weight)
+VALUES($1,$2,$3,$4,$5)`, access.ID, option.LineID, index, option.Priority, option.Weight); err != nil {
+			return Access{}, "", fmt.Errorf("insert proxy access line: %w", proxyDatabaseError(err))
+		}
+	}
+	access.LineIDs = append([]string(nil), input.LineIDs...)
+	access.LineOptions = append([]LineOption(nil), input.LineOptions...)
 	if err := recordAccessChange(ctx, tx, access, ownerID, "create", requestID); err != nil {
 		return Access{}, "", err
 	}
@@ -185,12 +215,21 @@ WHERE h.line_id=$1 ORDER BY h.position FOR SHARE OF n,g`, lineID)
 	return membershipID, nil
 }
 
-const accessSelect = `SELECT id::text,user_id::text,line_id::text,name,enabled,apply_status,created_at,updated_at FROM proxy_accesses`
+const accessSelect = `SELECT a.id::text,a.user_id::text,a.line_id::text,a.name,a.enabled,a.apply_status,a.created_at,a.updated_at,
+ARRAY(SELECT pal.line_id::text FROM proxy_access_lines pal WHERE pal.proxy_access_id=a.id ORDER BY pal.position),
+COALESCE((SELECT jsonb_agg(jsonb_build_object('line_id',pal.line_id::text,'priority',pal.priority,'weight',pal.weight) ORDER BY pal.position)::text
+FROM proxy_access_lines pal WHERE pal.proxy_access_id=a.id),'[]') FROM proxy_accesses a`
 
 func scanAccess(row pgx.Row) (Access, error) {
 	var value Access
+	var optionsJSON []byte
 	err := row.Scan(&value.ID, &value.UserID, &value.LineID, &value.Name, &value.Enabled,
-		&value.ApplyStatus, &value.CreatedAt, &value.UpdatedAt)
+		&value.ApplyStatus, &value.CreatedAt, &value.UpdatedAt, &value.LineIDs, &optionsJSON)
+	if err == nil {
+		if unmarshalErr := json.Unmarshal(optionsJSON, &value.LineOptions); unmarshalErr != nil {
+			return Access{}, fmt.Errorf("decode proxy access line options: %w", unmarshalErr)
+		}
+	}
 	return value, err
 }
 

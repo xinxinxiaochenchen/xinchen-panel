@@ -52,3 +52,34 @@ func TestProxySnapshotValidation(t *testing.T) {
 		t.Fatalf("Trojan TCP and forward UDP conflict: %v", err)
 	}
 }
+
+func TestValidateSnapshotAcceptsAndChecksProxyLineCandidates(t *testing.T) {
+	proxy := testProxyConfig()
+	proxy.Candidates = []ProxyLineCandidate{
+		{LineID: proxy.LineID, Priority: 10, Weight: 2},
+		{LineID: "fallback-line", Priority: 20, Weight: 1},
+	}
+	if _, err := ValidateSnapshot(Snapshot{Revision: 1, ProxyConfig: []ProxyAccess{proxy}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*ProxyAccess){
+		func(value *ProxyAccess) { value.Candidates[1].LineID = value.Candidates[0].LineID },
+		func(value *ProxyAccess) { value.Candidates[0].Weight = 0 },
+		func(value *ProxyAccess) { value.Candidates[0].LineID = "" },
+	} {
+		invalid := proxy
+		invalid.Candidates = append([]ProxyLineCandidate(nil), proxy.Candidates...)
+		mutate(&invalid)
+		if _, err := ValidateSnapshot(Snapshot{Revision: 1, ProxyConfig: []ProxyAccess{invalid}}); err == nil {
+			t.Fatalf("invalid candidates accepted: %+v", invalid.Candidates)
+		}
+	}
+}
+
+func TestValidateSnapshotAcceptsUnavailableDefaultWithExplicitFallback(t *testing.T) {
+	proxy := testProxyConfig()
+	proxy.Candidates = []ProxyLineCandidate{{LineID: "fallback-line", Priority: 10, Weight: 1}}
+	if _, err := ValidateSnapshot(Snapshot{Revision: 1, ProxyConfig: []ProxyAccess{proxy}}); err != nil {
+		t.Fatalf("valid fallback rejected: %v", err)
+	}
+}

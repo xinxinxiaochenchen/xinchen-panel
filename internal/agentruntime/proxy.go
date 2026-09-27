@@ -106,10 +106,99 @@ func (r *Runtime) relayProxy(p *proxyEndpoint, session *tcpSession) {
 	expiry := time.AfterFunc(time.Until(access.ExpiresAt), session.close)
 	p.mu.Unlock()
 	defer expiry.Stop()
+	connectionID, idErr := id.NewV7()
+	if idErr != nil {
+		return
+	}
+	candidates := access.Candidates
+	if len(candidates) == 0 {
+		candidates = []ProxyLineCandidate{{LineID: access.LineID, RelayGeneration: access.RelayGeneration, Weight: 1}}
+	}
+	ordered, orderErr := RankProxyLineCandidates(connectionID, candidates)
+	if orderErr != nil {
+		return
+	}
+	if (len(ordered) > 1 || len(ordered) == 1 && ordered[0].LineID != access.LineID) && r.options.Meter != nil {
+		if _, ok := r.options.Meter.(LineTrafficMeter); !ok {
+			// A legacy meter cannot attribute the eventual fallback line. Do not
+			// probe or open traffic under the primary line by mistake.
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(session.ctx, 10*time.Second)
+	var upstream net.Conn
+	var selected ProxyLineCandidate
+	var stopRoute func() bool
+	for _, candidate := range ordered {
+		if ctx.Err() != nil {
+			break
+		}
+		if candidate.RelayGeneration != 0 {
+			r.mu.Lock()
+			relay := r.relay
+			r.mu.Unlock()
+			if relay == nil {
+				continue
+			}
+			relay.mu.RLock()
+			route := relay.routes[candidate.LineID]
+			relay.mu.RUnlock()
+			if route == nil || route.Generation != candidate.RelayGeneration || route.Next == nil ||
+				route.PreviousNodeID != "" || route.Context.Err() != nil {
+				continue
+			}
+			candidateStop := context.AfterFunc(route.Context, session.close)
+			upstream, err = agentrelay.DialLine(ctx, *route.Next, agentrelay.Open{Version: 1, Type: "open",
+				LineID: candidate.LineID, ConnectionID: connectionID, Generation: route.Generation,
+				TargetHost: host, TargetPort: port, SentAt: time.Now().UTC()})
+			if err == nil && upstream != nil {
+				selected, stopRoute = candidate, candidateStop
+				break
+			}
+			candidateStop()
+			if upstream != nil {
+				_ = upstream.Close()
+				upstream = nil
+			}
+			continue
+		}
+		address, resolveErr := ResolvePublic(ctx, host, r.options.Resolve)
+		if resolveErr != nil {
+			err = resolveErr
+			continue
+		}
+		upstream, err = r.options.DialTCP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(port)))
+		if err == nil && upstream != nil {
+			selected = candidate
+			break
+		}
+		if upstream != nil {
+			_ = upstream.Close()
+			upstream = nil
+		}
+	}
+	cancel()
+	if upstream == nil || err != nil || selected.LineID == "" || !session.setUpstream(upstream) {
+		if stopRoute != nil {
+			stopRoute()
+		}
+		if upstream != nil {
+			_ = upstream.Close()
+		}
+		return
+	}
+	if stopRoute != nil {
+		defer stopRoute()
+	}
 	var metered MeteredConnection
 	if r.options.Meter != nil {
-		metered, err = r.options.Meter.Open(session.ctx, "proxy", access.ID, revision)
-		if err != nil {
+		if lineMeter, ok := r.options.Meter.(LineTrafficMeter); ok {
+			metered, err = lineMeter.OpenLine(session.ctx, "proxy", access.ID, selected.LineID, revision)
+		} else {
+			metered, err = r.options.Meter.Open(session.ctx, "proxy", access.ID, revision)
+		}
+		if err != nil || metered == nil {
+			_ = upstream.Close()
 			return
 		}
 		if !session.setMeter(metered) {
@@ -117,46 +206,7 @@ func (r *Runtime) relayProxy(p *proxyEndpoint, session *tcpSession) {
 		}
 		defer metered.Close()
 	} else if r.options.RequireMetering {
-		return
-	}
-	ctx, cancel := context.WithTimeout(session.ctx, 10*time.Second)
-	var upstream net.Conn
-	if access.RelayGeneration != 0 {
-		r.mu.Lock()
-		relay := r.relay
-		r.mu.Unlock()
-		if relay == nil {
-			cancel()
-			return
-		}
-		relay.mu.RLock()
-		route := relay.routes[access.LineID]
-		relay.mu.RUnlock()
-		if route == nil || route.Generation != access.RelayGeneration || route.Next == nil ||
-			route.PreviousNodeID != "" || route.Context.Err() != nil {
-			cancel()
-			return
-		}
-		stopRoute := context.AfterFunc(route.Context, session.close)
-		defer stopRoute()
-		connectionID, idErr := id.NewV7()
-		if idErr != nil {
-			cancel()
-			return
-		}
-		upstream, err = agentrelay.DialLine(ctx, *route.Next, agentrelay.Open{Version: 1, Type: "open",
-			LineID: access.LineID, ConnectionID: connectionID, Generation: route.Generation,
-			TargetHost: host, TargetPort: port, SentAt: time.Now().UTC()})
-	} else {
-		address, resolveErr := ResolvePublic(ctx, host, r.options.Resolve)
-		if resolveErr != nil {
-			cancel()
-			return
-		}
-		upstream, err = r.options.DialTCP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(port)))
-	}
-	cancel()
-	if err != nil || !session.setUpstream(upstream) {
+		_ = upstream.Close()
 		return
 	}
 	_ = session.client.SetDeadline(time.Time{})

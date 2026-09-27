@@ -87,7 +87,70 @@ ORDER BY a.id`, nodeID)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read proxy facts: %w", err)
 	}
+	rows.Close()
+	if len(facts) == 0 {
+		return facts, nil
+	}
+	ids := make([]string, len(facts))
+	byAccess := make(map[string]*ProxyFacts, len(facts))
+	for i := range facts {
+		ids[i] = facts[i].ID
+		byAccess[facts[i].ID] = &facts[i]
+	}
+	candidateRows, err := tx.Query(ctx, `SELECT pal.proxy_access_id::text,pal.line_id::text,h.node_id::text,n.group_id::text,
+COALESCE(l.owner_user_id::text,''),l.enabled,l.relay_generation,pal.priority,pal.weight,
+ARRAY(SELECT hn.group_id::text FROM line_hops hh JOIN nodes hn ON hn.id=hh.node_id
+WHERE hh.line_id=l.id ORDER BY hh.position)
+FROM proxy_access_lines pal JOIN lines l ON l.id=pal.line_id
+JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role IN ('egress','ingress')
+JOIN nodes n ON n.id=h.node_id
+WHERE pal.proxy_access_id::text=ANY($1::text[]) ORDER BY pal.proxy_access_id,pal.position`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("query proxy line candidates: %w", err)
+	}
+	defer candidateRows.Close()
+	for candidateRows.Next() {
+		var accessID string
+		var candidate ProxyCandidateFacts
+		var relayGeneration int64
+		if err := candidateRows.Scan(&accessID, &candidate.LineID, &candidate.NodeID, &candidate.GroupID,
+			&candidate.LineOwnerID, &candidate.LineEnabled, &relayGeneration, &candidate.Priority,
+			&candidate.Weight, &candidate.HopGroupIDs); err != nil {
+			return nil, fmt.Errorf("scan proxy line candidate: %w", err)
+		}
+		if relayGeneration < 0 {
+			return nil, fmt.Errorf("invalid relay generation for proxy line %s", candidate.LineID)
+		}
+		candidate.HopCount = len(candidate.HopGroupIDs)
+		candidate.MaxHops = byAccess[accessID].MaxHops
+		if candidate.HopCount > 1 {
+			candidate.RelayGeneration = uint64(relayGeneration)
+			candidate.RelayReady = relayCandidateReady(candidate, relayLines, relayConfigs)
+		}
+		byAccess[accessID].Candidates = append(byAccess[accessID].Candidates, candidate)
+	}
+	if err := candidateRows.Err(); err != nil {
+		return nil, fmt.Errorf("read proxy line candidates: %w", err)
+	}
 	return facts, nil
+}
+
+func relayCandidateReady(candidate ProxyCandidateFacts, relayLines []RelayLineFacts, relayConfigs map[string][]agentruntime.RelayConfig) bool {
+	for _, line := range relayLines {
+		if line.LineID != candidate.LineID || len(line.Hops) == 0 || line.Generation != candidate.RelayGeneration {
+			continue
+		}
+		if !downstreamRelayApplied(line) {
+			return false
+		}
+		for _, relay := range relayConfigs[candidate.NodeID] {
+			if relay.LineID == candidate.LineID && relay.Generation == candidate.RelayGeneration && relay.Role == agentruntime.RelayIngress {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 func recordProxyApplyStatus(ctx context.Context, tx pgx.Tx, nodeID string, revision int64, payload []byte, status string, acceptNewer bool) error {

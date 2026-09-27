@@ -29,6 +29,23 @@ func TestAdmissionInputRejectsUntrustedAttribution(t *testing.T) {
 	}
 }
 
+func TestAdmissionInputAcceptsProxyLineSelectionOnly(t *testing.T) {
+	req := OpenRequest{ConnectionID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", RequestID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		ResourceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", ResourceKind: "proxy",
+		LineID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", Revision: 1, RequestedBytes: 128}
+	if err := validateOpenRequest(req); err != nil {
+		t.Fatal(err)
+	}
+	req.ResourceKind = "forward"
+	if err := validateOpenRequest(req); err == nil {
+		t.Fatal("forward request supplied an untrusted line")
+	}
+	req.ResourceKind, req.LineID = "proxy", "not-a-uuid"
+	if err := validateOpenRequest(req); err == nil {
+		t.Fatal("proxy request supplied an invalid line")
+	}
+}
+
 func TestPostgresMeteredConnectionAdmission(t *testing.T) {
 	dsn := os.Getenv("CONTROL_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -182,6 +199,25 @@ func TestPostgresMeteredConnectionAdmission(t *testing.T) {
 	if err != nil || proxy.MultiplierMilli != 2000 {
 		t.Fatalf("proxy grant=%+v %v", proxy, err)
 	}
+	// When the applied snapshot has an explicit candidate list, the compatibility
+	// line_id field must not grant admission to a line the Agent cannot dial.
+	exec(`INSERT INTO proxy_access_lines(proxy_access_id,line_id,position,priority,weight) VALUES($1,$2,1,20,1)`, access, secondLine)
+	fallbackPayload, _ := json.Marshal(map[string]any{"proxy_config": []map[string]any{{
+		"id": access, "user_id": owner, "line_id": line, "credential_hash": strings.Repeat("a", 56),
+		"ingress_port": 443, "expires_at": membershipEnd,
+		"candidates": []map[string]any{{"line_id": secondLine, "priority": 20, "weight": 1}},
+	}}})
+	exec(`UPDATE config_revisions SET payload_json=$2 WHERE node_id=$1 AND revision=1`, node, fallbackPayload)
+	defaultReq := OpenRequest{ConnectionID: nextID(), RequestID: nextID(), ResourceKind: "proxy", ResourceID: access, LineID: line, Revision: 1, RequestedBytes: 100}
+	if _, err := repo.OpenConnection(ctx, node, defaultReq); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("undelivered default line admitted: %v", err)
+	}
+	fallbackReq := defaultReq
+	fallbackReq.ConnectionID, fallbackReq.RequestID, fallbackReq.LineID = nextID(), nextID(), secondLine
+	if _, err := repo.OpenConnection(ctx, node, fallbackReq); err != nil {
+		t.Fatalf("delivered fallback line rejected: %v", err)
+	}
+	exec(`UPDATE config_revisions SET payload_json=$2 WHERE node_id=$1 AND revision=1`, node, payload)
 	// Changed execution target and policy revocation deny new connections.
 	fresh := func() OpenRequest { v := request; v.RequestID = nextID(); v.ConnectionID = nextID(); return v }
 	exec(`UPDATE forward_rules SET target_port=8443 WHERE id=$1`, rule)

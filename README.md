@@ -4,6 +4,10 @@
 
 交付形态是部署在 VPS 上、通过浏览器访问的 Web 项目：React 前端由 Go 控制面提供静态资源，PostgreSQL 保存主数据，节点服务器运行独立 Go Agent。项目不包含原生手机或桌面 App，也不包含付费系统。当前纯 IP HTTP 地址用于只读预览；可操作的管理登录需要受信任的 HTTPS 入口，后续可由 Nginx 反代到回环绑定的控制面。
 
+## VPS 部署
+
+浏览器 WebUI 的 Docker Compose 部署、HTTPS 反代、管理员初始化和密钥挂载步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
+
 ## 本地运行
 
 需要 Go 1.27.1 和 PostgreSQL。设置 `CONTROL_DATABASE_URL`，例如 `postgres://app:secret@127.0.0.1:5432/control`，再执行：
@@ -42,7 +46,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 线路开发状态
 
-管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。2–8 跳 TCP 线路可启用，入口须有 `proxy` 和 `forward` 能力及两个独立端口，后续节点须有 `forward` 能力和中继端口。每跳均检查资源组授权及套餐 `max_hops`。用户可在启用线路上创建代理连接；只有各跳 Agent 在线、证书有效、下游应用当前世代且入口应用代理配置后，订阅才会导出。计费准入沿整条线路复核这些条件，仅在入口建立一条用量会话并冻结线路与倍率；独立 PostgreSQL 集成验收已通过并发布到 `us bwg`。线路权重目前已用于订阅导出的稳定线路顺序；由于代理连接实体仍绑定单条线路，入口候选池的运行时自动选路仍待接入。启用多跳数据面须配置 `CONTROL_RELAY_SECRET_KEY_FILE` 和 Agent mTLS；公网纯 HTTP 预览保持关闭管理路由。
+管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。2–8 跳 TCP 线路可启用，入口须有 `proxy` 和 `forward` 能力及两个独立端口，后续节点须有 `forward` 能力和中继端口。每跳均检查资源组授权及套餐 `max_hops`。用户可在启用线路上创建代理连接；只有各跳 Agent 在线、证书有效、下游应用当前世代且入口应用代理配置后，订阅才会导出。计费准入沿整条线路复核这些条件，仅在入口建立一条用量会话并冻结线路与倍率；独立 PostgreSQL 集成验收已通过并发布到 `us bwg`。线路权重已用于订阅导出的稳定线路顺序；候选池的 Agent 拨号重试和最终线路额度请求已在本地接入，仍需 PostgreSQL 16 与订阅导出闭环验证后开放多线路创建。启用多跳数据面须配置 `CONTROL_RELAY_SECRET_KEY_FILE` 和 Agent mTLS；公网纯 HTTP 预览保持关闭管理路由。
 线路详情可通过 `GET /api/v1/admin/lines/{id}/health` 或授权用户的 `GET /api/v1/lines/{id}/health` 查看。健康状态包含 `disabled`、`unavailable`、`converging`、`ready`，并返回每一跳的 Agent 在线、控制证书/中继证书、期望与已应用配置版本及多跳中继应用状态；线路页会显示不可用原因和每跳收敛进度。
 
 ## 转发规则开发状态
@@ -83,7 +87,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 后续阶段
 
-下一阶段重点是在隔离 PostgreSQL 验证线路绑定转发的完整迁移、授权、配置下发与计费准入，并接入线路候选池的运行时选择。迁移 24 的 up/down 约束已用 PGlite SQL 冒烟验证；Agent 已具备经认证的 TCP/UDP 多跳线路绑定转发执行能力，UDP 节点间数据报帧和回环通流已有测试；线路绑定转发的真实 PostgreSQL 集成和公网 Agent 通流仍待完成。隔离数据库和临时 Agent 此前已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+下一阶段重点是在隔离 PostgreSQL 16 验证迁移 24/25、线路候选的授权与计费，并完成多候选代理连接的订阅导出语义。迁移 24/25 已用 PGlite 做 SQL 冒烟；Agent 已接入经认证的 TCP/UDP 多跳线路绑定转发以及代理候选的拨号重试，额度请求会记录最终线路，但多候选创建仍被 API 门控。公网多 Agent 通流仍待完成。隔离数据库和临时 Agent 此前已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前 `us bwg` 的纯 IP 只读预览见[部署说明](docs/deployment/us-bwg-preview.md)；旧 `us dmit` 的历史部署见[历史记录](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 

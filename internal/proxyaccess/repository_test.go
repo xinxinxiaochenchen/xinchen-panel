@@ -78,6 +78,10 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 	if err != nil || access.UserID != owner || access.LineID != line || access.ApplyStatus != "pending" || len(credential) != 43 {
 		t.Fatalf("created access = %+v, credential length=%d, err=%v", access, len(credential), err)
 	}
+	var candidateLine string
+	if err := pool.QueryRow(ctx, `SELECT line_id::text FROM proxy_access_lines WHERE proxy_access_id=$1 AND position=0`, access.ID).Scan(&candidateLine); err != nil || candidateLine != line {
+		t.Fatalf("primary candidate = %s, %v", candidateLine, err)
+	}
 	encoded, err := json.Marshal(access)
 	if err != nil {
 		t.Fatal(err)
@@ -98,10 +102,10 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 	if _, err := repo.GetOwn(ctx, other, access.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner read = %v", err)
 	}
-	if got, err := repo.GetOwn(ctx, owner, access.ID); err != nil || got.ID != access.ID {
+	if got, err := repo.GetOwn(ctx, owner, access.ID); err != nil || got.ID != access.ID || len(got.LineIDs) != 1 || got.LineIDs[0] != line || len(got.LineOptions) != 1 || got.LineOptions[0].LineID != line {
 		t.Fatalf("own read = %+v, %v", got, err)
 	}
-	if got, err := repo.ListOwn(ctx, owner, 10, ""); err != nil || len(got) != 1 || got[0].ID != access.ID {
+	if got, err := repo.ListOwn(ctx, owner, 10, ""); err != nil || len(got) != 1 || got[0].ID != access.ID || len(got[0].LineIDs) != 1 || got[0].LineIDs[0] != line {
 		t.Fatalf("own list = %+v, %v", got, err)
 	}
 	if _, err := repo.RevealOwn(ctx, other, access.ID); !errors.Is(err, ErrNotFound) {
@@ -122,7 +126,7 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 	}
 	disabled := false
 	updated, err := repo.UpdateOwn(ctx, owner, access.ID, AccessPatch{Enabled: &disabled}, "disable-proxy")
-	if err != nil || updated.Enabled || updated.ApplyStatus != "pending" {
+	if err != nil || updated.Enabled || updated.ApplyStatus != "pending" || len(updated.LineIDs) != 1 || updated.LineIDs[0] != line {
 		t.Fatalf("disabled access = %+v, %v", updated, err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE users SET status='disabled' WHERE id=$1`, owner); err != nil {

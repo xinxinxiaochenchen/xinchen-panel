@@ -40,7 +40,7 @@ func entitlementError(err error) error {
 const planSelect = `SELECT p.id::text,p.name,p.billing_mode,p.period_months,p.quota_bytes,
 p.default_multiplier_milli,p.status,p.created_at,
 l.max_forward_rules_per_node,l.max_subscriptions,l.max_routing_rules,
-l.allow_custom_lines,l.max_custom_lines,l.max_hops,
+l.allow_custom_lines,l.max_custom_lines,l.max_hops,l.max_proxy_lines,
 ARRAY(SELECT g.resource_group_id::text FROM plan_resource_group_grants g
   WHERE g.plan_id=p.id AND g.allowed ORDER BY g.resource_group_id::text),
 ARRAY(SELECT g.line_id::text FROM plan_line_grants g
@@ -57,7 +57,7 @@ func loadPlan(ctx context.Context, q planQueryer, planID string) (Plan, error) {
 		&plan.PeriodMonths, &plan.QuotaBytes, &plan.DefaultMultiplierMilli, &plan.Status,
 		&plan.CreatedAt, &plan.Limits.MaxForwardRulesPerNode, &plan.Limits.MaxSubscriptions,
 		&plan.Limits.MaxRoutingRules, &plan.Limits.AllowCustomLines, &plan.Limits.MaxCustomLines,
-		&plan.Limits.MaxHops, &plan.ResourceGroupIDs, &plan.LineIDs)
+		&plan.Limits.MaxHops, &plan.Limits.MaxProxyLines, &plan.ResourceGroupIDs, &plan.LineIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Plan{}, ErrNotFound
 	}
@@ -86,10 +86,13 @@ VALUES ($1,$2,$3,$4)`, planID, input.Name, input.QuotaBytes, input.DefaultMultip
 		return Plan{}, fmt.Errorf("insert plan: %w", entitlementError(err))
 	}
 	limits := input.Limits
+	if limits.MaxProxyLines == 0 {
+		limits.MaxProxyLines = 1
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO plan_limits(plan_id,max_forward_rules_per_node,
-max_subscriptions,max_routing_rules,allow_custom_lines,max_custom_lines,max_hops)
-VALUES ($1,$2,$3,$4,$5,$6,$7)`, planID, limits.MaxForwardRulesPerNode, limits.MaxSubscriptions,
-		limits.MaxRoutingRules, limits.AllowCustomLines, limits.MaxCustomLines, limits.MaxHops); err != nil {
+max_subscriptions,max_routing_rules,allow_custom_lines,max_custom_lines,max_hops,max_proxy_lines)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, planID, limits.MaxForwardRulesPerNode, limits.MaxSubscriptions,
+		limits.MaxRoutingRules, limits.AllowCustomLines, limits.MaxCustomLines, limits.MaxHops, limits.MaxProxyLines); err != nil {
 		return Plan{}, fmt.Errorf("insert plan limits: %w", entitlementError(err))
 	}
 	for _, groupID := range input.ResourceGroupIDs {

@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -235,14 +236,14 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 		}
 		listener.mu.Lock()
 		listener.revision = snapshot.Revision
-		if !maps.Equal(listener.accesses, accesses) {
+		if !maps.EqualFunc(listener.accesses, accesses, sameProxyAccess) {
 			listener.accesses = accesses
 			for session, previous := range listener.sessions {
 				if previous.ID == "" {
 					continue
 				}
 				current, allowed := accesses[previous.CredentialHash]
-				if !allowed || current != previous {
+				if !allowed || !sameProxyAccess(current, previous) {
 					session.close()
 				}
 			}
@@ -281,6 +282,13 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 	}
 	r.revision = snapshot.Revision
 	return nil
+}
+
+func sameProxyAccess(left, right ProxyAccess) bool {
+	return left.ID == right.ID && left.UserID == right.UserID && left.LineID == right.LineID &&
+		left.RelayGeneration == right.RelayGeneration && left.IngressPort == right.IngressPort &&
+		left.CredentialHash == right.CredentialHash && left.ExpiresAt.Equal(right.ExpiresAt) &&
+		slices.Equal(left.Candidates, right.Candidates)
 }
 
 func (r *Runtime) Revision() uint64 {

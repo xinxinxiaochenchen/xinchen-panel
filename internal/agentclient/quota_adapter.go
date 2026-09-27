@@ -16,7 +16,7 @@ func NewRuntimeQuotaService(exchange *QuotaExchange) agentruntime.QuotaService {
 func (s runtimeQuotaService) Open(ctx context.Context, req agentruntime.QuotaOpenRequest) (agentruntime.QuotaLease, error) {
 	grant, err := s.exchange.Open(ctx, agentproto.ConnectionOpen{
 		RequestID: req.RequestID, ConnectionID: req.ConnectionID, ResourceKind: req.ResourceKind,
-		ResourceID: req.ResourceID, Revision: req.Revision, RequestedBytes: req.RequestedBytes,
+		ResourceID: req.ResourceID, LineID: req.LineID, Revision: req.Revision, RequestedBytes: req.RequestedBytes,
 	})
 	if err != nil {
 		return agentruntime.QuotaLease{}, err

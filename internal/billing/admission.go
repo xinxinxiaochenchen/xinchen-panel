@@ -17,6 +17,7 @@ type OpenRequest struct {
 	RequestID      string
 	ResourceKind   string
 	ResourceID     string
+	LineID         string
 	Revision       int64
 	RequestedBytes int64
 }
@@ -37,7 +38,11 @@ type AdmissionGrant struct {
 
 func validateOpenRequest(req OpenRequest) error {
 	if !uuidPattern.MatchString(req.ConnectionID) || !uuidPattern.MatchString(req.RequestID) || !uuidPattern.MatchString(req.ResourceID) ||
+		(req.LineID != "" && !uuidPattern.MatchString(req.LineID)) ||
 		(req.ResourceKind != "forward" && req.ResourceKind != "proxy") || req.Revision < 1 || req.RequestedBytes < 1 || req.RequestedBytes > MaxLeaseBytes {
+		return ErrNotFound
+	}
+	if req.ResourceKind != "proxy" && req.LineID != "" {
 		return ErrNotFound
 	}
 	return nil
@@ -78,6 +83,9 @@ func (r *PostgresRepository) OpenConnection(ctx context.Context, nodeID string, 
 		return AdmissionGrant{}, err
 	} else if found {
 		return grant, tx.Commit(ctx)
+	}
+	if req.ResourceKind == "proxy" && req.LineID != "" {
+		lineID = req.LineID
 	}
 	if err := requestIDAvailable(ctx, tx, agentID, req.RequestID); err != nil {
 		return AdmissionGrant{}, err
@@ -122,19 +130,20 @@ func agentForNode(ctx context.Context, tx pgx.Tx, nodeID string) (string, error)
 
 func existingAdmission(ctx context.Context, tx pgx.Tx, agentID string, req OpenRequest) (AdmissionGrant, bool, error) {
 	var grant AdmissionGrant
-	var kind, resourceID string
+	var kind, resourceID, frozenLine string
 	var revision int64
 	var leaseID string
-	err := tx.QueryRow(ctx, `SELECT s.resource_kind,s.resource_id::text,s.config_revision,s.multiplier_milli,p.ends_at,s.first_lease_id::text
+	err := tx.QueryRow(ctx, `SELECT s.resource_kind,s.resource_id::text,s.config_revision,s.multiplier_milli,p.ends_at,s.first_lease_id::text,COALESCE(s.line_id::text,'')
 FROM usage_sessions s JOIN billing_periods p ON p.id=s.billing_period_id
-WHERE s.id=$1 AND s.agent_id=$2`, req.ConnectionID, agentID).Scan(&kind, &resourceID, &revision, &grant.MultiplierMilli, &grant.PeriodEndsAt, &leaseID)
+WHERE s.id=$1 AND s.agent_id=$2`, req.ConnectionID, agentID).Scan(&kind, &resourceID, &revision, &grant.MultiplierMilli, &grant.PeriodEndsAt, &leaseID, &frozenLine)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return AdmissionGrant{}, false, nil
 	}
 	if err != nil {
 		return AdmissionGrant{}, false, databaseError(err)
 	}
-	if kind != req.ResourceKind || !sameID(resourceID, req.ResourceID) || revision != req.Revision {
+	if kind != req.ResourceKind || !sameID(resourceID, req.ResourceID) || revision != req.Revision ||
+		(req.ResourceKind == "proxy" && req.LineID != "" && !sameID(frozenLine, req.LineID)) {
 		return AdmissionGrant{}, false, ErrConflict
 	}
 	lease, err := scanLease(tx.QueryRow(ctx, `SELECT `+leaseColumns+` FROM quota_leases WHERE id=$1 AND agent_id=$2`, leaseID, agentID))
@@ -260,11 +269,16 @@ WHERE a.id=$1 AND n.id=$2 AND n.enabled AND g.enabled FOR SHARE OF a,n,g`, agent
 	} else {
 		err = tx.QueryRow(ctx, `SELECT COALESCE(l.multiplier_milli,n.multiplier_milli,(p.snapshot_json->>'default_multiplier_milli')::bigint),
 EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE($4::jsonb->'proxy_config','[]'::jsonb)) e
-WHERE e->>'id'=a.id::text AND e->>'user_id'=a.user_id::text AND e->>'line_id'=a.line_id::text
+WHERE e->>'id'=a.id::text AND e->>'user_id'=a.user_id::text
 AND e->>'credential_hash'=a.credential_hash AND (e->>'ingress_port')::int=n.proxy_port
 AND (e->>'expires_at')::timestamptz>=$5
-AND (topology.hop_count=1 AND COALESCE((e->>'relay_generation')::bigint,0)=0
-     OR topology.hop_count>1 AND (e->>'relay_generation')::bigint=l.relay_generation))
+AND (COALESCE(jsonb_array_length(e->'candidates'),0)=0
+     AND e->>'line_id'=l.id::text AND (topology.hop_count=1 AND COALESCE((e->>'relay_generation')::bigint,0)=0
+     OR topology.hop_count>1 AND (e->>'relay_generation')::bigint=l.relay_generation)
+     OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(e->'candidates','[]'::jsonb)) candidate
+       WHERE candidate->>'line_id'=l.id::text
+       AND (topology.hop_count=1 AND COALESCE((candidate->>'relay_generation')::bigint,0)=0
+         OR topology.hop_count>1 AND (candidate->>'relay_generation')::bigint=l.relay_generation))))
 AND COALESCE(p.snapshot_json->'resource_group_ids','[]'::jsonb) ? n.group_id::text
 AND (l.owner_user_id IS NULL AND COALESCE(p.snapshot_json->'line_ids','[]'::jsonb) ? l.id::text
      OR l.owner_user_id=a.user_id AND COALESCE((p.snapshot_json->'limits'->>'allow_custom_lines')::boolean,false))
@@ -301,13 +315,15 @@ WHERE step.line_id=l.id AND (
                                     WHERE route->>'line_id'=l.id::text
                                       AND route->>'generation'=l.relay_generation::text
                                       AND route->>'role'=step.role)))))
-FROM proxy_accesses a JOIN lines l ON l.id=a.line_id
+FROM proxy_accesses a JOIN lines l ON l.id=$6::uuid
+LEFT JOIN proxy_access_lines pal ON pal.proxy_access_id=a.id AND pal.line_id=l.id
 JOIN line_hops h ON h.line_id=l.id AND h.position=0
 JOIN nodes n ON n.id=h.node_id
 JOIN agents ag ON ag.node_id=n.id
 JOIN LATERAL (SELECT count(*) AS hop_count FROM line_hops lh WHERE lh.line_id=l.id) topology ON true
 JOIN billing_periods p ON p.id=$3
-WHERE a.id=$1 AND h.node_id=$2 AND a.user_id=p.user_id AND a.line_id=$6::uuid
+WHERE a.id=$1 AND h.node_id=$2 AND a.user_id=p.user_id
+AND (a.line_id=l.id OR pal.line_id IS NOT NULL)
 AND a.enabled AND l.enabled AND ag.status='online' AND ag.last_seen_at>clock_timestamp()-interval '45 seconds'
 AND ag.applied_revision=$7 AND 'proxy'=ANY(ag.capabilities) FOR SHARE OF a,l,ag`, req.ResourceID, nodeID, periodID, payload, now, lineID, req.Revision).Scan(&multiplier, &authorized)
 	}
@@ -413,6 +429,9 @@ func (r *PostgresRepository) RenewConnectionLease(ctx context.Context, nodeID st
 	}
 	if kind == "proxy" && frozenLine == nil {
 		return AdmissionGrant{}, ErrNotFound
+	}
+	if kind == "proxy" {
+		currentLine = *frozenLine
 	}
 	if (frozenLine == nil && currentLine != "") || (frozenLine != nil && !sameID(currentLine, *frozenLine)) {
 		return AdmissionGrant{}, ErrNotFound

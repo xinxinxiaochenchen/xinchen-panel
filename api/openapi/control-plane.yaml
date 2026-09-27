@@ -1083,7 +1083,7 @@ paths:
     post:
       operationId: createProxyAccess
       summary: Create a Trojan proxy access on one authorized line
-      description: Requires an active membership and an enabled, authorized proxy line. The generated credential is shown only in this response and the owner's dedicated credential endpoint. The current pure IP preview does not expose this route.
+      description: Requires an active membership and an enabled, authorized proxy line. The line_ids and line_options fields are accepted for candidate-pool preparation, but activation currently requires exactly one line. The generated credential is shown only in this response and the owner's dedicated credential endpoint. The current pure IP preview does not expose this route.
       security: [{browserSession: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody:
@@ -2007,11 +2007,24 @@ components:
     NewProxyAccess:
       type: object
       additionalProperties: false
-      required: [name, line_id]
+      required: [name]
+      anyOf:
+        - required: [line_id]
+        - required: [line_ids]
       properties:
         name: {type: string, minLength: 1, maxLength: 100}
-        line_id: {type: string, format: uuid}
+        line_id: {type: string, format: uuid, description: Legacy single-line alias; when line_ids is present it must equal the first entry.}
+        line_ids: {type: array, minItems: 1, maxItems: 32, uniqueItems: true, items: {type: string, format: uuid}}
+        line_options: {type: array, minItems: 1, maxItems: 32, items: {$ref: '#/components/schemas/ProxyLineOption'}}
         enabled: {type: boolean, default: true}
+    ProxyLineOption:
+      type: object
+      additionalProperties: false
+      required: [line_id, priority, weight]
+      properties:
+        line_id: {type: string, format: uuid}
+        priority: {type: integer, minimum: 0, maximum: 1000}
+        weight: {type: integer, minimum: 1, maximum: 100}
     ProxyAccessPatch:
       type: object
       additionalProperties: false
@@ -2026,6 +2039,8 @@ components:
         id: {type: string, format: uuid}
         user_id: {type: string, format: uuid}
         line_id: {type: string, format: uuid}
+        line_ids: {type: array, items: {type: string, format: uuid}}
+        line_options: {type: array, items: {$ref: '#/components/schemas/ProxyLineOption'}}
         name: {type: string}
         enabled: {type: boolean}
         apply_status: {type: string, enum: [pending, active, apply_failed, disabled]}
@@ -2134,11 +2149,12 @@ components:
         allow_custom_lines: {type: boolean, default: false}
         max_custom_lines: {type: integer, minimum: 0, default: 0}
         max_hops: {type: integer, minimum: 1, maximum: 8, default: 1}
+        max_proxy_lines: {type: integer, minimum: 1, maximum: 32, default: 1}
     PlanLimits:
       allOf:
         - {$ref: '#/components/schemas/NewPlanLimits'}
         - type: object
-          required: [max_forward_rules_per_node, max_subscriptions, max_routing_rules, allow_custom_lines, max_custom_lines, max_hops]
+          required: [max_forward_rules_per_node, max_subscriptions, max_routing_rules, allow_custom_lines, max_custom_lines, max_hops, max_proxy_lines]
     NewPlan:
       type: object
       required: [name, quota_bytes]

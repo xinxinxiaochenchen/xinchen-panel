@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func TestTrojanMeterStartsAfterHandshakeAndRejectsBeforeDial(t *testing.T) {
+func TestTrojanMeterAdmitsOnlyAfterSuccessfulCandidateDial(t *testing.T) {
 	echo, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -53,8 +53,8 @@ func TestTrojanMeterStartsAfterHandshakeAndRejectsBeforeDial(t *testing.T) {
 	_, _ = denied.Write(append(trojanRequest(proxy.CredentialHash, "example.org", 443, 1), []byte("abc")...))
 	_, _ = denied.Read(make([]byte, 1))
 	denied.Close()
-	if dials.Load() != 0 {
-		t.Fatal("Trojan dialed target before quota admission")
+	if dials.Load() != 1 {
+		t.Fatalf("Trojan did not probe the candidate before quota admission: dials=%d", dials.Load())
 	}
 	meter.mu.Lock()
 	meter.deny = false
@@ -76,7 +76,7 @@ func TestTrojanMeterStartsAfterHandshakeAndRejectsBeforeDial(t *testing.T) {
 	meter.mu.Lock()
 	last, kind, resourceID, revision := meter.last, meter.openedKind, meter.openedID, meter.openedRev
 	meter.mu.Unlock()
-	if last == nil || kind != "proxy" || resourceID != proxy.ID || revision != 1 || dials.Load() != 1 {
+	if last == nil || kind != "proxy" || resourceID != proxy.ID || revision != 1 || dials.Load() != 2 {
 		t.Fatalf("Trojan meter kind=%s resource=%s revision=%d dials=%d", kind, resourceID, revision, dials.Load())
 	}
 	state := last.budget.Snapshot()

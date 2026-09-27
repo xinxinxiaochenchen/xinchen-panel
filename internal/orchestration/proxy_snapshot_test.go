@@ -128,3 +128,103 @@ func TestForwardCompilerReservesProxyTCPPort(t *testing.T) {
 		t.Fatalf("proxy port conflict compiled: %+v, %v", compiled, err)
 	}
 }
+
+func TestProxySnapshotCompilesAuthorizedLineCandidates(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	base := ProxyFacts{ID: "pool", OwnerID: "user", LineID: "line-a", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"line-a", "line-b"}, LineEnabled: true,
+		HopCount: 1, HopGroupIDs: []string{"group"}, ExpiresAt: time.Now().Add(time.Hour),
+		Candidates: []ProxyCandidateFacts{
+			{LineID: "line-a", NodeID: "node", GroupID: "group", LineEnabled: true, HopCount: 1, HopGroupIDs: []string{"group"}, Priority: 10, Weight: 3},
+			{LineID: "line-b", NodeID: "node", GroupID: "group", LineEnabled: true, HopCount: 1, HopGroupIDs: []string{"group"}, Priority: 20, Weight: 1},
+		}}
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{base}, nil, 1)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 {
+		t.Fatalf("compiled pool = %+v, %v", compiled, err)
+	}
+	access := compiled.Snapshot.ProxyConfig[0]
+	if len(access.Candidates) != 2 || access.Candidates[0].LineID != "line-a" || access.Candidates[1].LineID != "line-b" {
+		t.Fatalf("candidate pool = %+v", access.Candidates)
+	}
+}
+
+func TestProxySnapshotExcludesRevokedCandidateWithoutLosingPrimary(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	fact := ProxyFacts{ID: "pool", OwnerID: "user", LineID: "line-a", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"line-a"}, LineEnabled: true,
+		HopCount: 1, HopGroupIDs: []string{"group"}, ExpiresAt: time.Now().Add(time.Hour),
+		Candidates: []ProxyCandidateFacts{
+			{LineID: "line-a", NodeID: "node", GroupID: "group", LineEnabled: true, HopCount: 1, HopGroupIDs: []string{"group"}, Weight: 1},
+			{LineID: "line-b", NodeID: "node", GroupID: "group", LineEnabled: true, HopCount: 1, HopGroupIDs: []string{"group"}, Weight: 1},
+		}}
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{fact}, nil, 1)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 || len(compiled.Snapshot.ProxyConfig[0].Candidates) != 1 || compiled.Snapshot.ProxyConfig[0].Candidates[0].LineID != "line-a" {
+		t.Fatalf("revoked fallback was compiled: %+v, %v", compiled, err)
+	}
+	fact.MemberLineIDs = []string{"line-b"}
+	compiled, err = CompileProxySnapshot(node, []ProxyFacts{fact}, nil, 2)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 || len(compiled.Snapshot.ProxyConfig[0].Candidates) != 1 || compiled.Snapshot.ProxyConfig[0].Candidates[0].LineID != "line-b" {
+		t.Fatalf("authorized fallback was not retained: %+v, %v", compiled, err)
+	}
+}
+
+func TestProxySnapshotExcludesUnappliedRelayCandidate(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	fact := ProxyFacts{ID: "pool", OwnerID: "user", LineID: "direct", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"direct", "relay"}, LineEnabled: true,
+		HopCount: 1, HopGroupIDs: []string{"group"}, ExpiresAt: time.Now().Add(time.Hour),
+		Candidates: []ProxyCandidateFacts{
+			{LineID: "direct", NodeID: "node", GroupID: "group", LineEnabled: true, HopCount: 1, HopGroupIDs: []string{"group"}, Weight: 1},
+			{LineID: "relay", NodeID: "node", GroupID: "group", LineEnabled: true, RelayGeneration: 7, RelayReady: true,
+				HopCount: 2, MaxHops: 2, HopGroupIDs: []string{"group", "group"}, Weight: 1},
+		}}
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{fact}, nil, 1)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 || len(compiled.Snapshot.ProxyConfig[0].Candidates) != 1 {
+		t.Fatalf("candidate without ingress relay was compiled: %+v, %v", compiled, err)
+	}
+}
+
+func TestProxySnapshotKeepsAuthorizedFallbackWhenDefaultLineIsDisabled(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	fact := ProxyFacts{ID: "pool", OwnerID: "user", LineID: "default", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"default", "fallback"}, LineEnabled: false,
+		HopCount: 1, HopGroupIDs: []string{"group"}, ExpiresAt: time.Now().Add(time.Hour),
+		Candidates: []ProxyCandidateFacts{
+			{LineID: "default", NodeID: "node", GroupID: "group", LineEnabled: false, HopCount: 1, HopGroupIDs: []string{"group"}, Weight: 1},
+			{LineID: "fallback", NodeID: "node", GroupID: "group", LineEnabled: true, HopCount: 1, HopGroupIDs: []string{"group"}, Weight: 1},
+		}}
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{fact}, nil, 1)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 {
+		t.Fatalf("fallback proxy missing: %+v, %v", compiled, err)
+	}
+	access := compiled.Snapshot.ProxyConfig[0]
+	if access.LineID != "default" || len(access.Candidates) != 1 || access.Candidates[0].LineID != "fallback" {
+		t.Fatalf("unavailable default remained executable: %+v", access)
+	}
+}
+
+func TestProxySnapshotKeepsDirectFallbackWhenDefaultRelayIsUnapplied(t *testing.T) {
+	node := NodeFacts{ID: "node", GroupID: "group", Enabled: true, GroupEnabled: true, ProxyCapable: true, ProxyPort: 443}
+	fact := ProxyFacts{ID: "pool", OwnerID: "user", LineID: "default-relay", NodeID: "node", GroupID: "group",
+		CredentialHash: strings.Repeat("a", 56), Enabled: true, OwnerActive: true, MembershipActive: true,
+		MemberGroupIDs: []string{"group"}, MemberLineIDs: []string{"default-relay", "direct"}, LineEnabled: true,
+		RelayGeneration: 7, RelayReady: false, HopCount: 2, MaxHops: 2, HopGroupIDs: []string{"group", "group"},
+		ExpiresAt: time.Now().Add(time.Hour), Candidates: []ProxyCandidateFacts{
+			{LineID: "default-relay", NodeID: "node", GroupID: "group", LineEnabled: true, RelayGeneration: 7,
+				RelayReady: false, HopCount: 2, MaxHops: 2, HopGroupIDs: []string{"group", "group"}, Weight: 1},
+			{LineID: "direct", NodeID: "node", GroupID: "group", LineEnabled: true, HopCount: 1,
+				HopGroupIDs: []string{"group"}, Weight: 1},
+		}}
+	compiled, err := CompileProxySnapshot(node, []ProxyFacts{fact}, nil, 1)
+	if err != nil || len(compiled.Snapshot.ProxyConfig) != 1 {
+		t.Fatalf("direct fallback missing: %+v, %v", compiled, err)
+	}
+	access := compiled.Snapshot.ProxyConfig[0]
+	if access.RelayGeneration != 0 || len(access.Candidates) != 1 || access.Candidates[0].LineID != "direct" {
+		t.Fatalf("unapplied relay remained executable: %+v", access)
+	}
+}

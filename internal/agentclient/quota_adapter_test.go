@@ -12,7 +12,7 @@ import (
 func TestQuotaAdapterMapsRuntimeOpenToProtocolGrant(t *testing.T) {
 	request := agentruntime.QuotaOpenRequest{
 		RequestID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ConnectionID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-		ResourceKind: "forward", ResourceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", Revision: 3, RequestedBytes: 4096,
+		ResourceKind: "forward", ResourceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", LineID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", Revision: 3, RequestedBytes: 4096,
 	}
 	issued := time.Now().UTC().Truncate(time.Microsecond)
 	sent := make(chan agentproto.ConnectionOpen, 1)
@@ -32,7 +32,7 @@ func TestQuotaAdapterMapsRuntimeOpenToProtocolGrant(t *testing.T) {
 		errors <- err
 	}()
 	wire := <-sent
-	if wire.RequestID != request.RequestID || wire.ConnectionID != request.ConnectionID || wire.ResourceKind != request.ResourceKind || wire.ResourceID != request.ResourceID || wire.Revision != request.Revision || wire.RequestedBytes != request.RequestedBytes {
+	if wire.RequestID != request.RequestID || wire.ConnectionID != request.ConnectionID || wire.ResourceKind != request.ResourceKind || wire.ResourceID != request.ResourceID || wire.LineID != request.LineID || wire.Revision != request.Revision || wire.RequestedBytes != request.RequestedBytes {
 		t.Fatalf("wire open=%+v", wire)
 	}
 	grant := agentproto.QuotaGrant{RequestID: request.RequestID, ConnectionID: request.ConnectionID,

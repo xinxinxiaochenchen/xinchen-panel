@@ -7,12 +7,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math/big"
 	"net"
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -185,5 +187,147 @@ func TestTrojanRequiresTLSAndMembershipExpiryClosesSession(t *testing.T) {
 	}
 	if _, err := conn.Read(make([]byte, 1)); err == nil {
 		t.Fatal("expired membership retained session")
+	}
+}
+
+type retryProxyMeter struct {
+	relayCountingMeter
+	mu     sync.Mutex
+	lineID string
+}
+
+func (m *retryProxyMeter) OpenLine(_ context.Context, _, _, lineID string, _ uint64) (MeteredConnection, error) {
+	m.opens.Add(1)
+	m.mu.Lock()
+	m.lineID = lineID
+	m.mu.Unlock()
+	return &m.relayCountingMeter, nil
+}
+
+func TestTrojanRetriesHealthyProxyCandidatesBeforeMetering(t *testing.T) {
+	serverTLS, clientTLS := proxyTestTLS(t)
+	var attempts atomic.Int64
+	failedPeer := make(chan net.Conn, 1)
+	meter := &retryProxyMeter{}
+	runtime := New(Options{BindHost: "127.0.0.1", ProxyTLSConfig: serverTLS, Meter: meter,
+		Resolve: func(context.Context, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+		},
+		DialTCP: func(context.Context, string) (net.Conn, error) {
+			if attempts.Add(1) == 1 {
+				client, peer := net.Pipe()
+				failedPeer <- peer
+				return client, errors.New("first candidate is unavailable")
+			}
+			server, client := net.Pipe()
+			go func() { _, _ = io.Copy(server, server); _ = server.Close() }()
+			return client, nil
+		}})
+	defer runtime.Close()
+	proxy := testProxyConfig()
+	proxy.IngressPort = unusedTCPPort(t)
+	proxy.Candidates = []ProxyLineCandidate{
+		{LineID: proxy.LineID, Priority: 1, Weight: 1},
+		{LineID: "fallback-line", Priority: 2, Weight: 1},
+	}
+	if err := runtime.Apply(context.Background(), Snapshot{Revision: 1, ProxyConfig: []ProxyAccess{proxy}}); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := tls.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(proxy.IngressPort)), clientTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Write(append(trojanRequest(proxy.CredentialHash, "example.org", 443, 1), []byte("ok")...)); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, 2)
+	if _, err := io.ReadFull(conn, response); err != nil || string(response) != "ok" {
+		t.Fatalf("candidate retry response=%q err=%v", response, err)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("dial attempts=%d, want 2", attempts.Load())
+	}
+	peer := <-failedPeer
+	defer peer.Close()
+	_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := peer.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("failed candidate connection remained open: %v", err)
+	}
+	if meter.opens.Load() != 1 {
+		t.Fatalf("meter opens=%d, want one post-dial admission", meter.opens.Load())
+	}
+	meter.mu.Lock()
+	lineID := meter.lineID
+	meter.mu.Unlock()
+	if lineID != "fallback-line" {
+		t.Fatalf("metered line=%q, want fallback-line", lineID)
+	}
+}
+
+func TestTrojanRejectsCandidatePoolWithoutLineAwareMeter(t *testing.T) {
+	serverTLS, clientTLS := proxyTestTLS(t)
+	meter := &relayCountingMeter{}
+	var dials atomic.Int64
+	runtime := New(Options{BindHost: "127.0.0.1", ProxyTLSConfig: serverTLS, RequireMetering: true, Meter: meter,
+		DialTCP: func(context.Context, string) (net.Conn, error) {
+			dials.Add(1)
+			return nil, errors.New("unexpected dial")
+		}})
+	defer runtime.Close()
+	proxy := testProxyConfig()
+	proxy.IngressPort = unusedTCPPort(t)
+	proxy.Candidates = []ProxyLineCandidate{{LineID: proxy.LineID, Priority: 1, Weight: 1}, {LineID: "fallback-line", Priority: 2, Weight: 1}}
+	if err := runtime.Apply(context.Background(), Snapshot{Revision: 1, ProxyConfig: []ProxyAccess{proxy}}); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := tls.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(proxy.IngressPort)), clientTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
+	if _, err := conn.Write(trojanRequest(proxy.CredentialHash, "8.8.8.8", 443, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("candidate pool accepted without line-aware meter")
+	}
+	if dials.Load() != 0 || meter.opens.Load() != 0 {
+		t.Fatalf("unattributable candidate traffic attempted: dials=%d opens=%d", dials.Load(), meter.opens.Load())
+	}
+}
+
+func TestTrojanRejectsSingleFallbackWithoutLineAwareMeter(t *testing.T) {
+	serverTLS, clientTLS := proxyTestTLS(t)
+	meter := &relayCountingMeter{}
+	var dials atomic.Int64
+	runtime := New(Options{BindHost: "127.0.0.1", ProxyTLSConfig: serverTLS, RequireMetering: true, Meter: meter,
+		DialTCP: func(context.Context, string) (net.Conn, error) {
+			dials.Add(1)
+			return nil, errors.New("unexpected dial")
+		}})
+	defer runtime.Close()
+	proxy := testProxyConfig()
+	proxy.IngressPort = unusedTCPPort(t)
+	proxy.Candidates = []ProxyLineCandidate{{LineID: "fallback-line", Priority: 1, Weight: 1}}
+	if err := runtime.Apply(context.Background(), Snapshot{Revision: 1, ProxyConfig: []ProxyAccess{proxy}}); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := tls.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(proxy.IngressPort)), clientTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
+	if _, err := conn.Write(trojanRequest(proxy.CredentialHash, "8.8.8.8", 443, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("fallback accepted without line-aware meter")
+	}
+	if dials.Load() != 0 || meter.opens.Load() != 0 {
+		t.Fatalf("unattributable fallback attempted: dials=%d opens=%d", dials.Load(), meter.opens.Load())
 	}
 }

@@ -25,7 +25,7 @@ func (s *AgentStreamHandler) handleQuotaMessage(ctx context.Context, connection 
 			return err
 		}
 		grant, err := s.quota.OpenConnection(queryCtx, nodeID, billing.OpenRequest{ConnectionID: value.ConnectionID, RequestID: value.RequestID,
-			ResourceKind: value.ResourceKind, ResourceID: value.ResourceID, Revision: value.Revision, RequestedBytes: value.RequestedBytes})
+			ResourceKind: value.ResourceKind, ResourceID: value.ResourceID, LineID: value.LineID, Revision: value.Revision, RequestedBytes: value.RequestedBytes})
 		return s.respondQuotaGrant(ctx, connection, nodeID, value.RequestID, value.ConnectionID, grant, err)
 	case agentproto.TypeQuotaRequest:
 		value, err := agentproto.DecodeQuotaRequest(envelope.Payload)

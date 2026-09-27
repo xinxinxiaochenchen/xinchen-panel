@@ -48,6 +48,20 @@ func TestNormalizePlanFreezesSortedExplicitGrants(t *testing.T) {
 	}
 }
 
+func TestNormalizePlanDefaultsAndBoundsProxyLineLimit(t *testing.T) {
+	plan, err := NormalizePlan(NewPlan{Name: "Single"})
+	if err != nil || plan.Limits.MaxProxyLines != 1 {
+		t.Fatalf("default proxy line limit = %+v, %v", plan.Limits, err)
+	}
+	plan, err = NormalizePlan(NewPlan{Name: "Pool", Limits: PlanLimits{MaxProxyLines: 8}})
+	if err != nil || plan.Limits.MaxProxyLines != 8 {
+		t.Fatalf("custom proxy line limit = %+v, %v", plan.Limits, err)
+	}
+	if _, err := NormalizePlan(NewPlan{Name: "Bad", Limits: PlanLimits{MaxProxyLines: 33}}); err == nil {
+		t.Fatal("oversized proxy line limit accepted")
+	}
+}
+
 func TestNormalizeMembershipRequiresCurrentBoundedTerm(t *testing.T) {
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
 	input := NewMembership{UserID: testUserID, PlanID: testPlanID,

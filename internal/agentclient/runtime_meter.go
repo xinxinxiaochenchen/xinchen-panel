@@ -36,6 +36,10 @@ func NewRuntimeQuotaMeter(quota agentruntime.QuotaService, outbox *FileUsageOutb
 }
 
 func (m *RuntimeQuotaMeter) Open(ctx context.Context, resourceKind, resourceID string, revision uint64) (agentruntime.MeteredConnection, error) {
+	return m.OpenLine(ctx, resourceKind, resourceID, "", revision)
+}
+
+func (m *RuntimeQuotaMeter) OpenLine(ctx context.Context, resourceKind, resourceID, lineID string, revision uint64) (agentruntime.MeteredConnection, error) {
 	if m == nil || m.quota == nil || m.outbox == nil || m.leases == nil {
 		return nil, errors.New("runtime quota meter is not configured")
 	}
@@ -63,7 +67,7 @@ func (m *RuntimeQuotaMeter) Open(ctx context.Context, resourceKind, resourceID s
 		return nil, err
 	}
 	grant, err := m.quota.Open(ctx, agentruntime.QuotaOpenRequest{RequestID: requestID, ConnectionID: connectionID,
-		ResourceKind: resourceKind, ResourceID: resourceID, Revision: int64(revision), RequestedBytes: runtimeQuotaRequestBytes})
+		ResourceKind: resourceKind, ResourceID: resourceID, LineID: lineID, Revision: int64(revision), RequestedBytes: runtimeQuotaRequestBytes})
 	if err != nil {
 		return nil, err
 	}

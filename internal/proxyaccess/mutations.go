@@ -131,11 +131,13 @@ func (r *PostgresRepository) UpdateOwn(ctx context.Context, ownerID, accessID st
 	if patch.Enabled != nil {
 		enabled = *patch.Enabled
 	}
-	after, err := scanAccess(tx.QueryRow(ctx, `UPDATE proxy_accesses SET name=$3,enabled=$4,
-apply_status='pending',updated_at=clock_timestamp() WHERE id=$1 AND user_id=$2 RETURNING
-id::text,user_id::text,line_id::text,name,enabled,apply_status,created_at,updated_at`, accessID, ownerID, name, enabled))
-	if err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE proxy_accesses SET name=$3,enabled=$4,
+apply_status='pending',updated_at=clock_timestamp() WHERE id=$1 AND user_id=$2`, accessID, ownerID, name, enabled); err != nil {
 		return Access{}, fmt.Errorf("update proxy access: %w", proxyDatabaseError(err))
+	}
+	after, err := scanAccess(tx.QueryRow(ctx, accessSelect+` WHERE id=$1 AND user_id=$2`, accessID, ownerID))
+	if err != nil {
+		return Access{}, fmt.Errorf("read updated proxy access: %w", proxyDatabaseError(err))
 	}
 	if err := recordAccessChange(ctx, tx, after, ownerID, "update", requestID); err != nil {
 		return Access{}, err

@@ -24,7 +24,7 @@ func TestQuotaPayloadRoundTrip(t *testing.T) {
 		value    any
 		decode   func([]byte) (any, error)
 	}{
-		{"open", TypeConnectionOpen, ConnectionOpen{quotaRequestID, usageConnection, "proxy", quotaResourceID, 3, 1024}, func(raw []byte) (any, error) { return DecodeConnectionOpen(raw) }},
+		{"open", TypeConnectionOpen, ConnectionOpen{RequestID: quotaRequestID, ConnectionID: usageConnection, ResourceKind: "proxy", ResourceID: quotaResourceID, Revision: 3, RequestedBytes: 1024}, func(raw []byte) (any, error) { return DecodeConnectionOpen(raw) }},
 		{"request", TypeQuotaRequest, QuotaRequest{quotaRequestID, usageConnection, 3, 1024}, func(raw []byte) (any, error) { return DecodeQuotaRequest(raw) }},
 		{"grant", TypeQuotaGrant, QuotaGrant{quotaRequestID, usageConnection, quotaPeriodID, 1500, usageLease, 1024, 10, "active", issued, expires, periodEnds}, func(raw []byte) (any, error) { return DecodeQuotaGrant(raw) }},
 		{"denied", TypeQuotaDenied, QuotaDenied{quotaRequestID, usageConnection, "QUOTA_EXHAUSTED"}, func(raw []byte) (any, error) { return DecodeQuotaDenied(raw) }},
@@ -63,7 +63,7 @@ func TestQuotaPayloadRejectsMissingUnknownNullDuplicateAndCaseAliases(t *testing
 		decode func([]byte) error
 		field  string
 	}{
-		{"open", ConnectionOpen{quotaRequestID, usageConnection, "forward", quotaResourceID, 1, 1}, func(b []byte) error { _, e := DecodeConnectionOpen(b); return e }, "revision"},
+		{"open", ConnectionOpen{RequestID: quotaRequestID, ConnectionID: usageConnection, ResourceKind: "forward", ResourceID: quotaResourceID, Revision: 1, RequestedBytes: 1}, func(b []byte) error { _, e := DecodeConnectionOpen(b); return e }, "revision"},
 		{"request", QuotaRequest{quotaRequestID, usageConnection, 1, 1}, func(b []byte) error { _, e := DecodeQuotaRequest(b); return e }, "revision"},
 		{"grant", QuotaGrant{quotaRequestID, usageConnection, quotaPeriodID, 1000, usageLease, 1, 0, "active", issued, expires, periodEnds}, func(b []byte) error { _, e := DecodeQuotaGrant(b); return e }, "consumed_bytes"},
 		{"denied", QuotaDenied{quotaRequestID, usageConnection, "RETRY_LATER"}, func(b []byte) error { _, e := DecodeQuotaDenied(b); return e }, "error_code"},
@@ -105,7 +105,7 @@ func TestQuotaPayloadRejectsMissingUnknownNullDuplicateAndCaseAliases(t *testing
 
 func TestQuotaPayloadValidationBoundaries(t *testing.T) {
 	issued, expires, periodEnds := quotaFixtureTimes()
-	open := ConnectionOpen{quotaRequestID, usageConnection, "proxy", quotaResourceID, 1, 1}
+	open := ConnectionOpen{RequestID: quotaRequestID, ConnectionID: usageConnection, ResourceKind: "proxy", ResourceID: quotaResourceID, Revision: 1, RequestedBytes: 1}
 	for _, mutate := range []func(*ConnectionOpen){
 		func(v *ConnectionOpen) { v.RequestID = "invalid" },
 		func(v *ConnectionOpen) { v.ConnectionID = "invalid" },
@@ -190,6 +190,27 @@ func TestQuotaPayloadValidationBoundaries(t *testing.T) {
 				t.Fatal("accepted negative settled")
 			}
 		}
+	}
+}
+
+func TestConnectionOpenAcceptsExplicitProxyLineAndRejectsForwardLine(t *testing.T) {
+	open := ConnectionOpen{RequestID: quotaRequestID, ConnectionID: usageConnection, ResourceKind: "proxy", ResourceID: quotaResourceID,
+		LineID: quotaPeriodID, Revision: 1, RequestedBytes: 1}
+	payload, _ := json.Marshal(open)
+	decoded, err := DecodeConnectionOpen(payload)
+	if err != nil || decoded.LineID != quotaPeriodID {
+		t.Fatalf("proxy line = %+v, %v", decoded, err)
+	}
+	open.ResourceKind = "forward"
+	payload, _ = json.Marshal(open)
+	if _, err := DecodeConnectionOpen(payload); err == nil {
+		t.Fatal("forward request accepted Agent-selected line")
+	}
+	open.ResourceKind = "proxy"
+	open.LineID = "bad"
+	payload, _ = json.Marshal(open)
+	if _, err := DecodeConnectionOpen(payload); err == nil {
+		t.Fatal("proxy request accepted invalid line ID")
 	}
 }
 

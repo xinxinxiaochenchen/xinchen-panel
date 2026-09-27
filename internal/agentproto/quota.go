@@ -1,6 +1,8 @@
 package agentproto
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ type ConnectionOpen struct {
 	ConnectionID   string `json:"connection_id"`
 	ResourceKind   string `json:"resource_kind"`
 	ResourceID     string `json:"resource_id"`
+	LineID         string `json:"line_id,omitempty"`
 	Revision       int64  `json:"revision"`
 	RequestedBytes int64  `json:"requested_bytes"`
 }
@@ -95,11 +98,27 @@ func validRequestedBytes(value int64) bool {
 
 func DecodeConnectionOpen(payload []byte) (ConnectionOpen, error) {
 	var value ConnectionOpen
-	if err := decodeQuotaPayload(payload, &value, "request_id", "connection_id", "resource_kind", "resource_id", "revision", "requested_bytes"); err != nil {
+	fields := []string{"request_id", "connection_id", "resource_kind", "resource_id", "revision", "requested_bytes"}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &object); err != nil {
+		return ConnectionOpen{}, err
+	}
+	linePresent := false
+	if raw, ok := object["line_id"]; ok {
+		linePresent = true
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return ConnectionOpen{}, errors.New("invalid connection open line ID")
+		}
+		fields = append(fields, "line_id")
+	}
+	if err := decodeQuotaPayload(payload, &value, fields...); err != nil {
 		return ConnectionOpen{}, err
 	}
 	if !validQuotaRequestIdentity(&value.RequestID, &value.ConnectionID) ||
 		!canonicalQuotaUUID(&value.ResourceID) ||
+		(value.LineID != "" && !canonicalQuotaUUID(&value.LineID)) ||
+		(value.ResourceKind != "proxy" && value.LineID != "") ||
+		(linePresent && value.LineID == "") ||
 		(value.ResourceKind != "forward" && value.ResourceKind != "proxy") ||
 		value.Revision <= 0 || !validRequestedBytes(value.RequestedBytes) {
 		return ConnectionOpen{}, errors.New("invalid connection open")

@@ -96,6 +96,7 @@ export type PlanLimits = {
   allow_custom_lines: boolean;
   max_custom_lines: number;
   max_hops: number;
+  max_proxy_lines: number;
 };
 
 export type PlanDraft = {
@@ -107,6 +108,7 @@ export type PlanDraft = {
   maxRouting: number;
   maxCustomLines: number;
   maxHops?: number;
+  maxProxyLines?: number;
   groupIDs: string[];
   lineIDs: string[];
 };
@@ -153,6 +155,8 @@ export function buildPlanInput(draft: PlanDraft) {
   const maxCustomLines = wholeNonnegative(draft.maxCustomLines, "自建线路数");
   const maxHops = draft.maxHops ?? 1;
   if (!Number.isInteger(maxHops) || maxHops < 1 || maxHops > 8) throw new Error("线路跳数必须是 1 到 8 的整数。");
+  const maxProxyLines = draft.maxProxyLines ?? 1;
+  if (!Number.isInteger(maxProxyLines) || maxProxyLines < 1 || maxProxyLines > 32) throw new Error("代理候选线路数必须是 1 到 32 的整数。");
   return {
     name: draft.name.trim(),
     quota_bytes: quotaBytes,
@@ -167,6 +171,7 @@ export function buildPlanInput(draft: PlanDraft) {
       allow_custom_lines: maxCustomLines > 0,
       max_custom_lines: maxCustomLines,
       max_hops: maxHops,
+      max_proxy_lines: maxProxyLines,
     },
     resource_group_ids: [...draft.groupIDs],
     line_ids: [...draft.lineIDs],

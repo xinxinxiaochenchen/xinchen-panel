@@ -25,6 +25,7 @@ type PlanLimits struct {
 	AllowCustomLines       bool `json:"allow_custom_lines"`
 	MaxCustomLines         int  `json:"max_custom_lines"`
 	MaxHops                int  `json:"max_hops"`
+	MaxProxyLines          int  `json:"max_proxy_lines"`
 }
 
 type NewPlan struct {
@@ -96,6 +97,12 @@ func NormalizePlan(input NewPlan) (PlanInput, error) {
 	}
 	if limits.MaxHops < 1 || limits.MaxHops > 8 {
 		return PlanInput{}, ValidationError{"limits.max_hops", "expected 1 to 8"}
+	}
+	if limits.MaxProxyLines == 0 {
+		limits.MaxProxyLines = 1
+	}
+	if limits.MaxProxyLines < 1 || limits.MaxProxyLines > 32 {
+		return PlanInput{}, ValidationError{"limits.max_proxy_lines", "expected 1 to 32"}
 	}
 	if limits.MaxForwardRulesPerNode < 0 || limits.MaxSubscriptions < 0 || limits.MaxRoutingRules < 0 || limits.MaxCustomLines < 0 {
 		return PlanInput{}, ValidationError{"limits", "limits must be non-negative"}

@@ -31,13 +31,14 @@ type Snapshot struct {
 }
 
 type ProxyAccess struct {
-	ID              string    `json:"id"`
-	UserID          string    `json:"user_id"`
-	LineID          string    `json:"line_id"`
-	RelayGeneration uint64    `json:"relay_generation,omitempty"`
-	IngressPort     int       `json:"ingress_port"`
-	CredentialHash  string    `json:"credential_hash"`
-	ExpiresAt       time.Time `json:"expires_at"`
+	ID              string               `json:"id"`
+	UserID          string               `json:"user_id"`
+	LineID          string               `json:"line_id"`
+	Candidates      []ProxyLineCandidate `json:"candidates,omitempty"`
+	RelayGeneration uint64               `json:"relay_generation,omitempty"`
+	IngressPort     int                  `json:"ingress_port"`
+	CredentialHash  string               `json:"credential_hash"`
+	ExpiresAt       time.Time            `json:"expires_at"`
 }
 
 var trojanHashPattern = regexp.MustCompile(`^[0-9a-f]{56}$`)
@@ -126,10 +127,39 @@ func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 		if _, found := proxyHashes[access.CredentialHash]; found {
 			return nil, errors.New("duplicate proxy credential hash")
 		}
+		candidates := access.Candidates
+		if len(candidates) == 0 {
+			candidates = []ProxyLineCandidate{{LineID: access.LineID, RelayGeneration: access.RelayGeneration, Weight: 1}}
+		}
+		if len(candidates) > 32 {
+			return nil, errors.New("proxy access has too many line candidates")
+		}
+		candidateIDs := make(map[string]struct{}, len(candidates))
+		for _, candidate := range candidates {
+			if candidate.LineID == "" || candidate.Priority < 0 || candidate.Priority > 1000 || candidate.Weight < 1 || candidate.Weight > 100 {
+				return nil, errors.New("invalid proxy line candidate")
+			}
+			if _, found := candidateIDs[candidate.LineID]; found {
+				return nil, errors.New("duplicate proxy line candidate")
+			}
+			candidateIDs[candidate.LineID] = struct{}{}
+			if candidate.LineID == access.LineID {
+				if candidate.RelayGeneration != access.RelayGeneration {
+					return nil, errors.New("proxy primary line generation mismatch")
+				}
+			}
+			if expected, configured := ingressRelays[candidate.LineID]; configured {
+				if candidate.RelayGeneration != expected {
+					return nil, errors.New("proxy line candidate requires a matching ingress relay")
+				}
+			} else if candidate.RelayGeneration != 0 {
+				return nil, errors.New("proxy line candidate has an unknown relay generation")
+			}
+		}
 		if _, found := listeners[listenerKey{protocol: "TCP", port: access.IngressPort}]; found {
 			return nil, errors.New("proxy listener conflicts with forward TCP listener")
 		}
-		if access.RelayGeneration != 0 && ingressRelays[access.LineID] != access.RelayGeneration {
+		if _, selected := candidateIDs[access.LineID]; selected && access.RelayGeneration != 0 && ingressRelays[access.LineID] != access.RelayGeneration {
 			return nil, errors.New("proxy access requires a matching ingress relay")
 		}
 		proxyIDs[access.ID] = struct{}{}

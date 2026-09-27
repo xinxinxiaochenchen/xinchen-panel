@@ -26,6 +26,7 @@ export function PlanPanel({
   const [maxRouting, setMaxRouting] = useState(20);
   const [maxCustom, setMaxCustom] = useState(0);
   const [maxHops, setMaxHops] = useState(1);
+  const [maxProxyLines, setMaxProxyLines] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [multiplier, setMultiplier] = useState(1);
@@ -45,6 +46,7 @@ export function PlanPanel({
         maxRouting,
         maxCustomLines: maxCustom,
         maxHops,
+        maxProxyLines,
         groupIDs: selectedGroups,
         lineIDs: selectedLines,
       });
@@ -187,6 +189,8 @@ export function PlanPanel({
               value={maxRouting}
               onChange={(event) => setMaxRouting(Number(event.target.value))}
             />
+            <label htmlFor="admin-plan-proxy-lines">每个代理连接的候选线路数</label>
+            <input id="admin-plan-proxy-lines" type="number" min={1} max={32} step={1} value={maxProxyLines} onChange={(event) => setMaxProxyLines(Number(event.target.value))} />
             <label htmlFor="admin-plan-custom">自建线路数（0 表示关闭）</label>
             <input
               id="admin-plan-custom"
@@ -198,7 +202,7 @@ export function PlanPanel({
             <span className="catalog-form-label">授权资源域</span>
             <label htmlFor="admin-plan-hops">线路跳数上限</label>
             <input id="admin-plan-hops" type="number" min={1} max={8} step={1} value={maxHops} onChange={(event) => setMaxHops(Number(event.target.value))} />
-            <small className="catalog-form-note">当前可执行单跳；多跳拓扑可保存，执行功能尚在开发。</small>
+            <small className="catalog-form-note">候选线路上限已预留；当前代理连接创建仍只允许一条线路。</small>
             <div className="catalog-check-list">
               {groups
                 .filter((group) => group.enabled)

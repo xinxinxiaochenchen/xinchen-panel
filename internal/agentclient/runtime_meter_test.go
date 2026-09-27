@@ -181,6 +181,34 @@ func TestRuntimeQuotaMeterRejectsInvalidGrant(t *testing.T) {
 	}
 }
 
+func TestRuntimeQuotaMeterOpensSelectedProxyLine(t *testing.T) {
+	dir := t.TempDir()
+	outbox, err := NewFileUsageOutbox(filepath.Join(dir, "usage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer outbox.Close()
+	leases, err := NewFileLeaseStore(filepath.Join(dir, "leases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer leases.Close()
+	issued := time.Now().UTC().Truncate(time.Microsecond)
+	quota := &meterQuotaStub{lease: agentruntime.QuotaLease{PeriodID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", MultiplierMilli: 1000,
+		ID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", GrantedBytes: 8, IssuedAt: issued,
+		ExpiresAt: issued.Add(time.Minute), PeriodEndsAt: issued.Add(time.Hour)}}
+	meter := NewRuntimeQuotaMeter(quota, outbox, leases).(*RuntimeQuotaMeter)
+	lineID := "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+	connection, err := meter.OpenLine(context.Background(), "proxy", "dddddddd-dddd-4ddd-8ddd-dddddddddddd", lineID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quota.open.LineID != lineID || quota.open.ResourceKind != "proxy" || len(leases.Pending()) != 1 {
+		t.Fatalf("selected proxy line was not frozen: %+v", quota.open)
+	}
+	_ = connection.Close()
+}
+
 type blockingMeterWriter struct {
 	ready   chan<- struct{}
 	release <-chan struct{}
