@@ -59,3 +59,7 @@
 ## 控制面证书签发接口
 
 Agent 先在本机生成并以 0600 保存独立的 relay Ed25519 私钥，再通过现有 Agent 客户端 mTLS 调用 `POST /api/v1/agent/relay-certificate`。请求只携带 CSR 和可选的旧 relay 指纹；控制面从已授权节点记录取得 host，不接受请求方自报地址。响应证书同时必须通过 Agent 侧的 CA、ServerAuth、`/relay/{node_id}` URI、登记 host SAN、指纹和私钥匹配检查。该接口只挂在专用 Agent TLS listener，公网 HTTP 预览返回 404。
+
+## Agent 快照中的 relay 配置
+
+快照中的 `relay_config` 按线路 ID 唯一，包含 generation、角色、上一跳身份和密钥、下一跳固定地址/端口/密钥，或出口的目标主机/端口。入口没有上一跳，出口没有下一跳；密钥必须是非全零的 32 字节值。该字段参与 canonical digest，旧的无 relay 快照保持原摘要。只有声明 `relay` capability 的 Agent 才能接收包含该字段的快照。

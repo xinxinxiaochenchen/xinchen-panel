@@ -6,7 +6,7 @@ import (
 )
 
 func TestDecodeHelloValidatesVersionRevisionAndCapabilities(t *testing.T) {
-	valid := []byte(`{"agent_version":"1.0.0","applied_revision":3,"capabilities":["forward"]}`)
+	valid := []byte(`{"agent_version":"1.0.0","applied_revision":3,"capabilities":["forward","relay"]}`)
 	value, err := DecodeHello(valid)
 	if err != nil || value.AppliedRevision != 3 || value.AgentVersion != "1.0.0" {
 		t.Fatalf("valid hello = %+v, %v", value, err)

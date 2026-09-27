@@ -341,7 +341,7 @@ func (s *AgentStreamHandler) sendDesired(ctx context.Context, connection *websoc
 		return nil
 	}
 	payload, err := json.Marshal(agentproto.ConfigSnapshot{Revision: desired.Revision, SHA256: desired.Digest,
-		ValidUntil: time.Now().Add(5 * time.Minute), ForwardConfig: desired.Snapshot.Rules, ProxyConfig: desired.Snapshot.ProxyConfig})
+		ValidUntil: time.Now().Add(5 * time.Minute), ForwardConfig: desired.Snapshot.Rules, ProxyConfig: desired.Snapshot.ProxyConfig, RelayConfig: desired.Snapshot.RelayConfig})
 	if err != nil {
 		return err
 	}
@@ -369,6 +369,9 @@ func (s *AgentStreamHandler) sendDesired(ctx context.Context, connection *websoc
 func requireAgentSnapshotCapability(capabilities []string, snapshot agentruntime.Snapshot) error {
 	if len(snapshot.ProxyConfig) > 0 && !slices.Contains(capabilities, "proxy") {
 		return errors.New("Agent proxy TLS capability is not ready")
+	}
+	if len(snapshot.RelayConfig) > 0 && !slices.Contains(capabilities, "relay") {
+		return errors.New("Agent relay capability is not ready")
 	}
 	return nil
 }

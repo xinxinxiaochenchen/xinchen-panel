@@ -194,6 +194,7 @@ FROM config_revisions WHERE node_id=$1 AND revision=$2`, nodeID, revision).Scan(
 	var executable struct {
 		ForwardConfig []agentruntime.Rule        `json:"forward_config"`
 		ProxyConfig   []agentruntime.ProxyAccess `json:"proxy_config,omitempty"`
+		RelayConfig   []agentruntime.RelayConfig `json:"relay_config,omitempty"`
 	}
 	if err := json.Unmarshal(payload, &executable); err != nil {
 		return DesiredRevision{}, fmt.Errorf("decode configuration revision: %w", err)
@@ -201,7 +202,7 @@ FROM config_revisions WHERE node_id=$1 AND revision=$2`, nodeID, revision).Scan(
 	if err := json.Unmarshal(diagnostics, &value.Diagnostics); err != nil {
 		return DesiredRevision{}, fmt.Errorf("decode configuration diagnostics: %w", err)
 	}
-	value.Snapshot = agentruntime.Snapshot{Revision: uint64(value.Revision), Rules: executable.ForwardConfig, ProxyConfig: executable.ProxyConfig}
+	value.Snapshot = agentruntime.Snapshot{Revision: uint64(value.Revision), Rules: executable.ForwardConfig, ProxyConfig: executable.ProxyConfig, RelayConfig: executable.RelayConfig}
 	return value, nil
 }
 

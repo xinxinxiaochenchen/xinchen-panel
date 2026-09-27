@@ -25,6 +25,7 @@ type Snapshot struct {
 	Revision    uint64        `json:"revision"`
 	Rules       []Rule        `json:"forward_config"`
 	ProxyConfig []ProxyAccess `json:"proxy_config,omitempty"`
+	RelayConfig []RelayConfig `json:"relay_config,omitempty"`
 }
 
 type ProxyAccess struct {

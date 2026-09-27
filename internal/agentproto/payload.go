@@ -23,6 +23,7 @@ type ConfigSnapshot struct {
 	ValidUntil    time.Time                  `json:"valid_until"`
 	ForwardConfig []agentruntime.Rule        `json:"forward_config"`
 	ProxyConfig   []agentruntime.ProxyAccess `json:"proxy_config,omitempty"`
+	RelayConfig   []agentruntime.RelayConfig `json:"relay_config,omitempty"`
 }
 
 type ConfigResult struct {
@@ -46,8 +47,13 @@ func CanonicalForwardConfig(input []agentruntime.Rule) ([]byte, string, error) {
 // proxy configuration is omitted so existing forward-only revisions retain
 // their wire encoding and checksum during an upgrade.
 func CanonicalConfig(input []agentruntime.Rule, proxyInput []agentruntime.ProxyAccess) ([]byte, string, error) {
+	return CanonicalConfigWithRelay(input, proxyInput, nil)
+}
+
+func CanonicalConfigWithRelay(input []agentruntime.Rule, proxyInput []agentruntime.ProxyAccess, relayInput []agentruntime.RelayConfig) ([]byte, string, error) {
 	rules := append([]agentruntime.Rule(nil), input...)
 	proxies := append([]agentruntime.ProxyAccess(nil), proxyInput...)
+	relays := append([]agentruntime.RelayConfig(nil), relayInput...)
 	for _, rule := range rules {
 		if !rule.Enabled {
 			return nil, "", errors.New("executable forward config contains a disabled rule")
@@ -58,13 +64,17 @@ func CanonicalConfig(input []agentruntime.Rule, proxyInput []agentruntime.ProxyA
 	if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: 1, Rules: rules, ProxyConfig: proxies}); err != nil {
 		return nil, "", err
 	}
+	if err := agentruntime.ValidateRelayConfig(relays); err != nil {
+		return nil, "", err
+	}
 	if rules == nil {
 		rules = make([]agentruntime.Rule, 0)
 	}
 	payload, err := json.Marshal(struct {
 		ForwardConfig []agentruntime.Rule        `json:"forward_config"`
 		ProxyConfig   []agentruntime.ProxyAccess `json:"proxy_config,omitempty"`
-	}{ForwardConfig: rules, ProxyConfig: proxies})
+		RelayConfig   []agentruntime.RelayConfig `json:"relay_config,omitempty"`
+	}{ForwardConfig: rules, ProxyConfig: proxies, RelayConfig: relays})
 	if err != nil {
 		return nil, "", err
 	}
@@ -81,7 +91,7 @@ func DecodeConfigSnapshot(payload []byte, now time.Time) (ConfigSnapshot, error)
 		value.ValidUntil.IsZero() || !value.ValidUntil.After(now) {
 		return ConfigSnapshot{}, errors.New("invalid forward snapshot revision, digest or expiry")
 	}
-	_, digest, err := CanonicalConfig(value.ForwardConfig, value.ProxyConfig)
+	_, digest, err := CanonicalConfigWithRelay(value.ForwardConfig, value.ProxyConfig, value.RelayConfig)
 	if err != nil {
 		return ConfigSnapshot{}, fmt.Errorf("invalid forward snapshot: %w", err)
 	}

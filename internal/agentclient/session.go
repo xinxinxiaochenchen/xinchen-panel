@@ -256,7 +256,7 @@ func (c *Client) serveMessages(ctx context.Context, conn *websocket.Conn, runtim
 				applyUntil = soon
 			}
 			applyCtx, applyCancel := context.WithDeadline(ctx, applyUntil)
-			err := runtime.Apply(applyCtx, agentruntime.Snapshot{Revision: uint64(snapshot.Revision), Rules: snapshot.ForwardConfig, ProxyConfig: snapshot.ProxyConfig})
+			err := runtime.Apply(applyCtx, agentruntime.Snapshot{Revision: uint64(snapshot.Revision), Rules: snapshot.ForwardConfig, ProxyConfig: snapshot.ProxyConfig, RelayConfig: snapshot.RelayConfig})
 			applyCancel()
 			if err != nil {
 				if sendErr := send(agentproto.TypeConfigResult, agentproto.ConfigResult{Revision: snapshot.Revision, SHA256: snapshot.SHA256, Status: "rejected", ErrorCode: "APPLY_FAILED", ErrorMessage: "configuration could not be applied"}); sendErr != nil {

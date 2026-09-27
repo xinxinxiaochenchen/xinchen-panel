@@ -12,5 +12,5 @@ func CanonicalForwardPayload(compiled CompiledForwardSnapshot) ([]byte, string, 
 	if _, err := agentruntime.ValidateSnapshot(compiled.Snapshot); err != nil {
 		return nil, "", err
 	}
-	return agentproto.CanonicalConfig(compiled.Snapshot.Rules, compiled.Snapshot.ProxyConfig)
+	return agentproto.CanonicalConfigWithRelay(compiled.Snapshot.Rules, compiled.Snapshot.ProxyConfig, compiled.Snapshot.RelayConfig)
 }

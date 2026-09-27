@@ -193,3 +193,4 @@
 
 - 2026-09-27：新增迁移 21 和受 Agent mTLS 保护的 `/api/v1/agent/relay-certificate`。控制面在节点、资源组和 Agent 行锁内验证启用状态、forward 能力、relay_port、当前证书指纹和证书授权；SAN 只能来自节点登记 host。中继证书记录支持幂等重试、有限重叠续期和节点/资源变更触发撤销，重新入网会清除旧授权。
 - 2026-09-27：Agent 侧新增独立 Ed25519 中继密钥生成、0600 原子保存、CSR 请求和返回证书的 CA、节点 URI、SAN、指纹及密钥匹配校验。中继证书尚未接入 Agent 主循环和线路快照下发；生产多跳仍未开放。
+- 2026-09-27：relay 配置已进入 Agent 快照类型、严格解码与 canonical digest，支持 ingress/relay/egress 角色和相邻边密钥；能力门槛识别 `relay`。运行时监听器、线路世代编译和 Agent 启动续期尚未接线。

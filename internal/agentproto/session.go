@@ -22,12 +22,12 @@ func DecodeHello(payload []byte) (Hello, error) {
 	if !hasFields(payload, "agent_version", "applied_revision", "capabilities") {
 		return Hello{}, errors.New("missing Agent hello field")
 	}
-	if !agentVersionPattern.MatchString(value.AgentVersion) || value.AppliedRevision < 0 || len(value.Capabilities) == 0 || len(value.Capabilities) > 2 {
+	if !agentVersionPattern.MatchString(value.AgentVersion) || value.AppliedRevision < 0 || len(value.Capabilities) == 0 || len(value.Capabilities) > 3 {
 		return Hello{}, errors.New("invalid Agent hello")
 	}
 	seen := map[string]bool{}
 	for _, capability := range value.Capabilities {
-		if capability != "forward" && capability != "proxy" || seen[capability] {
+		if capability != "forward" && capability != "proxy" && capability != "relay" || seen[capability] {
 			return Hello{}, errors.New("invalid Agent capability")
 		}
 		seen[capability] = true
