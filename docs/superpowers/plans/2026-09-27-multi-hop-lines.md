@@ -1,6 +1,6 @@
 # TCP Multi-Hop Lines Implementation Plan
 
-Status: Transport design is pending confirmation. Disabled topology, handshake validation and port reservation foundations are implemented independently; executable multi-hop integration remains pending.
+Status: In progress under the ongoing authorization to complete development. No alternate transport preference was received; proceed with the recommended direct mTLS transport. Disabled topology, handshake validation, port reservations and mTLS identity foundations are implemented; executable integration remains pending.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

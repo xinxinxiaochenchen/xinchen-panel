@@ -179,3 +179,8 @@
 - `agentidentity` 新增中继专用 ServerAuth 证书签发：CSR 身份/SAN 被忽略，节点 URI 与登记地址由控制面指定；现有 Agent ClientAuth 证书不能冒充服务端。
 - `agentrelay` 新增 TLS 1.3 双向配置：验证 CA、DNS/IP SAN、节点 URI、证书指纹及来源节点在线授权回调。真实 TLS 握手测试覆盖正确身份、错误节点、错误 SAN、错误指纹及被拒绝来源。测试发现调用方可修改允许指纹切片，已复制为配置快照并加回归测试。
 - 全量 Go 测试、Go vet、身份和中继包 race 测试通过。HTTP 签发接口、Agent 证书持久化与实际中继监听仍未实现；本次代码暂不部署。
+
+## 2026-09-27 中继端口版本发布
+
+- 通过 Termark 发布 `c0af258` 到 `/opt/network-control-plane/releases/release-c0af258`，包 SHA-256 `80be7f2d40cfb8d96fed8fd82792668d05d3dfad48b7077e82ae68ead5f899f0`。正式库升级至迁移 20，升级前备份 `ncp-before-c0af258.dump` 权限 0600，已通过 `pg_restore --list` 验证。
+- 发布后 API/DB healthy、重启 0，首页/ready 200，明文登录 404，Agent TLS 18443 只绑定回环；正式库用户/节点/Agent 均为 0，磁盘可用约 2.4 GB。现有 Nginx Proxy Manager 保持运行。后续提交 `f6edf9b` 的 TLS 基础尚未部署。
