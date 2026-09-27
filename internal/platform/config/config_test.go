@@ -47,6 +47,34 @@ func TestLoadFromBrowserAuthExplicitFlag(t *testing.T) {
 	}
 }
 
+func TestLoadFromRelaySecretKey(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "relay-key")
+	if err := os.WriteFile(keyPath, []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_RELAY_SECRET_KEY_FILE": keyPath}
+	load := func(key string) (string, bool) { value, ok := values[key]; return value, ok }
+	cfg, err := LoadFrom(load)
+	if err != nil || len(cfg.RelaySecretKey) != 32 {
+		t.Fatalf("relay key = %d bytes, %v", len(cfg.RelaySecretKey), err)
+	}
+	if err := os.Chmod(keyPath, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFrom(load); err == nil {
+		t.Fatal("accepted group-readable relay key")
+	}
+	if err := os.Chmod(keyPath, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("not a key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFrom(load); err == nil {
+		t.Fatal("accepted malformed relay key")
+	}
+}
+
 func TestLoadFromOptionalWebDirectory(t *testing.T) {
 	cfg, err := LoadFrom(func(key string) (string, bool) {
 		values := map[string]string{"CONTROL_DATABASE_URL": "postgres://localhost/control", "CONTROL_WEB_DIR": "/app/web"}

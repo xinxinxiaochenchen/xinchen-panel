@@ -18,6 +18,7 @@ type Config struct {
 	DatabaseURL           string
 	BrowserAuthEnabled    bool
 	ProxyCredentialKey    []byte
+	RelaySecretKey        []byte
 	WebDir                string
 	AgentTLSAddr          string
 	AgentPublicTLSEnabled bool
@@ -81,6 +82,25 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 			return Config{}, fmt.Errorf("CONTROL_PROXY_CREDENTIAL_KEY_FILE: expected 32 base64url-encoded bytes")
 		}
 		cfg.ProxyCredentialKey = decoded
+	}
+	if path, ok := lookup("CONTROL_RELAY_SECRET_KEY_FILE"); ok {
+		if !filepath.IsAbs(path) {
+			return Config{}, fmt.Errorf("CONTROL_RELAY_SECRET_KEY_FILE: absolute file path required")
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+			return Config{}, fmt.Errorf("CONTROL_RELAY_SECRET_KEY_FILE: private regular file required")
+		}
+		encoded, err := os.ReadFile(path)
+		if err != nil {
+			return Config{}, fmt.Errorf("CONTROL_RELAY_SECRET_KEY_FILE: unreadable: %w", err)
+		}
+		keyText := strings.TrimSpace(string(encoded))
+		decoded, err := base64.RawURLEncoding.DecodeString(keyText)
+		if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != keyText {
+			return Config{}, fmt.Errorf("CONTROL_RELAY_SECRET_KEY_FILE: expected 32 base64url-encoded bytes")
+		}
+		cfg.RelaySecretKey = decoded
 	}
 	if value, ok := lookup("CONTROL_LOG_LEVEL"); ok {
 		switch strings.ToLower(value) {

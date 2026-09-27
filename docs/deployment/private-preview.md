@@ -69,7 +69,7 @@
 
 Agent 使用独立的 HTTPS/mTLS 入口，与浏览器的 HTTP 预览端口分开。启用前准备一组专用 CA 和服务器证书：服务器证书的 IP SAN 必须覆盖 Agent URL 所用的 IP；Agent 预装该 CA 证书并保持证书校验开启。CA 私钥和服务器私钥仅留在控制面服务器，不能复制到节点。
 
-将 `server.crt`、`server.key`、`agent-ca.crt`、`agent-ca.key` 放入服务器上的绝对路径目录；目录建议由容器用户 UID 65532 拥有、权限 0700，两个私钥为 0600。可选覆盖文件 `deployments/compose/compose.agent-tls.yaml` 将此目录只读挂载到 API 容器，并启用 `CONTROL_AGENT_PUBLIC_TLS_ENABLED=true`。API 容器内监听 18443，主机默认仅绑定 `127.0.0.1:18443`。先在 release 的 `deployments/compose` 目录运行：
+将 `server.crt`、`server.key`、`agent-ca.crt`、`agent-ca.key` 放入服务器上的绝对路径目录；目录建议由容器用户 UID 65532 拥有、权限 0700，两个私钥为 0600。可选覆盖文件 `deployments/compose/compose.agent-tls.yaml` 将此目录只读挂载到 API 容器，并启用 `CONTROL_AGENT_PUBLIC_TLS_ENABLED=true`。多跳密钥需要另建只含 `relay.key` 的 0600 目录，内容为 32 字节随机值的无填充 base64url 编码，并通过 `compose.relay-secrets.yaml` 挂载；不要把该文件放入发布包。API 容器内监听 18443，主机默认仅绑定 `127.0.0.1:18443`。先在 release 的 `deployments/compose` 目录运行：
 
 ```sh
 CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \

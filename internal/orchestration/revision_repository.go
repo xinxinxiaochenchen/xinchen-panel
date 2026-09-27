@@ -38,10 +38,17 @@ type DesiredRevision struct {
 	ErrorMessage *string
 }
 
-type RevisionRepository struct{ pool *pgxpool.Pool }
+type RevisionRepository struct {
+	pool         *pgxpool.Pool
+	relaySecrets RelaySecretStore
+}
 
 func NewRevisionRepository(pool *pgxpool.Pool) *RevisionRepository {
 	return &RevisionRepository{pool: pool}
+}
+
+func NewRevisionRepositoryWithRelaySecrets(pool *pgxpool.Pool, secrets RelaySecretStore) *RevisionRepository {
+	return &RevisionRepository{pool: pool, relaySecrets: secrets}
 }
 
 // Reconcile locks the Agent before reading source facts. Each attempt uses one
@@ -99,6 +106,17 @@ func (r *RevisionRepository) reconcileOnce(ctx context.Context, nodeID string) (
 		}
 		compiled.Snapshot.ProxyConfig = proxyConfig.Snapshot.ProxyConfig
 		compiled.Rejected = append(compiled.Rejected, proxyConfig.Rejected...)
+	}
+	if r.relaySecrets != nil && node.Enabled && node.GroupEnabled && slices.Contains(capabilities, "relay") {
+		lines, err := readRelayLineFacts(ctx, tx, nodeID)
+		if err != nil {
+			return DesiredRevision{}, false, err
+		}
+		relays, _, err := CompileRelaySnapshots(ctx, lines, r.relaySecrets)
+		if err != nil {
+			return DesiredRevision{}, false, err
+		}
+		compiled.Snapshot.RelayConfig = relays[nodeID]
 	}
 	payload, digest, err := CanonicalForwardPayload(compiled)
 	if err != nil {

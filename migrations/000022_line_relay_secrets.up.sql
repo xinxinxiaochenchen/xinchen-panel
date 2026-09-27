@@ -1,3 +1,5 @@
+ALTER TABLE lines ADD COLUMN relay_generation bigint NOT NULL DEFAULT 1 CHECK (relay_generation > 0);
+
 CREATE TABLE line_relay_generations (
     line_id uuid NOT NULL REFERENCES lines(id) ON DELETE CASCADE,
     generation bigint NOT NULL CHECK (generation > 0),

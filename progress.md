@@ -1,5 +1,7 @@
 # 进度
 
+- 2026-09-27：多跳正式配置收敛接入的基础阶段：迁移 22 为线路增加持久 `relay_generation`（现有线路默认 1）；控制面在同一配置事务内读取有序多跳拓扑、节点与 Agent 能力、45 秒在线窗口及现行证书授权。设置 0600、32 字节 base64url 的 `CONTROL_RELAY_SECRET_KEY_FILE` 后，配置仓储可以从 PostgreSQL 加密存储读取每条边密钥并编译对应节点路由；未设置时保持该路径关闭。PGlite 验证迁移 22 的 up/down 与拓扑查询语法，尚未完成真实 PostgreSQL 16 迁移及多节点 ACK 门控，因此多跳仍不能通过 API 启用。完整 Go 测试、vet、前端 29 项测试、类型检查与构建通过。Termark 目标资产名仍待用户确认；Mac 锁屏使后续服务器只读检查暂停，服务器未修改。
+
 - 2026-09-27：继续多跳线路收敛前的本地准备。移除将 Agent 配置 revision 错当作线路 generation 的门槛，修复快照编译测试夹具；中继边密钥改为用线路 ID、世代和边位置作为 AES-GCM 附加认证数据，避免密文跨行替换。新增密钥错行、篡改、错密钥和旧格式拒绝测试。此阶段尚未接入 PostgreSQL 拓扑读取与 Agent ACK 门控，未将多跳线路开放启用。用户指定迁移测试 VPS 为 `us bwh`，Termark 搜索未找到同名资产，正在核对 `us bwg` 是否为目标；新服务器尚未部署或修改。
 
 - 2026-09-27：修复 Clash/Mihomo 订阅对 IPv6 地址和受控 GeoIP IPv6 网段的规则类型，统一生成 `IP-CIDR6`；新增回归测试。全量 Go 测试（允许回环端口环境）和 vet、前端 25 项测试、类型检查、生产构建、OpenAPI 解析和 diff 检查通过。已发布 `release-ipv6-cidr-20260927` 到 `us dmit`，包 SHA-256 `c011de4926a43ca0a7538b820d90c13d43dfeecfe0e43d1e7bea48c63621b13f`；正式库备份权限 0600，迁移 17，API/DB healthy、重启 0，首页/live/ready 200，登录和未认证规则集 API 404。清理已有发布目录对应的旧上传归档后磁盘可用约 1.5 GB。

@@ -177,7 +177,7 @@ func validateRelayLineFacts(line RelayLineFacts) string {
 }
 
 func validRelayCertFingerprints(values []string) bool {
-	if len(values) < 1 || len(values) > 2 {
+	if len(values) < 1 || len(values) > 3 {
 		return false
 	}
 	for _, value := range values {

@@ -37,7 +37,7 @@ type RelayConfig struct {
 var relayFingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func validFingerprints(values []string) bool {
-	if len(values) < 1 || len(values) > 2 {
+	if len(values) < 1 || len(values) > 3 {
 		return false
 	}
 	for _, value := range values {

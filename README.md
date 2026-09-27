@@ -40,7 +40,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 线路开发状态
 
-管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。单跳线路可执行；2–8 跳只可保存为停用拓扑草稿，创建时检查每个节点能力、资源组授权、套餐 `max_hops` 和自建线路数。草稿不能启用，也不会进入代理连接、订阅或计费数据面。管理列表保留停用的自有线路；实际连接使用应调用 `GetUsableLine` 复核启用、节点能力和当前授权。线路权重目前只有确定性排序器，尚未接入代理运行时。公网纯 HTTP 预览保持关闭这些路由。
+管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。单跳线路可执行；2–8 跳只可保存为停用拓扑草稿，创建时检查每个节点能力、资源组授权、套餐 `max_hops` 和自建线路数。草稿不能启用，也不会进入代理连接、订阅或计费数据面。管理列表保留停用的自有线路；实际连接使用应调用 `GetUsableLine` 复核启用、节点能力和当前授权。线路权重目前只有确定性排序器，尚未接入代理运行时。配置 `CONTROL_RELAY_SECRET_KEY_FILE` 后，控制面会把线路世代和每条中继边的密钥加密持久化，并在同一事务读取拓扑、Agent 在线状态及证书授权；当前仍未开放多跳线路启用。公网纯 HTTP 预览保持关闭这些路由。
 
 ## 直达转发规则开发状态
 

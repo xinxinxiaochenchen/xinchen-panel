@@ -43,7 +43,11 @@ func startConfiguredAgentServer(ctx context.Context, cfg config.Config, pool *pg
 	service := agentidentity.NewEnrollmentService(pool, issuer)
 	presence := orchestration.NewAgentPresenceRepository(pool)
 	billingRepository := billing.NewPostgresRepository(pool)
-	stream := httpapi.NewAgentStreamHandler(ctx, logger, service, orchestration.NewRevisionRepository(pool), presence,
+	revisionRepository, err := newRevisionRepository(pool, cfg)
+	if err != nil {
+		return nil, err
+	}
+	stream := httpapi.NewAgentStreamHandler(ctx, logger, service, revisionRepository, presence,
 		orchestration.NewUsageRecorder(billingRepository))
 	stream.SetQuotaService(billingRepository)
 	listener, err := serveAgentTLS(ctx, cfg.AgentTLSAddr, tlsConfig,

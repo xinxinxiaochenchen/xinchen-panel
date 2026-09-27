@@ -47,6 +47,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	revisionRepository, err := newRevisionRepository(pool, cfg)
+	if err != nil {
+		logger.Error("relay secret storage unavailable", "error", err)
+		os.Exit(2)
+	}
 	var sessions httpapi.IdentitySessions
 	var catalogStore httpapi.CatalogStore
 	var entitlementStore httpapi.EntitlementStore
@@ -123,7 +128,7 @@ func main() {
 		go identity.RunSessionJanitor(ctx, identity.NewPostgresRepository(pool), logger)
 	}
 	go billing.NewPeriodWorker(billing.NewPostgresRepository(pool)).Run(ctx, logger)
-	go orchestration.NewConvergenceWorker(pool, orchestration.NewRevisionRepository(pool)).Run(ctx, logger)
+	go orchestration.NewConvergenceWorker(pool, revisionRepository).Run(ctx, logger)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
