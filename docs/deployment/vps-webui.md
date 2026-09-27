@@ -76,7 +76,51 @@ Nginx 只需要把 HTTPS 管理域名反代到 `127.0.0.1:18080`，并转发 Web
 
 ## 5. 节点 Agent
 
-创建节点后，用管理员权限生成一次性入网令牌；令牌只写入服务器私有文件，不打印到标准输出。Agent 使用 `compose.agent-tls.yaml` 连接控制面，生产多跳线路再叠加 `compose.relay-secrets.yaml`。Agent 的证书、CA 私钥、代理服务端证书和线路密钥都应放在发布目录之外。
+创建节点后，用管理员权限生成一次性入网令牌；令牌只写入控制面服务器私有文件，不打印到标准输出。Agent 使用 `compose.agent-local.yaml` 在节点 VPS 上运行，控制面只运行 `compose.agent-tls.yaml`。生产多跳线路再叠加 `compose.relay-secrets.yaml`。Agent 的证书、CA 私钥、代理服务端证书和线路密钥都应放在发布目录之外。
+
+### 5.1 控制面准备 Agent TLS
+
+控制面需要专用 CA、服务端证书和私钥，并只通过 HTTPS/mTLS 入口暴露 Agent 路径。服务端证书 SAN 必须覆盖节点实际使用的域名或 IP；浏览器管理入口仍由 Nginx/Caddy 反代到 `127.0.0.1:18080`。控制面示例：
+
+```sh
+CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
+  docker compose -f compose.yaml -f compose.agent-tls.yaml config --quiet
+CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
+  docker compose -f compose.yaml -f compose.agent-tls.yaml up -d --build api
+```
+
+将 CA 公钥 `agent-ca.crt` 安全复制到节点；CA 私钥和 `server.key` 永远留在控制面。
+
+### 5.2 独立节点 VPS 入网
+
+在节点 VPS 上只上传项目发布包和 `agent-ca.crt`，准备目录并设置 UID 65532 可写：
+
+```sh
+install -d -m 0700 /opt/network-control-plane/secrets/agent-credentials
+install -d -m 0700 /opt/network-control-plane/state/agent
+chown 65532:65532 /opt/network-control-plane/secrets/agent-credentials /opt/network-control-plane/state/agent
+```
+
+管理员在控制面为节点生成一次性令牌后，把令牌 JSON 以 `0600` 临时文件形式放到节点，使用标准输入完成入网：
+
+```sh
+export CONTROL_AGENT_STREAM_URL='wss://control.example.com:18443/api/v1/agent/stream'
+export CONTROL_AGENT_ENROLL_URL='https://control.example.com:18443/api/v1/agent/enroll'
+export CONTROL_AGENT_CREDENTIAL_DIR=/opt/network-control-plane/secrets/agent-credentials
+export CONTROL_AGENT_STATE_DIR=/opt/network-control-plane/state/agent
+export CONTROL_AGENT_NODE_ID='<node-uuid>'
+export CONTROL_AGENT_VERSION='0.1.0'
+python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' /run/private/agent-token.json | \
+  docker compose -f compose.agent-local.yaml run --rm -T agent enroll
+rm -f /run/private/agent-token.json
+docker compose -f compose.agent-local.yaml up -d --build agent
+```
+
+`compose.agent-local.yaml` 使用 host network，因此节点的代理、转发和中继端口直接绑定节点 VPS。需要代理能力时，把 `proxy.crt`/`proxy.key` 放入凭据目录并设置对应环境变量；需要中继能力时设置 `CONTROL_AGENT_RELAY_HOST`、`CONTROL_AGENT_RELAY_PORT`、`CONTROL_AGENT_RELAY_CERT_FILE=/run/agent/relay.crt` 和 `CONTROL_AGENT_RELAY_KEY_FILE=/run/agent/relay.key`。节点必须能验证控制面 CA。18443 是专用 TLS/mTLS 入口，优先直连并限制来源 IP；若经过反代，必须保持端到端 TLS 或正确传递客户端证书，并支持 WebSocket Upgrade。
+
+### 5.3 同机节点
+
+如果 Agent 与控制面在同一台 VPS，使用 `wss://127.0.0.1:18443/api/v1/agent/stream` 和 `https://127.0.0.1:18443/api/v1/agent/enroll`，并确保服务端证书包含 `127.0.0.1` SAN。独立节点示例中的公网控制面地址不能直接套用到同机回环场景。
 
 ```sh
 docker compose -f compose.yaml -f compose.proxy-secrets.yaml ps

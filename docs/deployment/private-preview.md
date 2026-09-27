@@ -85,9 +85,9 @@ CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
 
 不指定覆盖文件时，现有预览入口和 Agent TLS 关闭状态保持原样。此覆盖文件只开放 Agent 通道，不开放管理接口；当前纯 IP 预览关闭了浏览器身份路由，且正式库中没有节点。首个节点必须先通过受信任 HTTPS 管理入口创建，或使用后续提供的受限本机引导命令；随后管理员可发一次性令牌并让 Agent 用可信 CA 完成证书登记。仅启用此覆盖文件不能完成入网。
 
-## 同机 Agent Compose overlay
+## Agent Compose overlay
 
-发布包还包含 `compose.agent-local.yaml` 和 `Dockerfile.agent`。它们默认不参与启动；只有在节点已经创建、Agent 证书已登记、目录中存在 `agent-ca.crt`、`agent.crt`、`agent.key` 且权限正确时才启用。overlay 使用 host network，让 Agent 连接 `wss://127.0.0.1:18443/api/v1/agent/stream` 并在服务器上绑定节点端口；状态目录保存配置快照、额度租约和用量 outbox，容器本身保持只读文件系统。凭据目录需由 UID 65532 拥有并可写，供 Agent 在证书到期前六小时自动原子替换 `agent.crt`；`agent.key` 仍为 0600 且不轮换。
+发布包还包含 `compose.agent-local.yaml` 和 `Dockerfile.agent`。它们默认不参与启动；只有在节点已经创建、Agent 证书已登记、目录中存在 `agent-ca.crt`、`agent.crt`、`agent.key` 且权限正确时才启用。overlay 使用 host network，让 Agent 连接控制面的 WSS 地址并在节点服务器上绑定代理、转发和中继端口；状态目录保存配置快照、额度租约和用量 outbox，容器本身保持只读文件系统。凭据目录需由 UID 65532 拥有并可写，供 Agent 在证书到期前六小时自动原子替换 `agent.crt` 和中继证书；`agent.key` 仍为 0600 且不轮换。
 
 ```sh
 install -d -m 0700 /opt/network-control-plane/secrets/agent-credentials
@@ -97,8 +97,32 @@ chown 65532:65532 /opt/network-control-plane/secrets/agent-credentials /opt/netw
 CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
 CONTROL_AGENT_CREDENTIAL_DIR=/opt/network-control-plane/secrets/agent-credentials \
 CONTROL_AGENT_STATE_DIR=/opt/network-control-plane/state/agent \
+CONTROL_AGENT_STREAM_URL=wss://127.0.0.1:18443/api/v1/agent/stream \
 CONTROL_AGENT_NODE_ID=<node-uuid> \
   docker compose -f compose.yaml -f compose.agent-tls.yaml -f compose.agent-local.yaml up -d --build agent
 ```
 
-如果节点具备 `proxy` 能力，还需要把独立的 `proxy.crt` 和 `proxy.key` 放入凭据目录，并通过 `CONTROL_AGENT_PROXY_CERT_FILE`、`CONTROL_AGENT_PROXY_KEY_FILE` 指定容器内路径；没有代理证书时，Agent 仍可运行转发能力，但会拒绝代理监听配置。停止时只停止 `agent` 服务，不要删除状态目录。
+如果节点具备 `proxy` 能力，还需要把独立的 `proxy.crt` 和 `proxy.key` 放入凭据目录，并通过 `CONTROL_AGENT_PROXY_CERT_FILE=/run/agent/proxy.crt`、`CONTROL_AGENT_PROXY_KEY_FILE=/run/agent/proxy.key` 指定容器内路径；没有代理证书时，Agent 仍可运行转发能力，但会拒绝代理监听配置。多跳节点还要设置 `CONTROL_AGENT_RELAY_HOST` 为控制面登记的节点主机名、`CONTROL_AGENT_RELAY_PORT` 为登记的中继端口，并设置 `CONTROL_AGENT_RELAY_CERT_FILE=/run/agent/relay.crt`、`CONTROL_AGENT_RELAY_KEY_FILE=/run/agent/relay.key`；Agent 会在首次启动时生成密钥并通过 mTLS 申请中继证书。停止时只停止 `agent` 服务，不要删除状态目录。
+
+同机 Agent 使用回环地址；独立节点 VPS 必须把 `CONTROL_AGENT_STREAM_URL` 和 `CONTROL_AGENT_ENROLL_URL` 改成控制面 Agent TLS 入口的 HTTPS/WSS 地址，例如 `https://control.example.com:18443`。控制面服务器证书的 SAN 必须覆盖该域名或 IP，节点只安装 `agent-ca.crt`，不能复制控制面 CA 私钥。独立节点只运行 Agent overlay，不运行 `db`、`migrate` 或 `api` 服务；首次入网时先安全地把一次性令牌通过标准输入传给 `agent enroll`，成功后删除令牌文件：
+
+```sh
+CONTROL_AGENT_STREAM_URL=wss://control.example.com:18443/api/v1/agent/stream \
+CONTROL_AGENT_ENROLL_URL=https://control.example.com:18443/api/v1/agent/enroll \
+CONTROL_AGENT_CREDENTIAL_DIR=/opt/network-control-plane/secrets/agent-credentials \
+CONTROL_AGENT_STATE_DIR=/opt/network-control-plane/state/agent \
+CONTROL_AGENT_NODE_ID=<node-uuid> \
+CONTROL_AGENT_VERSION=0.1.0 \
+python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' /run/private/agent-token.json | \
+  docker compose -f compose.agent-local.yaml run --rm -T agent enroll
+rm -f /run/private/agent-token.json
+
+CONTROL_AGENT_STREAM_URL=wss://control.example.com:18443/api/v1/agent/stream \
+CONTROL_AGENT_ENROLL_URL=https://control.example.com:18443/api/v1/agent/enroll \
+CONTROL_AGENT_CREDENTIAL_DIR=/opt/network-control-plane/secrets/agent-credentials \
+CONTROL_AGENT_STATE_DIR=/opt/network-control-plane/state/agent \
+CONTROL_AGENT_NODE_ID=<node-uuid> \
+  docker compose -f compose.agent-local.yaml up -d --build agent
+```
+
+令牌文件必须由节点管理员临时创建为 `0600`，且不得放进发布包、Shell 历史或聊天记录。独立节点的 `CONTROL_AGENT_RELAY_HOST` 必须使用控制面登记的同一主机名或 IP。18443 是专用 TLS/mTLS 入口；若经过反代，需保持端到端 TLS 或正确传递客户端证书，且必须支持 WebSocket Upgrade。优先直连并限制来源 IP。

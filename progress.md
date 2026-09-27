@@ -283,3 +283,9 @@
 - 订阅导出现在从已应用的候选快照中选择一个当前可用入口；单线路连接保留线路 ID，多线路连接导出一个“自动线路”客户端目标，不把服务端候选伪装成客户端可独立选择的线路。
 - 自动线路目标可以使用默认 PROXY 组和直连/阻断 fallback；分流规则引用具体线路时必须存在独立的单线路导出目标。默认线路停用但候选线路仍可用时，导出继续可用。
 - 新增候选选择、自动目标排序和分流边界测试；完整订阅 PostgreSQL 集成仍需真实 PostgreSQL 16 执行，SQL 查询本轮只完成本地编译和单元验证，多线路创建门控继续保留。
+
+## 2026-09-28 独立节点 Agent 部署说明收敛
+
+- 修正 `compose.agent-local.yaml` 的注释和环境变量，补齐独立节点入网 URL 以及中继主机、端口、证书路径配置；保留 host network、只读容器和 UID 65532 的凭据/状态目录约束。
+- 修正 `docs/deployment/private-preview.md`：同机 Agent 使用回环 `wss://127.0.0.1:18443`，独立节点单独使用控制面 WSS/HTTPS 地址，并以标准输入传递一次性令牌后删除临时文件。
+- 扩展 `docs/deployment/vps-webui.md`：明确控制面与节点 VPS 的职责分离、mTLS/SAN 要求、独立节点的 compose 命令和中继配置。`git diff --check`、本地 Go 全量测试/vet、WebUI 37 项测试/生产构建，以及 `us bwg` 上基础/Agent/TLS Compose `config --quiet` 均通过；线上健康接口为 200，迁移为 `25|25`。
