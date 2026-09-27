@@ -78,8 +78,8 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 20 {
-		t.Fatalf("expected node relay port migration 20; found %d migrations", len(migrations))
+	if len(migrations) != 21 {
+		t.Fatalf("expected relay certificate migration 21; found %d migrations", len(migrations))
 	}
 	for i, migration := range migrations {
 		if migration.Version != int64(i+1) {

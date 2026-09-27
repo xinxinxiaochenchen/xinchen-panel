@@ -47,7 +47,7 @@
 
 当前已发布 `3454b70` 至 `/opt/network-control-plane/releases/release-3454b70`：多跳只可保存为停用拓扑草稿，控制台可创建和查看，实际多跳数据面仍未启用。发布包 SHA-256 `95ecab9d6c9c0667d71e1102295cd6eef562fb2ecb6792e1013c765f2d04f0f6`；升级前备份 `ncp-before-3454b70.dump` 已校验可读且权限为 0600。正式库迁移 19，API/DB healthy、重启 0，首页和 ready 为 200，HTTP 登录为 404，18443 仅绑定回环，正式库用户/节点/Agent 均为 0。
 
-当前最新发布为 `c0af258`，目录 `/opt/network-control-plane/releases/release-c0af258`，正式库迁移 20。发布包 SHA-256 `80be7f2d40cfb8d96fed8fd82792668d05d3dfad48b7077e82ae68ead5f899f0`，升级前备份 `ncp-before-c0af258.dump` 权限 0600 且已用 `pg_restore --list` 校验。API/DB healthy、重启 0，首页和 ready 为 200，HTTP 登录 404，18443 仅监听回环；正式库用户/节点/Agent 均为 0。中继端口只完成预留，并未启动中继数据服务。
+当前已在本地完成迁移 21 的证书授权实现，但尚未发布到服务器。服务器仍运行 `c0af258`，目录 `/opt/network-control-plane/releases/release-c0af258`，正式库迁移 20。该发布的中继端口只完成预留，并未启动中继数据服务。
 
 ## 部署
 

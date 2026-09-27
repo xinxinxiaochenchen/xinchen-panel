@@ -130,5 +130,9 @@ func (service *EnrollmentService) SweepExpiredGrants(ctx context.Context) (int64
 	if err != nil {
 		return 0, fmt.Errorf("sweep expired Agent grants: %w", err)
 	}
-	return tag.RowsAffected(), nil
+	relayTag, err := service.pool.Exec(ctx, `DELETE FROM agent_relay_certificate_grants WHERE expires_at <= clock_timestamp()`)
+	if err != nil {
+		return 0, fmt.Errorf("sweep expired Agent relay grants: %w", err)
+	}
+	return tag.RowsAffected() + relayTag.RowsAffected(), nil
 }

@@ -33,6 +33,7 @@ func NewAgentHandler(logger *slog.Logger, service AgentEnrollment) http.Handler 
 
 func NewAgentHandlerWithStream(logger *slog.Logger, service AgentEnrollment, stream http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/agent/relay-certificate", relayCertificateHandler(logger, service))
 	if stream != nil {
 		mux.Handle("/api/v1/agent/stream", stream)
 	}

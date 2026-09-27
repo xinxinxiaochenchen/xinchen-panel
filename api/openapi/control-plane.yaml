@@ -117,6 +117,42 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         '500': {$ref: '#/components/responses/InternalError'}
         '503': {$ref: '#/components/responses/DependencyUnavailable'}
+  /api/v1/agent/relay-certificate:
+    post:
+      operationId: issueAgentRelayCertificate
+      summary: Issue or retry a relay server certificate for the authenticated Agent
+      description: Dedicated Agent TLS listener only. The Agent generates and retains a separate Ed25519 private key. The control plane derives the server SAN from the enabled forward node's registered host and relay port; submitted CSR identities and hosts are ignored. A parent fingerprint is required only for same-key renewal. Re-enrollment, revocation, node or resource group changes invalidate relay grants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [csr_pem]
+              properties:
+                csr_pem: {type: string, description: PEM encoded Ed25519 CSR for the Agent-local relay key.}
+                parent_fingerprint: {type: string, pattern: '^[0-9a-f]{64}$', description: Existing relay certificate fingerprint during renewal.}
+      responses:
+        '200':
+          description: Relay server certificate bound to the node host.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [node_id, certificate_pem, ca_certificate_pem, fingerprint, expires_at]
+                properties:
+                  node_id: {type: string, format: uuid}
+                  certificate_pem: {type: string}
+                  ca_certificate_pem: {type: string}
+                  fingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+                  expires_at: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
   /api/v1/agent/stream:
     get:
       operationId: connectAgentStream

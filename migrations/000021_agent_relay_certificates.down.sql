@@ -1,0 +1,5 @@
+DROP TRIGGER groups_relay_certificate_invalidate ON resource_groups;
+DROP TRIGGER nodes_relay_certificate_invalidate ON nodes;
+DROP TRIGGER agents_relay_certificate_invalidate ON agents;
+DROP FUNCTION invalidate_agent_relay_certificates();
+DROP TABLE agent_relay_certificate_grants;

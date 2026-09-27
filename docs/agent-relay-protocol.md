@@ -55,3 +55,7 @@
 `agentrelay.Handler` 已实现出口与中转连接处理。每个已应用线路世代保留同一 `ReplayWindow`；处理器在 TLS 握手后核对来源节点 URI、线路上一跳、世代、证明和有效期。中转只能使用快照中的 `NextHop` 地址、TLS 配置和下一边密钥重新签名 OPEN；用户输入不能选择下一跳。出口重新解析目标 DNS，拒绝非公网 IP，并仅拨号通过检查的 IP。下游返回成功后才对上游发送 `open_ok`。撤销线路 context 会关闭整条链，遇到对端不读 TLS 关闭通知时直接关闭底层连接，防止连接清理停顿。
 
 独立测试使用真实回环 TCP 和三段 TLS 会话验证入口 → 中转 → 出口的数据往返及撤销。此执行器尚未由 Agent 配置快照调用，生产中继端口也没有监听。用户计费只允许在未来的入口代理运行时执行，不能在中转或出口重复记录。
+
+## 控制面证书签发接口
+
+Agent 先在本机生成并以 0600 保存独立的 relay Ed25519 私钥，再通过现有 Agent 客户端 mTLS 调用 `POST /api/v1/agent/relay-certificate`。请求只携带 CSR 和可选的旧 relay 指纹；控制面从已授权节点记录取得 host，不接受请求方自报地址。响应证书同时必须通过 Agent 侧的 CA、ServerAuth、`/relay/{node_id}` URI、登记 host SAN、指纹和私钥匹配检查。该接口只挂在专用 Agent TLS listener，公网 HTTP 预览返回 404。
