@@ -6,6 +6,10 @@ import {
   buildNodeInput,
   buildForwardPolicyInput,
   hasAdminAccess,
+  buildAdminUsagePath,
+  loadAdminUsagePage,
+  validateAdminUsageFilters,
+  adminUsageDimensionLabel,
 } from "../src/lib/admin.ts";
 
 test("plan input converts GiB quota to integer bytes and preserves grants", () => {
@@ -53,6 +57,38 @@ test("administrator access follows permissions instead of role label", () => {
   assert.equal(hasAdminAccess(["nodes.write"]), true);
   assert.equal(hasAdminAccess(["audit.read"]), true);
   assert.equal(hasAdminAccess(["dashboard.read", "nodes.read"]), false);
+});
+
+test("admin usage path preserves filters and opaque cursors", () => {
+  assert.equal(buildAdminUsagePath({ from: "2026-09-01", to: "2026-09-14", groupBy: "line", userID: "user-1", lineID: "line-1" }, "a/b+=="), "/api/v1/admin/usage/daily?from=2026-09-01&to=2026-09-14&group_by=line&user_id=user-1&line_id=line-1&limit=100&cursor=a%2Fb%2B%3D%3D");
+  assert.equal(buildAdminUsagePath({ from: "2026-09-01", to: "2026-09-14", groupBy: "date" }), "/api/v1/admin/usage/daily?from=2026-09-01&to=2026-09-14&group_by=date&limit=100");
+});
+
+test("admin usage date range accepts at most 90 inclusive UTC days", () => {
+  assert.equal(validateAdminUsageFilters({ from: "2026-07-01", to: "2026-09-28", groupBy: "date" }), "");
+  assert.match(validateAdminUsageFilters({ from: "2026-07-01", to: "2026-09-29", groupBy: "date" }), /90/);
+  assert.match(validateAdminUsageFilters({ from: "2026-09-28", to: "2026-09-27", groupBy: "date" }), /结束/);
+  assert.match(validateAdminUsageFilters({ from: "2026-02-30", to: "2026-03-01", groupBy: "date" }), /日期/);
+});
+
+test("admin usage loader preserves paged buckets and reports invalid responses", async () => {
+  const filters = { from: "2026-09-01", to: "2026-09-14", groupBy: "node" as const };
+  const bucket = { date: "2026-09-14", dimension_id: "node-1", uploaded_bytes: 10, downloaded_bytes: 20, charged_bytes: 45 };
+  assert.deepEqual(await loadAdminUsagePage(filters, "next", async (path) => {
+    assert.match(String(path), /cursor=next/);
+    return Response.json({ items: [bucket], next_cursor: "later" });
+  }), { kind: "ready", data: { items: [bucket], next_cursor: "later" } });
+  assert.deepEqual(await loadAdminUsagePage(filters, null, async () => Response.json({ items: null, next_cursor: null })), { kind: "error", message: "服务端返回了无效流量统计。" });
+});
+
+test("admin usage dimension labels distinguish unknown and unattributed resources", () => {
+  const names = { users: new Map([["u1", "a@example.test"]]), nodes: new Map([["n1", "JP"]]), lines: new Map([["l1", "JP via HK"]]) };
+  assert.equal(adminUsageDimensionLabel("date", "", names), "全部资源");
+  assert.equal(adminUsageDimensionLabel("user", "u1", names), "a@example.test");
+  assert.equal(adminUsageDimensionLabel("node", "n1", names), "JP");
+  assert.equal(adminUsageDimensionLabel("line", "l1", names), "JP via HK");
+  assert.equal(adminUsageDimensionLabel("line", "", names), "未关联线路");
+  assert.equal(adminUsageDimensionLabel("node", "missing", names), "missing");
 });
 
 test("proxy nodes require a valid proxy port and forward-only nodes omit it", () => {

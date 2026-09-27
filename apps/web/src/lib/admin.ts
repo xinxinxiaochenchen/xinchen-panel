@@ -51,6 +51,55 @@ export type AuditRecord = {
   created_at: string;
 };
 
+export type AdminUsageGroup = "date" | "user" | "node" | "line";
+export type AdminUsageFilters = { from: string; to: string; groupBy: AdminUsageGroup; userID?: string; nodeID?: string; lineID?: string };
+export type UsageBucket = { date: string; dimension_id: string; uploaded_bytes: number; downloaded_bytes: number; charged_bytes: number };
+export type AdminUsageNames = { users: ReadonlyMap<string, string>; nodes: ReadonlyMap<string, string>; lines: ReadonlyMap<string, string> };
+
+export function validateAdminUsageFilters(filters: AdminUsageFilters): string {
+  const parse = (value: string): number | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const time = Date.parse(`${value}T00:00:00Z`);
+    return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value ? time : null;
+  };
+  const from = parse(filters.from);
+  const to = parse(filters.to);
+  if (from === null || to === null) return "请输入有效的开始和结束日期。";
+  if (to < from) return "结束日期不能早于开始日期。";
+  if ((to - from) / 86400000 >= 90) return "统计区间最多为 90 天。";
+  return "";
+}
+
+export function adminUsageDimensionLabel(groupBy: AdminUsageGroup, id: string, names: AdminUsageNames): string {
+  if (groupBy === "date") return "全部资源";
+  if (!id) return groupBy === "line" ? "未关联线路" : "未知资源";
+  const directory = groupBy === "user" ? names.users : groupBy === "node" ? names.nodes : names.lines;
+  return directory.get(id) ?? id;
+}
+
+export function buildAdminUsagePath(filters: AdminUsageFilters, cursor?: string | null): string {
+  const query = new URLSearchParams({ from: filters.from, to: filters.to, group_by: filters.groupBy });
+  if (filters.userID) query.set("user_id", filters.userID);
+  if (filters.nodeID) query.set("node_id", filters.nodeID);
+  if (filters.lineID) query.set("line_id", filters.lineID);
+  query.set("limit", "100");
+  if (cursor) query.set("cursor", cursor);
+  return `/api/v1/admin/usage/daily?${query.toString()}`;
+}
+
+export async function loadAdminUsagePage(filters: AdminUsageFilters, cursor: string | null = null, request: typeof fetch = fetch): Promise<{ kind: "ready"; data: { items: UsageBucket[]; next_cursor: string | null } } | { kind: "empty" } | { kind: "error"; message: string }> {
+  try {
+    const response = await request(buildAdminUsagePath(filters, cursor), { credentials: "same-origin", cache: "no-store" });
+    if (response.status === 404) return { kind: "empty" };
+    if (response.status === 401) return { kind: "error", message: "登录已过期，请重新登录。" };
+    if (response.status === 403) return { kind: "error", message: "当前账户无权查看流量统计。" };
+    if (!response.ok) return { kind: "error", message: `请求失败（${response.status}）` };
+    const data = await response.json() as { items?: UsageBucket[]; next_cursor?: string | null };
+    if (!Array.isArray(data.items)) return { kind: "error", message: "服务端返回了无效流量统计。" };
+    return data.items.length || data.next_cursor ? { kind: "ready", data: { items: data.items, next_cursor: data.next_cursor ?? null } } : { kind: "empty" };
+  } catch { return { kind: "error", message: "流量统计暂不可用，请稍后重试。" }; }
+}
+
 export function customRolePermissions(permissions: PermissionRecord[]): PermissionRecord[] {
   return permissions.filter((permission) => permission.code !== 'roles.write');
 }
@@ -127,6 +176,7 @@ const adminPermissions = [
   "routing_rulesets.read",
   "routing_rulesets.write",
   "audit.read",
+  "usage.admin",
 ];
 
 export function hasAdminAccess(permissions: string[]): boolean {
