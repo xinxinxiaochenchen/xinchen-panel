@@ -61,6 +61,9 @@ func (r *PostgresRepository) Create(ctx context.Context, ownerID string, input A
 	var maxProxyLines int
 	if err := tx.QueryRow(ctx, `SELECT COALESCE((snapshot_json->'limits'->>'max_proxy_lines')::int,1)
 FROM memberships WHERE user_id=$1 AND status='active' AND starts_at<=clock_timestamp() AND ends_at>clock_timestamp() FOR SHARE`, ownerID).Scan(&maxProxyLines); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Access{}, "", ErrNotFound
+		}
 		return Access{}, "", proxyDatabaseError(err)
 	}
 	if len(input.LineIDs) > maxProxyLines {

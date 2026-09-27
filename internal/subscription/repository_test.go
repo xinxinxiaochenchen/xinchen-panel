@@ -51,7 +51,7 @@ func TestPostgresSubscriptionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := NewPostgresRepository(pool, cipher)
-	input := Input{Name: "Laptop", NameTemplate: "{region} · {name}", ProxyAccessIDs: []string{access.ID}, Enabled: true}
+	input := Input{Name: "Laptop", NameTemplate: "{region} · {name} · {line}", ProxyAccessIDs: []string{access.ID}, Enabled: true}
 	if _, _, err := repo.Create(ctx, other, input, "test"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner create: %v", err)
 	}
