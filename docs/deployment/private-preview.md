@@ -45,6 +45,8 @@
 - API 默认映射到主机 `127.0.0.1:18080`。临时纯 IP 预览可在 `.env` 中设 `CONTROL_BIND_IP=0.0.0.0`，通过 `http://179.255.145.149:18080` 访问健康接口。80/443 仍由现有 Nginx Proxy Manager 使用。
 - 服务器内存约 1 GiB；数据库和 API 分别设 256 MiB、128 MiB 容器限制。部署后观察内存和重启次数。
 
+当前已发布 `3454b70` 至 `/opt/network-control-plane/releases/release-3454b70`：多跳只可保存为停用拓扑草稿，控制台可创建和查看，实际多跳数据面仍未启用。发布包 SHA-256 `95ecab9d6c9c0667d71e1102295cd6eef562fb2ecb6792e1013c765f2d04f0f6`；升级前备份 `ncp-before-3454b70.dump` 已校验可读且权限为 0600。正式库迁移 19，API/DB healthy、重启 0，首页和 ready 为 200，HTTP 登录为 404，18443 仅绑定回环，正式库用户/节点/Agent 均为 0。
+
 ## 部署
 
 1. 在开发机用 `GO_BIN=/path/to/go sh scripts/build-linux-amd64.sh` 构建 React 静态资源及 Linux amd64 的 `bin/control-plane`、`bin/migrate`、`bin/admin-bootstrap`、`bin/node-bootstrap`、`bin/agent` 和 `bin/agent-token`。将 `apps/web/dist`、二进制、迁移、基础 Compose 文件及可选 `compose.agent-tls.yaml` 打包，通过 Termark 上传到 `/opt/network-control-plane/release-<commit>.tar.gz` 并解压到独立 release 目录。服务器只需从预编译文件构建小镜像。上传前确认包不含 `.git` 或 `.env`。
