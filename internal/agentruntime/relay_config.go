@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
-
-	"controlplane/internal/forward"
 )
 
 type RelayRole string
@@ -19,20 +18,34 @@ const (
 )
 
 type RelayNextHop struct {
-	NodeID  string `json:"node_id"`
-	Address string `json:"address"`
-	Port    int    `json:"port"`
-	Secret  []byte `json:"secret"`
+	NodeID       string   `json:"node_id"`
+	Address      string   `json:"address"`
+	Port         int      `json:"port"`
+	Secret       []byte   `json:"secret"`
+	Fingerprints []string `json:"fingerprints,omitempty"`
 }
 type RelayConfig struct {
-	LineID         string        `json:"line_id"`
-	Generation     uint64        `json:"generation"`
-	Role           RelayRole     `json:"role"`
-	PreviousNodeID string        `json:"previous_node_id,omitempty"`
-	PreviousSecret []byte        `json:"previous_secret,omitempty"`
-	Next           *RelayNextHop `json:"next,omitempty"`
-	TargetHost     string        `json:"target_host,omitempty"`
-	TargetPort     int           `json:"target_port,omitempty"`
+	LineID               string        `json:"line_id"`
+	Generation           uint64        `json:"generation"`
+	Role                 RelayRole     `json:"role"`
+	PreviousNodeID       string        `json:"previous_node_id,omitempty"`
+	PreviousSecret       []byte        `json:"previous_secret,omitempty"`
+	PreviousFingerprints []string      `json:"previous_fingerprints,omitempty"`
+	Next                 *RelayNextHop `json:"next,omitempty"`
+}
+
+var relayFingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+func validFingerprints(values []string) bool {
+	if len(values) < 1 || len(values) > 2 {
+		return false
+	}
+	for _, value := range values {
+		if !relayFingerprintPattern.MatchString(value) {
+			return false
+		}
+	}
+	return true
 }
 
 func ValidateRelayConfig(configs []RelayConfig) error {
@@ -53,15 +66,15 @@ func ValidateRelayConfig(configs []RelayConfig) error {
 		}
 		switch c.Role {
 		case RelayIngress:
-			if c.PreviousNodeID != "" || len(c.PreviousSecret) != 0 || !validNext(c.Next) || c.TargetHost != "" || c.TargetPort != 0 {
+			if c.PreviousNodeID != "" || len(c.PreviousSecret) != 0 || len(c.PreviousFingerprints) != 0 || !validNext(c.Next) {
 				return fmt.Errorf("relay ingress %q is invalid", c.LineID)
 			}
 		case RelayMiddle:
-			if c.PreviousNodeID == "" || !validSecret(c.PreviousSecret) || !validNext(c.Next) || c.TargetHost != "" || c.TargetPort != 0 {
+			if c.PreviousNodeID == "" || !validSecret(c.PreviousSecret) || !validFingerprints(c.PreviousFingerprints) || !validNext(c.Next) {
 				return fmt.Errorf("relay middle %q is invalid", c.LineID)
 			}
 		case RelayEgress:
-			if c.PreviousNodeID == "" || !validSecret(c.PreviousSecret) || c.Next != nil || c.TargetPort < 1 || c.TargetPort > 65535 || c.TargetHost != strings.TrimSpace(c.TargetHost) || !forward.ValidPublicHost(c.TargetHost) {
+			if c.PreviousNodeID == "" || !validSecret(c.PreviousSecret) || !validFingerprints(c.PreviousFingerprints) || c.Next != nil {
 				return fmt.Errorf("relay egress %q is invalid", c.LineID)
 			}
 		default:
@@ -71,7 +84,7 @@ func ValidateRelayConfig(configs []RelayConfig) error {
 	return nil
 }
 func validNext(n *RelayNextHop) bool {
-	if n == nil || strings.TrimSpace(n.NodeID) != n.NodeID || n.NodeID == "" || strings.TrimSpace(n.Address) != n.Address || n.Address == "" || n.Port < 1 || n.Port > 65535 || !validSecret(n.Secret) {
+	if n == nil || strings.TrimSpace(n.NodeID) != n.NodeID || n.NodeID == "" || strings.TrimSpace(n.Address) != n.Address || n.Address == "" || n.Port < 1 || n.Port > 65535 || !validSecret(n.Secret) || !validFingerprints(n.Fingerprints) {
 		return false
 	}
 	host, port, err := net.SplitHostPort(n.Address)

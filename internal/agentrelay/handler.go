@@ -2,7 +2,9 @@ package agentrelay
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/netip"
@@ -18,14 +20,15 @@ import (
 // when the route is removed or replaced. A request must never create a new
 // replay window from serialized configuration.
 type Route struct {
-	LineID         string
-	Generation     uint64
-	PreviousNodeID string
-	PreviousSecret []byte
-	Window         *ReplayWindow
-	Context        context.Context
-	ExpiresAt      time.Time
-	Next           *NextHop
+	LineID               string
+	Generation           uint64
+	PreviousNodeID       string
+	PreviousSecret       []byte
+	PreviousFingerprints []string
+	Window               *ReplayWindow
+	Context              context.Context
+	ExpiresAt            time.Time
+	Next                 *NextHop
 }
 
 type Handler struct {
@@ -71,6 +74,19 @@ func (handler *Handler) HandleConn(parent context.Context, client *tls.Conn) err
 	if !ok || route == nil || route.PreviousNodeID != peerID || route.Context == nil ||
 		route.Context.Err() != nil || !route.ExpiresAt.After(time.Now()) {
 		return reject("UNAUTHORIZED")
+	}
+	if len(route.PreviousFingerprints) > 0 {
+		fingerprint := sha256.Sum256(state.PeerCertificates[0].Raw)
+		allowed := false
+		for _, value := range route.PreviousFingerprints {
+			if value == hex.EncodeToString(fingerprint[:]) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return reject("UNAUTHORIZED")
+		}
 	}
 	if err := VerifyOpen(request, route.PreviousSecret, route.LineID, route.Generation, route.Window, time.Now()); err != nil {
 		return reject("UNAUTHORIZED")

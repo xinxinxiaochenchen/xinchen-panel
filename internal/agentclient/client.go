@@ -42,6 +42,7 @@ type Config struct {
 	ReconnectMin      time.Duration
 	ReconnectMax      time.Duration
 	ProxyReady        bool
+	RelayReady        bool
 	UsageOutbox       *FileUsageOutbox
 	LeaseStore        *FileLeaseStore
 }
@@ -163,6 +164,9 @@ func (c *Client) RunOnce(ctx context.Context) error {
 	capabilities := []string{"forward"}
 	if c.config.ProxyReady {
 		capabilities = append(capabilities, "proxy")
+	}
+	if c.config.RelayReady {
+		capabilities = append(capabilities, "relay")
 	}
 	if err := send(agentproto.TypeHello, agentproto.Hello{AgentVersion: c.config.Version,
 		AppliedRevision: 0, Capabilities: capabilities}); err != nil {

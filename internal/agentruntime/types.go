@@ -29,12 +29,13 @@ type Snapshot struct {
 }
 
 type ProxyAccess struct {
-	ID             string    `json:"id"`
-	UserID         string    `json:"user_id"`
-	LineID         string    `json:"line_id"`
-	IngressPort    int       `json:"ingress_port"`
-	CredentialHash string    `json:"credential_hash"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	ID              string    `json:"id"`
+	UserID          string    `json:"user_id"`
+	LineID          string    `json:"line_id"`
+	RelayGeneration uint64    `json:"relay_generation,omitempty"`
+	IngressPort     int       `json:"ingress_port"`
+	CredentialHash  string    `json:"credential_hash"`
+	ExpiresAt       time.Time `json:"expires_at"`
 }
 
 var trojanHashPattern = regexp.MustCompile(`^[0-9a-f]{56}$`)
@@ -58,6 +59,9 @@ var ErrNonPublicTarget = errors.New("forward target has no public IP address")
 func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 	if snapshot.Revision == 0 {
 		return nil, errors.New("snapshot revision must be positive")
+	}
+	if err := ValidateRelayConfig(snapshot.RelayConfig); err != nil {
+		return nil, err
 	}
 	listeners := make(map[listenerKey]target)
 	ids := make(map[string]struct{}, len(snapshot.Rules))
@@ -97,6 +101,12 @@ func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 	}
 	proxyIDs := make(map[string]struct{}, len(snapshot.ProxyConfig))
 	proxyHashes := make(map[string]struct{}, len(snapshot.ProxyConfig))
+	ingressRelays := make(map[string]uint64)
+	for _, relay := range snapshot.RelayConfig {
+		if relay.Role == RelayIngress {
+			ingressRelays[relay.LineID] = relay.Generation
+		}
+	}
 	for _, access := range snapshot.ProxyConfig {
 		if access.ID == "" || access.UserID == "" || access.LineID == "" ||
 			access.ID != strings.TrimSpace(access.ID) || access.IngressPort < 1 || access.IngressPort > 65535 ||
@@ -111,6 +121,9 @@ func ValidateSnapshot(snapshot Snapshot) (map[listenerKey]target, error) {
 		}
 		if _, found := listeners[listenerKey{protocol: "TCP", port: access.IngressPort}]; found {
 			return nil, errors.New("proxy listener conflicts with forward TCP listener")
+		}
+		if access.RelayGeneration != 0 && ingressRelays[access.LineID] != access.RelayGeneration {
+			return nil, errors.New("proxy access requires a matching ingress relay")
 		}
 		proxyIDs[access.ID] = struct{}{}
 		proxyHashes[access.CredentialHash] = struct{}{}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,6 +96,52 @@ func TestEgressHandlerAuthenticatesAndForwardsTCP(t *testing.T) {
 	case <-finished:
 	case <-time.After(2 * time.Second):
 		t.Fatal("egress handler did not stop after route revoked")
+	}
+}
+
+func TestRelayHandlerRejectsUnpinnedPreviousCertificate(t *testing.T) {
+	roots, clientCert, serverCert := relayTLSFixture(t)
+	serverTLS, err := ServerTLSConfig(func() (*tls.Certificate, error) { return &serverCert, nil }, roots,
+		func(string, string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := ClientTLSConfig(func() (*tls.Certificate, error) { return &clientCert, nil }, roots,
+		"relay.example.com", tlsEgressID, []string{certFingerprint(serverCert)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := bytes.Repeat([]byte{0x42}, 32)
+	route := &Route{LineID: testLineID, Generation: 7, PreviousNodeID: tlsIngressID,
+		PreviousSecret: secret, PreviousFingerprints: []string{strings.Repeat("a", 64)},
+		Window: NewReplayWindow(16), Context: context.Background(), ExpiresAt: time.Now().Add(time.Minute)}
+	handler := &Handler{Routes: func(string) (*Route, bool) { return route, true },
+		Resolve: func(context.Context, string) (netip.Addr, error) {
+			t.Fatal("unapproved source reached target resolution")
+			return netip.Addr{}, nil
+		}}
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+	finished := make(chan error, 1)
+	go func() { finished <- handler.HandleConn(context.Background(), tls.Server(right, serverTLS)) }()
+	client := tls.Client(left, clientTLS)
+	defer closeImmediately(client)
+	request, err := SignOpen(validOpen(time.Now()), secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteOpen(client, request); err != nil {
+		t.Fatal(err)
+	}
+	response, err := ReadOpenResponse(client)
+	if err != nil || response.ErrorCode != "UNAUTHORIZED" {
+		t.Fatalf("unapproved previous certificate response = %+v, %v", response, err)
+	}
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("rejected relay connection remained open")
 	}
 }
 

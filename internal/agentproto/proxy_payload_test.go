@@ -38,7 +38,7 @@ func TestProxyConfigurationDigestAndDecode(t *testing.T) {
 
 func TestRelayConfigParticipatesInCanonicalDigestAndStrictDecode(t *testing.T) {
 	secret := bytes.Repeat([]byte{7}, 32)
-	relay := []agentruntime.RelayConfig{{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 2, Role: agentruntime.RelayEgress, PreviousNodeID: "prev", PreviousSecret: secret, TargetHost: "example.com", TargetPort: 443}}
+	relay := []agentruntime.RelayConfig{{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 2, Role: agentruntime.RelayEgress, PreviousNodeID: "prev", PreviousSecret: secret, PreviousFingerprints: []string{strings.Repeat("a", 64)}}}
 	payload, digest, err := CanonicalConfigWithRelay(nil, nil, relay)
 	if err != nil {
 		t.Fatal(err)

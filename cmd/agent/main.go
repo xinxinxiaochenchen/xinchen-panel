@@ -74,6 +74,23 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return errors.New("control plane CA contains no certificate")
 	}
+	agentKeyPEM, err := os.ReadFile(cfg.KeyFile)
+	if err != nil {
+		return fmt.Errorf("read Agent private key: %w", err)
+	}
+	var relayState *relayRuntimeState
+	var relayTLS *tls.Config
+	if cfg.RelayHost != "" {
+		relayState, err = prepareRelay(ctx, cfg, pair, agentKeyPEM, roots)
+		if err != nil {
+			return err
+		}
+		relayTLS, err = relayState.serverTLS()
+		if err != nil {
+			return fmt.Errorf("configure relay TLS: %w", err)
+		}
+		go relayState.renewLoop(ctx, cfg.KeyFile)
+	}
 	state, err := agentclient.NewFileStateStore(cfg.StateFile)
 	if err != nil {
 		return err
@@ -98,9 +115,15 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 	}
 	client, err := agentclient.New(agentclient.Config{URL: cfg.StreamURL, NodeID: cfg.NodeID,
 		Version: cfg.Version, RootCAs: roots, Certificate: pair, CertFile: cfg.CertFile, KeyFile: cfg.KeyFile,
-		ProxyReady: proxyTLS != nil, UsageOutbox: usage, LeaseStore: leases},
+		ProxyReady: proxyTLS != nil, RelayReady: relayState != nil, UsageOutbox: usage, LeaseStore: leases},
 		func() agentclient.Runtime {
-			return agentruntime.New(agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS, RequireMetering: true})
+			options := agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS, RequireMetering: true}
+			if relayState != nil {
+				options.RelayPort = cfg.RelayPort
+				options.RelayTLSConfig = relayTLS
+				options.RelayClientTLS = relayState.clientTLS
+			}
+			return agentruntime.New(options)
 		}, state)
 	if err != nil {
 		return err

@@ -29,6 +29,10 @@ type Options struct {
 	MaxPendingUDPPackets int
 	UDPIdleTimeout       time.Duration
 	TCPDrainTimeout      time.Duration
+	RelayPort            int
+	RelayTLSConfig       *tls.Config
+	RelayClientTLS       RelayClientTLS
+	RelayDial            DialFunc
 }
 
 type Runtime struct {
@@ -40,6 +44,7 @@ type Runtime struct {
 	closed    bool
 	closeDone chan struct{}
 	loops     sync.WaitGroup
+	relay     *relayEndpoint
 }
 
 type endpoint struct {
@@ -218,6 +223,9 @@ func (r *Runtime) Apply(ctx context.Context, snapshot Snapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := r.applyRelay(snapshot.RelayConfig); err != nil {
+		return err
+	}
 	for port, listener := range r.proxies {
 		accesses, keep := wantedProxies[port]
 		if !keep {
@@ -296,6 +304,10 @@ func (r *Runtime) Close() error {
 	for port, listener := range r.proxies {
 		listener.close()
 		delete(r.proxies, port)
+	}
+	if r.relay != nil {
+		r.relay.close()
+		r.relay = nil
 	}
 	r.mu.Unlock()
 	r.loops.Wait()

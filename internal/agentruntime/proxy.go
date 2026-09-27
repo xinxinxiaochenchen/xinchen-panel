@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"controlplane/internal/agentmeter"
+	"controlplane/internal/agentrelay"
+	"controlplane/internal/platform/id"
 )
 
 // proxyEndpoint owns one Trojan TLS listener and its credential set. It shares
@@ -118,12 +120,41 @@ func (r *Runtime) relayProxy(p *proxyEndpoint, session *tcpSession) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(session.ctx, 10*time.Second)
-	address, err := ResolvePublic(ctx, host, r.options.Resolve)
-	if err != nil {
-		cancel()
-		return
+	var upstream net.Conn
+	if access.RelayGeneration != 0 {
+		r.mu.Lock()
+		relay := r.relay
+		r.mu.Unlock()
+		if relay == nil {
+			cancel()
+			return
+		}
+		relay.mu.RLock()
+		route := relay.routes[access.LineID]
+		relay.mu.RUnlock()
+		if route == nil || route.Generation != access.RelayGeneration || route.Next == nil ||
+			route.PreviousNodeID != "" || route.Context.Err() != nil {
+			cancel()
+			return
+		}
+		stopRoute := context.AfterFunc(route.Context, session.close)
+		defer stopRoute()
+		connectionID, idErr := id.NewV7()
+		if idErr != nil {
+			cancel()
+			return
+		}
+		upstream, err = agentrelay.DialLine(ctx, *route.Next, agentrelay.Open{Version: 1, Type: "open",
+			LineID: access.LineID, ConnectionID: connectionID, Generation: route.Generation,
+			TargetHost: host, TargetPort: port, SentAt: time.Now().UTC()})
+	} else {
+		address, resolveErr := ResolvePublic(ctx, host, r.options.Resolve)
+		if resolveErr != nil {
+			cancel()
+			return
+		}
+		upstream, err = r.options.DialTCP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(port)))
 	}
-	upstream, err := r.options.DialTCP(ctx, net.JoinHostPort(address.String(), strconv.Itoa(port)))
 	cancel()
 	if err != nil || !session.setUpstream(upstream) {
 		return

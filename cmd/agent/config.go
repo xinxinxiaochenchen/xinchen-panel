@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 )
 
 var agentUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -24,6 +26,10 @@ type AgentConfig struct {
 	BindHost      string
 	ProxyCertFile string
 	ProxyKeyFile  string
+	RelayHost     string
+	RelayPort     int
+	RelayCertFile string
+	RelayKeyFile  string
 }
 
 func LoadAgentConfig(lookup func(string) (string, bool)) (AgentConfig, error) {
@@ -88,6 +94,52 @@ func LoadAgentConfig(lookup func(string) (string, bool)) (AgentConfig, error) {
 		if err != nil || info.Mode().Perm()&0077 != 0 {
 			return AgentConfig{}, errors.New("proxy TLS private key must be readable only by owner")
 		}
+	}
+	relayValues := make(map[string]string, 4)
+	for _, key := range []string{"CONTROL_AGENT_RELAY_HOST", "CONTROL_AGENT_RELAY_PORT", "CONTROL_AGENT_RELAY_CERT_FILE", "CONTROL_AGENT_RELAY_KEY_FILE"} {
+		relayValues[key], _ = lookup(key)
+	}
+	configuredRelay := false
+	for _, value := range relayValues {
+		if value != "" {
+			configuredRelay = true
+			break
+		}
+	}
+	if configuredRelay {
+		if relayValues["CONTROL_AGENT_RELAY_HOST"] == "" || relayValues["CONTROL_AGENT_RELAY_PORT"] == "" ||
+			relayValues["CONTROL_AGENT_RELAY_CERT_FILE"] == "" || relayValues["CONTROL_AGENT_RELAY_KEY_FILE"] == "" {
+			return AgentConfig{}, errors.New("relay host, port, certificate and key must be configured together")
+		}
+		port, err := strconv.Atoi(relayValues["CONTROL_AGENT_RELAY_PORT"])
+		if err != nil || port < 1024 || port > 65535 {
+			return AgentConfig{}, errors.New("CONTROL_AGENT_RELAY_PORT must be between 1024 and 65535")
+		}
+		host := strings.TrimSpace(relayValues["CONTROL_AGENT_RELAY_HOST"])
+		if host != relayValues["CONTROL_AGENT_RELAY_HOST"] || host == "" || strings.ContainsAny(host, " /\t\r\n") || net.ParseIP(host) != nil && net.ParseIP(host).IsUnspecified() {
+			return AgentConfig{}, errors.New("CONTROL_AGENT_RELAY_HOST is invalid")
+		}
+		for _, path := range []string{relayValues["CONTROL_AGENT_RELAY_CERT_FILE"], relayValues["CONTROL_AGENT_RELAY_KEY_FILE"]} {
+			if !filepath.IsAbs(path) {
+				return AgentConfig{}, errors.New("relay certificate and key paths must be absolute")
+			}
+		}
+		if info, err := os.Lstat(relayValues["CONTROL_AGENT_RELAY_KEY_FILE"]); err == nil {
+			if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+				return AgentConfig{}, errors.New("relay private key must be owner-only regular file")
+			}
+		} else if !os.IsNotExist(err) {
+			return AgentConfig{}, err
+		}
+		if info, err := os.Lstat(relayValues["CONTROL_AGENT_RELAY_CERT_FILE"]); err == nil {
+			if !info.Mode().IsRegular() {
+				return AgentConfig{}, errors.New("relay certificate must be a regular file")
+			}
+		} else if !os.IsNotExist(err) {
+			return AgentConfig{}, err
+		}
+		cfg.RelayHost, cfg.RelayPort = host, port
+		cfg.RelayCertFile, cfg.RelayKeyFile = relayValues["CONTROL_AGENT_RELAY_CERT_FILE"], relayValues["CONTROL_AGENT_RELAY_KEY_FILE"]
 	}
 	return cfg, nil
 }

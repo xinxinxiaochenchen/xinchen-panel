@@ -36,6 +36,29 @@ func TestLoadAgentConfigRequiresSecurePathsAndWSS(t *testing.T) {
 	if err != nil || loaded.ProxyCertFile != values["CONTROL_AGENT_PROXY_CERT_FILE"] {
 		t.Fatalf("valid proxy TLS config = %+v, %v", loaded, err)
 	}
+	values["CONTROL_AGENT_RELAY_HOST"] = "relay.example.com"
+	values["CONTROL_AGENT_RELAY_PORT"] = "24443"
+	values["CONTROL_AGENT_RELAY_CERT_FILE"] = filepath.Join(directory, "relay.crt")
+	values["CONTROL_AGENT_RELAY_KEY_FILE"] = filepath.Join(directory, "relay.key")
+	loaded, err = LoadAgentConfig(lookup)
+	if err != nil || loaded.RelayPort != 24443 || loaded.RelayHost != "relay.example.com" {
+		t.Fatalf("valid relay config = %+v, %v", loaded, err)
+	}
+	values["CONTROL_AGENT_RELAY_PORT"] = "80"
+	if _, err := LoadAgentConfig(lookup); err == nil {
+		t.Fatal("privileged relay port accepted")
+	}
+	values["CONTROL_AGENT_RELAY_PORT"] = "24443"
+	if err := os.WriteFile(values["CONTROL_AGENT_RELAY_KEY_FILE"], []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadAgentConfig(lookup); err == nil {
+		t.Fatal("world-readable relay key accepted")
+	}
+	delete(values, "CONTROL_AGENT_RELAY_HOST")
+	delete(values, "CONTROL_AGENT_RELAY_PORT")
+	delete(values, "CONTROL_AGENT_RELAY_CERT_FILE")
+	delete(values, "CONTROL_AGENT_RELAY_KEY_FILE")
 	if err := os.Chmod(values["CONTROL_AGENT_PROXY_KEY_FILE"], 0644); err != nil {
 		t.Fatal(err)
 	}
