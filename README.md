@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与多跳线路、转发、代理连接、订阅与分流、用量账本，以及登录后的 Web UI。`us bwg` 纯 IP 预览继续关闭浏览器认证；已部署服务状态以[部署记录](docs/deployment/us-bwg-preview.md)为准。独立测试库此前已验证真实直达 TCP/UDP 转发、Trojan TLS 代理和计费入账；线路绑定转发的数据库集成测试尚未执行。
+独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与多跳线路、转发、代理连接、订阅与分流、用量账本，以及登录后的 Web UI。`us bwg` 纯 IP 预览继续关闭浏览器认证；已部署服务状态以[部署记录](docs/deployment/us-bwg-preview.md)为准。独立 PostgreSQL 16.10 测试库已验证直达及线路绑定 TCP/UDP 转发、Trojan TLS 代理和计费入账。
 
 交付形态是部署在 VPS 上、通过浏览器访问的 Web 项目：React 前端由 Go 控制面提供静态资源，PostgreSQL 保存主数据，节点服务器运行独立 Go Agent。项目不包含原生手机或桌面 App，也不包含付费系统。当前纯 IP HTTP 地址用于只读预览；可操作的管理登录需要受信任的 HTTPS 入口，后续可由 Nginx 反代到回环绑定的控制面。
 
@@ -51,7 +51,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 转发规则开发状态
 
-普通用户可通过 `GET/POST /api/v1/forward-rules` 和 `GET/PATCH/DELETE /api/v1/forward-rules/{id}` 创建、查看、改名、启停及删除自有的转发规则。入口节点必须具备 `forward` 能力且属于有效订购授权的资源组；目标可为授权节点或公网地址。公网地址规则可选绑定已启用的多跳线路，入口必须是线路首跳，整跳节点组与跳数受套餐限制。管理员通过 `/api/v1/admin/forward-target-policies` 批准目标类型、节点组、协议和目标端口范围；默认无授权。TCP、UDP 与 BOTH 分别原子占用对应端口，每节点规则数受订购快照约束；停用保留端口，删除释放端口。端口、目标和线路变更需删除后重建。线路绑定转发的数据库迁移和集成测试尚待隔离 PostgreSQL 验证；正式服务器仍运行旧版，公网纯 HTTP 预览保持关闭写路由。
+普通用户可通过 `GET/POST /api/v1/forward-rules` 和 `GET/PATCH/DELETE /api/v1/forward-rules/{id}` 创建、查看、改名、启停及删除自有的转发规则。入口节点必须具备 `forward` 能力且属于有效订购授权的资源组；目标可为授权节点或公网地址。公网地址规则可选绑定已启用的多跳线路，入口必须是线路首跳，整跳节点组与跳数受套餐限制。管理员通过 `/api/v1/admin/forward-target-policies` 批准目标类型、节点组、协议和目标端口范围；默认无授权。TCP、UDP 与 BOTH 分别原子占用对应端口，每节点规则数受订购快照约束；停用保留端口，删除释放端口。端口、目标和线路变更需删除后重建。线路绑定转发的迁移 24 与 PostgreSQL 16.10 集成测试已通过，并发布到 `us bwg`；公网纯 HTTP 预览保持关闭写路由。
 
 ## Trojan 代理连接开发状态
 
@@ -61,7 +61,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## Agent 转发运行时开发状态
 
-`internal/agentruntime` 实现独立的 TCP/UDP 直达转发执行器。调用方传入带递增版本号的完整规则快照；运行时先验证目标和端口、预绑定所有新增监听，失败时保留上一个版本。TCP 与 UDP 在连接时解析目标并拒绝私网、回环和保留地址；TCP 连接数、UDP 待处理包与客户端关联数均有上限。停用规则或更换目标会撤销旧 TCP 连接及 UDP 关联；UDP 关联按客户端活动时间过期。运行时支持注入 DNS/拨号器以进行真实套接字测试。Agent 进程已接入运行时与 mTLS 配置流；线上 `us dmit` 的 Agent TLS 只在回环地址开放，尚未部署 Agent 或执行正式转发。当前纯 IP HTTP 预览提供只读页面与健康检查。
+`internal/agentruntime` 实现独立的 TCP/UDP 直达转发执行器。调用方传入带递增版本号的完整规则快照；运行时先验证目标和端口、预绑定所有新增监听，失败时保留上一个版本。TCP 与 UDP 在连接时解析目标并拒绝私网、回环和保留地址；TCP 连接数、UDP 待处理包与客户端关联数均有上限。停用规则或更换目标会撤销旧 TCP 连接及 UDP 关联；UDP 关联按客户端活动时间过期。运行时支持注入 DNS/拨号器以进行真实套接字测试。Agent 进程已接入运行时与 mTLS 配置流；线上 `us bwg` 的 Agent TLS 仍只在控制面回环地址开放，尚未部署正式 Agent 或执行正式转发。当前纯 IP HTTP 预览提供只读页面与健康检查。
 
 `internal/orchestration` 可从 PostgreSQL 的一致性只读快照中编译单节点转发配置。编译时重新检查账户、有效订购快照、资源组、节点能力和目标策略，剔除失效规则；非法目标、损坏的订购快照或监听冲突会被单独排除并返回诊断，避免阻断其他规则的撤销。节点停用时直接生成空配置。输出规则顺序固定。每节点规则数是创建上限；正数上限下调不自动删减已有规则，降为零则撤销该套餐的转发能力。
 
