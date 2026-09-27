@@ -40,12 +40,15 @@ type LineOption struct {
 }
 
 type AccessPatch struct {
-	Name    *string `json:"name,omitempty"`
-	Enabled *bool   `json:"enabled,omitempty"`
+	Name        *string      `json:"name,omitempty"`
+	Enabled     *bool        `json:"enabled,omitempty"`
+	LineID      *string      `json:"line_id,omitempty"`
+	LineIDs     *[]string    `json:"line_ids,omitempty"`
+	LineOptions []LineOption `json:"line_options,omitempty"`
 }
 
 func NormalizeAccessPatch(patch AccessPatch) (AccessPatch, error) {
-	if patch.Name == nil && patch.Enabled == nil {
+	if patch.Name == nil && patch.Enabled == nil && patch.LineID == nil && patch.LineIDs == nil && patch.LineOptions == nil {
 		return AccessPatch{}, ValidationError{"patch", "at least one field is required"}
 	}
 	if patch.Name != nil {
@@ -54,6 +57,29 @@ func NormalizeAccessPatch(patch AccessPatch) (AccessPatch, error) {
 			return AccessPatch{}, ValidationError{"name", "expected 1 to 100 printable characters"}
 		}
 		patch.Name = &name
+	}
+	if patch.LineIDs != nil || patch.LineID != nil || patch.LineOptions != nil {
+		lines := []string(nil)
+		if patch.LineIDs != nil {
+			lines = append([]string(nil), (*patch.LineIDs)...)
+		}
+		if patch.LineID != nil {
+			if len(lines) == 0 {
+				lines = []string{*patch.LineID}
+			} else if !strings.EqualFold(*patch.LineID, lines[0]) {
+				return AccessPatch{}, ValidationError{"line_id", "must match first line_ids entry"}
+			}
+		}
+		if len(lines) == 0 {
+			return AccessPatch{}, ValidationError{"line_ids", "expected 1 to 32 lines"}
+		}
+		normalized, err := NormalizeAccess(NewAccess{Name: "candidate", LineIDs: lines, LineOptions: patch.LineOptions})
+		if err != nil {
+			return AccessPatch{}, err
+		}
+		patch.LineID = &normalized.LineID
+		patch.LineIDs = &normalized.LineIDs
+		patch.LineOptions = normalized.LineOptions
 	}
 	return patch, nil
 }

@@ -39,6 +39,26 @@ func TestNormalizeAccessPatchRequiresAChange(t *testing.T) {
 	}
 }
 
+func TestNormalizeAccessPatchNormalizesCandidateReplacement(t *testing.T) {
+	first := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423"
+	second := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424"
+	lines := []string{first, second}
+	patch, err := NormalizeAccessPatch(AccessPatch{LineIDs: &lines, LineOptions: []LineOption{
+		{LineID: second, Priority: 20, Weight: 3},
+		{LineID: first, Priority: 10, Weight: 1},
+	}})
+	if err != nil || patch.LineIDs == nil || len(*patch.LineIDs) != 2 || (*patch.LineIDs)[0] != first || patch.LineID == nil || *patch.LineID != first {
+		t.Fatalf("normalized candidate patch = %+v, %v", patch, err)
+	}
+	if len(patch.LineOptions) != 2 || patch.LineOptions[0].LineID != first || patch.LineOptions[1].LineID != second {
+		t.Fatalf("normalized candidate options = %+v", patch.LineOptions)
+	}
+	empty := []string{}
+	if _, err := NormalizeAccessPatch(AccessPatch{LineIDs: &empty}); err == nil {
+		t.Fatal("empty candidate replacement accepted")
+	}
+}
+
 func TestNormalizeAccessLineCandidatesPreserveOrderAndRejectDuplicates(t *testing.T) {
 	first := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423"
 	second := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424"

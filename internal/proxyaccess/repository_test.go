@@ -124,6 +124,41 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 	if got, err := repo.RevealOwn(ctx, owner, access.ID); err != nil || got != rotated {
 		t.Fatalf("rotated credential read = %q, %v", got, err)
 	}
+	fallbackLine := insertID(`INSERT INTO lines(id,name,created_by) VALUES (gen_random_uuid(),'Proxy fallback',$1) RETURNING id::text`, owner)
+	if _, err := pool.Exec(ctx, `INSERT INTO line_hops(line_id,position,node_id,role) VALUES ($1,0,$2,'egress')`, fallbackLine, node); err != nil {
+		t.Fatal(err)
+	}
+	poolGrant, _ := json.Marshal(map[string]any{"resource_group_ids": []string{group}, "line_ids": []string{line, fallbackLine}, "limits": map[string]any{"max_proxy_lines": 2}})
+	if _, err := pool.Exec(ctx, `UPDATE memberships SET snapshot_json=$2 WHERE user_id=$1`, owner, poolGrant); err != nil {
+		t.Fatal(err)
+	}
+	candidates := []string{line, fallbackLine}
+	pooled, err := repo.UpdateOwn(ctx, owner, access.ID, AccessPatch{LineIDs: &candidates, LineOptions: []LineOption{
+		{LineID: line, Priority: 10, Weight: 1}, {LineID: fallbackLine, Priority: 20, Weight: 3},
+	}}, "add-proxy-candidate")
+	if err != nil || len(pooled.LineIDs) != 2 || pooled.LineOptions[1].Weight != 3 {
+		t.Fatalf("candidate update = %+v, %v", pooled, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE lines SET enabled=false WHERE id=$1`, line); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.RevealOwn(ctx, owner, access.ID); err != nil || got != rotated {
+		t.Fatalf("fallback credential read = %q, %v", got, err)
+	}
+	rotated, err = repo.RotateOwn(ctx, owner, access.ID, "rotate-with-fallback")
+	if err != nil || len(rotated) != 43 {
+		t.Fatalf("fallback credential rotation = %q, %v", rotated, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE lines SET enabled=true WHERE id=$1`, line); err != nil {
+		t.Fatal(err)
+	}
+	primaryOnly := []string{line}
+	if got, err := repo.UpdateOwn(ctx, owner, access.ID, AccessPatch{LineIDs: &primaryOnly}, "remove-proxy-candidate"); err != nil || len(got.LineIDs) != 1 || got.LineIDs[0] != line {
+		t.Fatalf("candidate removal = %+v, %v", got, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE memberships SET snapshot_json=$2 WHERE user_id=$1`, owner, snapshot); err != nil {
+		t.Fatal(err)
+	}
 	disabled := false
 	updated, err := repo.UpdateOwn(ctx, owner, access.ID, AccessPatch{Enabled: &disabled}, "disable-proxy")
 	if err != nil || updated.Enabled || updated.ApplyStatus != "pending" || len(updated.LineIDs) != 1 || updated.LineIDs[0] != line {

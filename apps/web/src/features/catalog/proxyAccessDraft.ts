@@ -1,5 +1,19 @@
 export type ProxyLineDraft = { lineID: string; priority: number; weight: number }
 
+export type ProxyAccessDraftRecord = {
+  line_id: string
+  line_ids?: string[]
+  line_options?: { line_id: string; priority: number; weight: number }[]
+}
+
+export function proxyAccessDraftFromRecord(access: ProxyAccessDraftRecord): ProxyLineDraft[] {
+  const ids = access.line_ids?.length ? access.line_ids : [access.line_id]
+  return ids.map((lineID) => {
+    const option = access.line_options?.find((item) => item.line_id === lineID)
+    return { lineID, priority: option?.priority ?? 100, weight: option?.weight ?? 1 }
+  })
+}
+
 export function proxyAccessPayload(name: string, lines: ProxyLineDraft[]) {
   if (!lines.length || lines.some((line) => !line.lineID)) throw new Error('至少选择一条线路。')
   if (lines.length > 32) throw new Error('最多选择 32 条线路。')

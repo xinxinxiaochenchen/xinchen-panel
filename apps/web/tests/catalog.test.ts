@@ -4,7 +4,7 @@ import { lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadAl
 import { customRolePermissions, loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 import { draftLinePayload } from '../src/features/catalog/lineDraft.ts'
-import { proxyAccessPayload } from '../src/features/catalog/proxyAccessDraft.ts'
+import { proxyAccessPayload, proxyAccessDraftFromRecord } from '../src/features/catalog/proxyAccessDraft.ts'
 
 test('proxy access payload keeps candidate order and weights', () => {
   assert.deepEqual(proxyAccessPayload(' Japan pool ', [
@@ -23,6 +23,14 @@ test('proxy access payload keeps candidate order and weights', () => {
     { lineID: 'line-a', priority: 100, weight: 1 },
   ]), /不能重复/)
   assert.throws(() => proxyAccessPayload('Pool', [{ lineID: 'line-a', priority: 100, weight: 0 }]), /权重/)
+})
+
+test('proxy access editor restores ordered candidate settings', () => {
+  assert.deepEqual(proxyAccessDraftFromRecord({ line_id: 'line-a', line_ids: ['line-a', 'line-b'], line_options: [
+    { line_id: 'line-a', priority: 10, weight: 2 }, { line_id: 'line-b', priority: 20, weight: 3 },
+  ] }), [
+    { lineID: 'line-a', priority: 10, weight: 2 }, { lineID: 'line-b', priority: 20, weight: 3 },
+  ])
 })
 
 test('multi-hop draft payload preserves hop roles before activation', () => {

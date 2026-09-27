@@ -66,17 +66,9 @@ FROM memberships WHERE user_id=$1 AND status='active' AND starts_at<=clock_times
 	if len(input.LineIDs) > maxProxyLines {
 		return Access{}, "", ValidationError{"line_ids", "exceeds plan proxy line limit"}
 	}
-	var membershipID string
-	for index, lineID := range input.LineIDs {
-		currentMembership, err := authorizeProxyLine(ctx, tx, ownerID, lineID)
-		if err != nil {
-			return Access{}, "", err
-		}
-		if index == 0 {
-			membershipID = currentMembership
-		} else if currentMembership != membershipID {
-			return Access{}, "", ErrConflict
-		}
+	membershipID, err := authorizeProxyAccessLines(ctx, tx, ownerID, input.LineIDs)
+	if err != nil {
+		return Access{}, "", err
 	}
 	applyStatus := "pending"
 	if !input.Enabled {
@@ -206,6 +198,39 @@ WHERE h.line_id=$1 ORDER BY h.position FOR SHARE OF n,g`, lineID)
 		}
 	} else if *lineOwner != ownerID || !entitlement.Limits.AllowCustomLines {
 		return "", ErrUnauthorized
+	}
+	return membershipID, nil
+}
+
+// Every candidate shares one Trojan listener. A candidate with a different
+// ingress node cannot be executed by the Agent that owns the primary line.
+func authorizeProxyAccessLines(ctx context.Context, tx pgx.Tx, ownerID string, lineIDs []string) (string, error) {
+	if len(lineIDs) == 0 {
+		return "", ErrNotFound
+	}
+	var membershipID, ingressNode string
+	for index, lineID := range lineIDs {
+		currentMembership, err := authorizeProxyLine(ctx, tx, ownerID, lineID)
+		if err != nil {
+			return "", err
+		}
+		var currentIngress string
+		if err := tx.QueryRow(ctx, `SELECT node_id::text FROM line_hops WHERE line_id=$1 AND position=0`, lineID).Scan(&currentIngress); err != nil {
+			return "", fmt.Errorf("read proxy candidate ingress: %w", err)
+		}
+		if index == 0 {
+			membershipID, ingressNode = currentMembership, currentIngress
+		} else if currentMembership != membershipID || currentIngress != ingressNode {
+			return "", ValidationError{"line_ids", "all candidate lines must share one ingress node"}
+		}
+	}
+	var maxProxyLines int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE((snapshot_json->'limits'->>'max_proxy_lines')::int,1)
+FROM memberships WHERE id=$1 FOR SHARE`, membershipID).Scan(&maxProxyLines); err != nil {
+		return "", fmt.Errorf("read proxy line limit: %w", err)
+	}
+	if len(lineIDs) > maxProxyLines {
+		return "", ValidationError{"line_ids", "exceeds plan proxy line limit"}
 	}
 	return membershipID, nil
 }
