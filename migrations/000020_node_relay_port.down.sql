@@ -1,0 +1,12 @@
+DROP TRIGGER IF EXISTS nodes_relay_port_reserve ON nodes;
+DROP TRIGGER IF EXISTS nodes_relay_port_release ON nodes;
+DROP FUNCTION IF EXISTS reserve_node_relay_port();
+DROP TRIGGER IF EXISTS nodes_tcp_endpoints_sync ON nodes;
+DROP FUNCTION IF EXISTS sync_node_tcp_endpoints();
+DROP TABLE IF EXISTS node_tcp_endpoints;
+DELETE FROM port_allocations WHERE owner_type = 'node_relay';
+ALTER TABLE port_allocations DROP CONSTRAINT port_allocations_owner_type_check;
+ALTER TABLE port_allocations ADD CONSTRAINT port_allocations_owner_type_check CHECK (owner_type = 'forward_rule');
+DROP INDEX IF EXISTS nodes_relay_endpoint_uniq;
+ALTER TABLE nodes DROP CONSTRAINT IF EXISTS nodes_relay_port_valid;
+ALTER TABLE nodes DROP COLUMN IF EXISTS relay_port;

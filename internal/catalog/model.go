@@ -70,6 +70,7 @@ type NewNode struct {
 	Host            string   `json:"host"`
 	PublicIP        *string  `json:"public_ip,omitempty"`
 	ProxyPort       *int     `json:"proxy_port,omitempty"`
+	RelayPort       *int     `json:"relay_port,omitempty"`
 	Capabilities    []string `json:"capabilities"`
 	BandwidthBPS    *int64   `json:"bandwidth_bps,omitempty"`
 	MultiplierMilli *int     `json:"multiplier_milli,omitempty"`
@@ -84,6 +85,7 @@ type NodeInput struct {
 	Host            string
 	PublicIP        *string
 	ProxyPort       *int
+	RelayPort       *int
 	Capabilities    []string
 	BandwidthBPS    *int64
 	MultiplierMilli int
@@ -100,6 +102,7 @@ type Node struct {
 	Host            string     `json:"host"`
 	PublicIP        *string    `json:"public_ip"`
 	ProxyPort       *int       `json:"proxy_port"`
+	RelayPort       *int       `json:"relay_port"`
 	Capabilities    []string   `json:"capabilities"`
 	BandwidthBPS    *int64     `json:"bandwidth_bps"`
 	MultiplierMilli int        `json:"multiplier_milli"`
@@ -146,6 +149,12 @@ func NormalizeNode(input NewNode) (NodeInput, error) {
 	if input.ProxyPort != nil && (*input.ProxyPort < 1 || *input.ProxyPort > 65535) {
 		return NodeInput{}, ValidationError{"proxy_port", "expected port 1 to 65535"}
 	}
+	if input.RelayPort != nil {
+		if !seen["forward"] || *input.RelayPort < 1024 || *input.RelayPort > 65535 ||
+			(input.ProxyPort != nil && *input.RelayPort == *input.ProxyPort) {
+			return NodeInput{}, ValidationError{"relay_port", "requires forward capability and distinct port 1024 to 65535"}
+		}
+	}
 	var publicIP *string
 	if input.PublicIP != nil {
 		parsed, err := netip.ParseAddr(*input.PublicIP)
@@ -183,7 +192,7 @@ func NormalizeNode(input NewNode) (NodeInput, error) {
 		enabled = *input.Enabled
 	}
 	return NodeInput{GroupID: input.GroupID, Name: name, Region: region,
-		Host: host, PublicIP: publicIP, ProxyPort: input.ProxyPort,
+		Host: host, PublicIP: publicIP, ProxyPort: input.ProxyPort, RelayPort: input.RelayPort,
 		Capabilities: capabilities, BandwidthBPS: input.BandwidthBPS,
 		MultiplierMilli: multiplier, Tags: tags, Enabled: enabled}, nil
 }

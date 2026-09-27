@@ -1,6 +1,6 @@
 # TCP Multi-Hop Lines Implementation Plan
 
-Status: Draft. Implementation begins after the multi-hop transport design is confirmed.
+Status: Transport design is pending confirmation. Disabled topology, handshake validation and port reservation foundations are implemented independently; executable multi-hop integration remains pending.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -19,13 +19,13 @@ Status: Draft. Implementation begins after the multi-hop transport design is con
 - Modify: `internal/catalog/line_repository.go`
 - Modify: `internal/catalog/line_mutations.go`
 - Modify: `internal/catalog/line_repository_test.go`
-- Create: `migrations/000020_multi_hop_line_ports.up.sql`
-- Create: `migrations/000020_multi_hop_line_ports.down.sql`
+- Create: `migrations/000020_node_relay_port.up.sql`
+- Create: `migrations/000020_node_relay_port.down.sql`
 - Modify: `api/openapi/control-plane.yaml`
 
 - [x] Add a typed hop input with contiguous positions, unique nodes, exactly one ingress and egress, and relay roles only in the middle; multi-hop remains disabled draft only.
 - [x] Keep existing one-node requests compatible by translating the current `node_id` input to one egress hop.
-- [ ] Add nullable node relay bind host/port fields with a database uniqueness constraint for enabled listeners.
+- [x] Add nullable node relay port with atomic TCP/UDP reservations and cross-kind TCP endpoint uniqueness; use the existing node host as advertised address, while bind host remains Agent-local. Disabled nodes retain reservations.
 - [x] Lock all draft nodes and resource groups in sorted UUID order before checking capability, enabled state, group grants, and `max_hops`.
 - [x] Test two-hop and three-hop authorization, duplicate nodes, role mismatch, disabled relay, missing forward capability, and `max_hops=2` allowing one or two hops.
 

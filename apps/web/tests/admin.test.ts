@@ -77,6 +77,14 @@ test("proxy nodes require a valid proxy port and forward-only nodes omit it", ()
   assert.equal(node.proxy_port, null);
 });
 
+test("relay listener port requires forward capability and cannot reuse proxy port", () => {
+  const draft = { groupID: "group", name: "Relay", region: "JP", host: "relay.example.com", proxy: true, forward: true, proxyPort: 443, relayPort: 24443 };
+  assert.equal(buildNodeInput(draft).relay_port, 24443);
+  assert.throws(() => buildNodeInput({ ...draft, relayPort: 443 }), /中继端口/);
+  assert.throws(() => buildNodeInput({ ...draft, relayPort: 1023 }), /中继端口/);
+  assert.throws(() => buildNodeInput({ ...draft, forward: false }), /中继端口/);
+});
+
 test("forward destination policy requires a bounded port range and node group", () => {
   assert.deepEqual(buildForwardPolicyInput({ kind: "node", groupID: "group-id", protocol: "TCP", portStart: 443, portEnd: 444 }), {
     kind: "node", target_group_id: "group-id", protocol: "TCP", port_start: 443, port_end: 444, enabled: true,

@@ -209,6 +209,7 @@ export type NodeDraft = {
   proxy: boolean;
   forward: boolean;
   proxyPort: number;
+  relayPort?: number | null;
 };
 
 export function buildNodeInput(draft: NodeDraft) {
@@ -220,6 +221,8 @@ export function buildNodeInput(draft: NodeDraft) {
       draft.proxyPort > 65535)
   )
     throw new Error("代理端口必须在 1–65535 之间。");
+  if (draft.relayPort != null && (!draft.forward || !Number.isInteger(draft.relayPort) || draft.relayPort < 1024 || draft.relayPort > 65535 || (draft.proxy && draft.relayPort === draft.proxyPort)))
+    throw new Error("中继端口需要转发能力，且须为不同的 1024–65535 端口。");
   return {
     group_id: draft.groupID,
     name: draft.name.trim(),
@@ -229,6 +232,7 @@ export function buildNodeInput(draft: NodeDraft) {
       (value): value is string => Boolean(value),
     ),
     proxy_port: draft.proxy ? draft.proxyPort : null,
+    relay_port: draft.relayPort ?? null,
   };
 }
 

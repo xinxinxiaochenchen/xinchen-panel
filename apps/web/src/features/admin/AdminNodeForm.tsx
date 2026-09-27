@@ -19,6 +19,7 @@ export function AdminNodeForm({
   const [proxy, setProxy] = useState(true);
   const [forward, setForward] = useState(false);
   const [proxyPort, setProxyPort] = useState(443);
+  const [relayPort, setRelayPort] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -35,6 +36,7 @@ export function AdminNodeForm({
         proxy,
         forward,
         proxyPort,
+        relayPort,
       });
       const result = await mutateCatalog<NodeRecord>(
         "/api/v1/admin/nodes",
@@ -128,7 +130,7 @@ export function AdminNodeForm({
                 <input
                   type="checkbox"
                   checked={forward}
-                  onChange={(event) => setForward(event.target.checked)}
+                  onChange={(event) => { setForward(event.target.checked); if (!event.target.checked) setRelayPort(null); }}
                 />
                 转发入口
               </label>
@@ -146,6 +148,13 @@ export function AdminNodeForm({
                 />
               </>
             )}
+            {forward && <>
+              <label htmlFor="admin-node-relay-port">节点间中继端口（可选）</label>
+              <input id="admin-node-relay-port" type="number" min={1024} max={65535}
+                value={relayPort ?? ""} onChange={(event) => setRelayPort(event.target.value === "" ? null : Number(event.target.value))}
+                placeholder="例如 24443" />
+              <small className="catalog-form-note">预留给后续 Agent 节点间中继；当前多跳草稿仍不能执行。</small>
+            </>}
             {error && (
               <div className="auth-error" role="alert">
                 {error}

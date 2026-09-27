@@ -26,9 +26,11 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。当前纯 IP 预览的正式库已应用至版本 19。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。当前纯 IP 预览的正式库已应用至版本 19。待部署的迁移 20 增加节点中继端口及原子端口预留，不启动中继服务。
 
 ## 资源目录开发状态
+
+节点支持可选 `relay_port`，预留该节点 TCP/UDP 端口用于后续中继；须具备 `forward` 能力且与代理端口不同。握手契约见 [Agent 中继协议](docs/agent-relay-protocol.md)。配置流与执行器尚未接入中继。
 
 管理员可通过 `/api/v1/admin/resource-groups` 和 `/api/v1/admin/nodes` 创建及分页查询资源组、节点。普通用户通过 `/api/v1/nodes` 和 `/api/v1/nodes/{id}` 只能读取有效套餐快照授权的已启用节点。写请求要求 `nodes.write` 权限及 CSRF 令牌，创建操作与审计记录在同一事务中。列表参数 `limit` 和 `cursor` 见 [OpenAPI](api/openapi/control-plane.yaml)。这些路由随浏览器身份认证开关一起启用；公网纯 HTTP 预览上仍关闭。
 

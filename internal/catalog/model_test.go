@@ -38,3 +38,23 @@ func TestNormalizeNodeEnforcesCapabilitiesAndPorts(t *testing.T) {
 }
 
 func intPointer(value int) *int { return &value }
+
+func TestNormalizeNodeRelayPortRequiresForwardAndDistinctPort(t *testing.T) {
+	input := NewNode{GroupID: "11111111-1111-7111-8111-111111111111", Name: "Relay", Region: "JP",
+		Host: "relay.example.com", Capabilities: []string{"proxy", "forward"}, ProxyPort: intPointer(443), RelayPort: intPointer(24443)}
+	value, err := NormalizeNode(input)
+	if err != nil || value.RelayPort == nil || *value.RelayPort != 24443 {
+		t.Fatalf("relay port = %+v, %v", value, err)
+	}
+	for _, port := range []int{0, 443, 1023, 65536} {
+		input.RelayPort = &port
+		if _, err := NormalizeNode(input); err == nil {
+			t.Fatalf("invalid relay port accepted: %d", port)
+		}
+	}
+	input.RelayPort = intPointer(24443)
+	input.Capabilities = []string{"proxy"}
+	if _, err := NormalizeNode(input); err == nil {
+		t.Fatal("relay port accepted without forward capability")
+	}
+}

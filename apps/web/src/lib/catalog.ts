@@ -6,6 +6,7 @@ export type NodeRecord = {
   host: string
   public_ip: string | null
   proxy_port: number | null
+  relay_port: number | null
   capabilities: string[]
   bandwidth_bps: number | null
   multiplier_milli: number

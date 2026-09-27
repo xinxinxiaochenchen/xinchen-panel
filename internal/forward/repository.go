@@ -194,16 +194,18 @@ func lockIngress(ctx context.Context, tx pgx.Tx, nodeID string, port int) (strin
 	var nodeEnabled, groupEnabled bool
 	var capabilities []string
 	var proxyPort *int
-	err := tx.QueryRow(ctx, `SELECT n.group_id::text,n.enabled,g.enabled,n.capabilities,n.proxy_port
+	var relayPort *int
+	err := tx.QueryRow(ctx, `SELECT n.group_id::text,n.enabled,g.enabled,n.capabilities,n.proxy_port,n.relay_port
 FROM nodes n JOIN resource_groups g ON g.id=n.group_id WHERE n.id=$1 FOR SHARE OF n,g`, nodeID).Scan(
-		&groupID, &nodeEnabled, &groupEnabled, &capabilities, &proxyPort)
+		&groupID, &nodeEnabled, &groupEnabled, &capabilities, &proxyPort, &relayPort)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", fmt.Errorf("lock forward ingress: %w", err)
 	}
-	if !nodeEnabled || !groupEnabled || !slices.Contains(capabilities, "forward") || (proxyPort != nil && *proxyPort == port) {
+	if !nodeEnabled || !groupEnabled || !slices.Contains(capabilities, "forward") ||
+		(proxyPort != nil && *proxyPort == port) || (relayPort != nil && *relayPort == port) {
 		return "", ErrNotFound
 	}
 	return groupID, nil

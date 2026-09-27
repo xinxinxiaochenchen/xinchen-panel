@@ -2184,6 +2184,11 @@ components:
           minimum: 1
           maximum: 65535
           description: Required when capabilities includes proxy; omitted for forward-only nodes.
+        relay_port:
+          type: ['integer', 'null']
+          minimum: 1024
+          maximum: 65535
+          description: Optional port reserved for future Agent relay. Requires forward capability and must differ from proxy_port. Multi-hop execution is not yet enabled.
         capabilities:
           type: array
           items: {type: string, enum: [proxy, forward]}

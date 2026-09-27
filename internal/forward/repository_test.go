@@ -74,6 +74,16 @@ VALUES (gen_random_uuid(),$1,$2,now()-interval '1 hour',now()+interval '1 day','
 		t.Fatalf("BOTH rule without UDP policy = %v", err)
 	}
 	insertID(`INSERT INTO forward_target_policies(id,kind,protocol,port_start,port_end) VALUES (gen_random_uuid(),'public_host','UDP',443,443) RETURNING id::text`)
+	if _, err := pool.Exec(ctx, `UPDATE nodes SET relay_port=24099 WHERE id=$1`, ingressID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateRule(ctx, RuleInput{Name: "Reserved relay", IngressNodeID: ingressID, IngressPort: 24099,
+		TargetHost: &host, TargetPort: 443, Protocol: "TCP", Enabled: true}, ownerID, "relay-reserved"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("forward used reserved relay port: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE nodes SET relay_port=NULL WHERE id=$1`, ingressID); err != nil {
+		t.Fatal(err)
+	}
 	rule, err := repo.CreateRule(ctx, input, ownerID, "create-forward")
 	if err != nil || rule.UserID != ownerID || rule.ApplyStatus != "pending" || rule.Protocol != "BOTH" {
 		t.Fatalf("created rule = %+v, %v", rule, err)

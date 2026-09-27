@@ -103,7 +103,7 @@ func (r *PostgresRepository) CreateNode(ctx context.Context, input NodeInput, ac
 	}
 	defer tx.Rollback(ctx)
 	node := Node{ID: nodeID, GroupID: input.GroupID, Name: input.Name, Region: input.Region,
-		Host: input.Host, PublicIP: input.PublicIP, ProxyPort: input.ProxyPort,
+		Host: input.Host, PublicIP: input.PublicIP, ProxyPort: input.ProxyPort, RelayPort: input.RelayPort,
 		Capabilities: input.Capabilities, BandwidthBPS: input.BandwidthBPS,
 		MultiplierMilli: input.MultiplierMilli, Tags: input.Tags, Enabled: input.Enabled, AgentStatus: "unknown"}
 	if err := tx.QueryRow(ctx, `SELECT code FROM resource_groups WHERE id=$1`, input.GroupID).Scan(&node.GroupCode); errors.Is(err, pgx.ErrNoRows) {
@@ -111,9 +111,9 @@ func (r *PostgresRepository) CreateNode(ctx context.Context, input NodeInput, ac
 	} else if err != nil {
 		return Node{}, fmt.Errorf("find node group: %w", err)
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO nodes(id,group_id,name,region,host,public_ip,proxy_port,capabilities,bandwidth_bps,multiplier_milli,tags,enabled)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING created_at`,
-		node.ID, node.GroupID, node.Name, node.Region, node.Host, node.PublicIP, node.ProxyPort,
+	err = tx.QueryRow(ctx, `INSERT INTO nodes(id,group_id,name,region,host,public_ip,proxy_port,relay_port,capabilities,bandwidth_bps,multiplier_milli,tags,enabled)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING created_at`,
+		node.ID, node.GroupID, node.Name, node.Region, node.Host, node.PublicIP, node.ProxyPort, node.RelayPort,
 		node.Capabilities, node.BandwidthBPS, node.MultiplierMilli, node.Tags, node.Enabled).Scan(&node.CreatedAt)
 	if err != nil {
 		return Node{}, fmt.Errorf("insert node: %w", catalogError(err))
@@ -132,7 +132,7 @@ VALUES ($1,$2,'create','node',$3,$4,$5)`, auditID, actorID, node.ID, string(afte
 	return node, nil
 }
 
-const nodeSelect = `SELECT n.id::text,n.group_id::text,g.code,n.name,n.region,n.host,host(n.public_ip),n.proxy_port,
+const nodeSelect = `SELECT n.id::text,n.group_id::text,g.code,n.name,n.region,n.host,host(n.public_ip),n.proxy_port,n.relay_port,
 n.capabilities,n.bandwidth_bps,COALESCE(n.multiplier_milli,1000),n.tags,n.enabled,
 CASE WHEN a.status='revoked' THEN 'revoked'
      WHEN a.status='online' AND a.last_seen_at >= now()-interval '45 seconds' THEN 'online'
@@ -149,10 +149,11 @@ func scanNode(row pgx.Row) (Node, error) {
 	var node Node
 	var publicIP pgtype.Text
 	var proxyPort pgtype.Int4
+	var relayPort pgtype.Int4
 	var bandwidth pgtype.Int8
 	var lastSeen pgtype.Timestamptz
 	err := row.Scan(&node.ID, &node.GroupID, &node.GroupCode, &node.Name, &node.Region,
-		&node.Host, &publicIP, &proxyPort, &node.Capabilities, &bandwidth,
+		&node.Host, &publicIP, &proxyPort, &relayPort, &node.Capabilities, &bandwidth,
 		&node.MultiplierMilli, &node.Tags, &node.Enabled, &node.AgentStatus,
 		&lastSeen, &node.CreatedAt)
 	if err != nil {
@@ -165,6 +166,10 @@ func scanNode(row pgx.Row) (Node, error) {
 	if proxyPort.Valid {
 		value := int(proxyPort.Int32)
 		node.ProxyPort = &value
+	}
+	if relayPort.Valid {
+		value := int(relayPort.Int32)
+		node.RelayPort = &value
 	}
 	if bandwidth.Valid {
 		value := bandwidth.Int64

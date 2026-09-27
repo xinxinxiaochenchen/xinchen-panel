@@ -31,7 +31,7 @@ function NodeCard({ node }: { node: NodeRecord }) {
   return <article className="catalog-card">
     <div className="catalog-card-head"><span className="catalog-icon"><Server size={18} /></span><span className={`status-chip status-${node.agent_status}`}><i />{nodeStatusLabel(node.agent_status)}</span></div>
     <div className="catalog-card-name"><strong>{node.name}</strong><span>{node.group_code} · {node.region}</span></div>
-    <div className="catalog-detail-grid"><div><small>地址</small><strong>{address}</strong></div><div><small>代理端口</small><strong>{node.proxy_port ?? '—'}</strong></div><div><small>倍率</small><strong>×{(node.multiplier_milli / 1000).toFixed(2)}</strong></div><div><small>能力</small><strong>{node.capabilities.map(capabilityLabel).join(' / ')}</strong></div></div>
+    <div className="catalog-detail-grid"><div><small>地址</small><strong>{address}</strong></div><div><small>代理端口</small><strong>{node.proxy_port ?? '—'}</strong></div><div><small>中继端口</small><strong>{node.relay_port ?? '—'}</strong></div><div><small>倍率</small><strong>×{(node.multiplier_milli / 1000).toFixed(2)}</strong></div><div><small>能力</small><strong>{node.capabilities.map(capabilityLabel).join(' / ')}</strong></div></div>
     <div className="catalog-card-foot"><span>{node.tags.length ? node.tags.join(' · ') : '未设置标签'}</span>{node.last_seen_at && <span>最近心跳 {new Date(node.last_seen_at).toLocaleString('zh-CN')}</span>}</div>
   </article>
 }
