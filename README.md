@@ -32,7 +32,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。迁移 24 允许转发规则绑定多跳线路；它尚未在隔离 PostgreSQL 执行，正式部署版本以部署记录为准。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。迁移 24/25 分别加入线路绑定转发和代理候选池；已在 `us bwg` 的 PostgreSQL 16.10 独立测试库验证，并应用到正式预览库。
 
 ## 资源目录开发状态
 
@@ -46,7 +46,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 线路开发状态
 
-管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。2–8 跳 TCP 线路可启用，入口须有 `proxy` 和 `forward` 能力及两个独立端口，后续节点须有 `forward` 能力和中继端口。每跳均检查资源组授权及套餐 `max_hops`。用户可在启用线路上创建代理连接；只有各跳 Agent 在线、证书有效、下游应用当前世代且入口应用代理配置后，订阅才会导出。计费准入沿整条线路复核这些条件，仅在入口建立一条用量会话并冻结线路与倍率；独立 PostgreSQL 集成验收已通过并发布到 `us bwg`。线路权重已用于订阅导出的稳定线路顺序；候选池的 Agent 拨号重试、最终线路额度请求和自动线路订阅目标已接入，多线路创建按套餐上限、线路授权和拓扑校验开放，正式发布前仍需 PostgreSQL 16 与订阅闭环验证。启用多跳数据面须配置 `CONTROL_RELAY_SECRET_KEY_FILE` 和 Agent mTLS；公网纯 HTTP 预览保持关闭管理路由。
+管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。2–8 跳 TCP 线路可启用，入口须有 `proxy` 和 `forward` 能力及两个独立端口，后续节点须有 `forward` 能力和中继端口。每跳均检查资源组授权及套餐 `max_hops`。用户可在启用线路上创建代理连接；只有各跳 Agent 在线、证书有效、下游应用当前世代且入口应用代理配置后，订阅才会导出。计费准入沿整条线路复核这些条件，仅在入口建立一条用量会话并冻结线路与倍率；独立 PostgreSQL 集成验收已通过并发布到 `us bwg`。线路权重已用于订阅导出的稳定线路顺序；候选池的 Agent 拨号重试、最终线路额度请求和自动线路订阅目标已接入，多线路创建按套餐上限、线路授权和拓扑校验开放，PostgreSQL 16 的候选、计费和订阅闭环已逐项验证并发布到 `us bwg`。启用多跳数据面须配置 `CONTROL_RELAY_SECRET_KEY_FILE` 和 Agent mTLS；公网纯 HTTP 预览保持关闭管理路由。
 线路详情可通过 `GET /api/v1/admin/lines/{id}/health` 或授权用户的 `GET /api/v1/lines/{id}/health` 查看。健康状态包含 `disabled`、`unavailable`、`converging`、`ready`，并返回每一跳的 Agent 在线、控制证书/中继证书、期望与已应用配置版本及多跳中继应用状态；线路页会显示不可用原因和每跳收敛进度。
 
 ## 转发规则开发状态
@@ -87,7 +87,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 后续阶段
 
-下一阶段重点是在隔离 PostgreSQL 16 验证迁移 24/25、线路候选的授权与计费，并完成真实多 Agent 通流。迁移 24/25 已用 PGlite 做 SQL 冒烟；Agent 已接入经认证的 TCP/UDP 多跳线路绑定转发以及代理候选的拨号重试，额度请求会记录最终线路，多候选创建、编辑和订阅导出已经接通。公网多 Agent 通流、迁移 24/25 的真实 PostgreSQL 回归和 HTTPS 管理入口仍待完成。隔离数据库和临时 Agent 此前已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+下一阶段重点是真实正式节点入网、受信任 HTTPS 管理入口和多 Agent 公网数据面通流。迁移 24/25 已通过 PostgreSQL 16.10 真实数据库验证；Agent 已接入经认证的 TCP/UDP 多跳线路绑定转发以及代理候选的拨号重试，额度请求会记录最终线路，多候选创建、编辑和订阅导出已经接通。公网多 Agent 通流和 HTTPS 管理入口仍待完成。隔离数据库和临时 Agent 此前已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前 `us bwg` 的纯 IP 只读预览见[部署说明](docs/deployment/us-bwg-preview.md)；旧 `us dmit` 的历史部署见[历史记录](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 

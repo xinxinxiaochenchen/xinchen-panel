@@ -1,5 +1,7 @@
 # 进度
 
+- 2026-09-28：修复无有效订购用户创建代理连接时未将 PostgreSQL `no rows` 转换为资源不存在的问题；订阅集成测试补充 `{line}` 模板以覆盖“自动线路”标签。使用 `us bwg` 的 PostgreSQL 16.10，为每个用例创建全新临时数据库并逐项通过 17 项代理、迁移 24、计费、多跳准入、转发、配置收敛和订阅回归。最新 Linux amd64/WebUI 发布包 SHA-256 为 `e4cef22d760cdeb39164e9b0e5273a69027a44add454d8708e37b7f13eb7a0c1`；已部署到 `/opt/network-control-plane/releases/release-1ea63c9-20260928`，正式库迁移版本 `25|25`，升级前备份 `ncp-before-1ea63c9.dump` 权限 0600，API/DB healthy、重启 0，公网首页/live/ready 200，明文登录 404。正式库仍为 0 用户、0 节点、0 Agent；真实生产 Agent 入网、HTTPS 管理入口和公网多 Agent 数据面仍待正式节点与证书条件。
+
 - 2026-09-27：代理连接候选池补齐创建后的管理闭环：`PATCH /proxy-accesses/{id}` 可事务化替换候选线路、优先级和权重，限制所有候选共享入口节点，检查套餐上限及逐跳授权；移除候选前检查未过期的活跃计费租约。默认线路失效但备用候选可用时仍允许查看/轮换凭据和重新启用连接。WebUI 提供“编辑线路”入口，OpenAPI 同步更新契约。Go 全量测试、vet、WebUI 33 项测试及构建已执行；PostgreSQL 集成测试因本机无真实 PostgreSQL 16 仍待在隔离库执行，VPS 尚未更新。
 
 - 2026-09-27：候选线路池切片完成本地收尾：多线路代理创建门控已移除并按套餐 `max_proxy_lines`、线路授权和逐跳拓扑校验；订阅导出对多线路只生成一个“自动线路”目标，默认线路失效时可由已授权候选接管，分流规则不会虚构引用候选池中的单条线路；Agent 新增 `proxy_candidates` 能力，旧 Agent 只接收默认线路，新 Agent 接收完整候选池；WebUI 已支持多选候选线路及优先级/权重。格式化、完整 Go 测试、Go vet、WebUI 32 项测试、生产构建和订阅 SQL 冒烟均通过；当前机器无 PostgreSQL 16/Docker，真实迁移与 VPS 发布仍待可用部署环境。
