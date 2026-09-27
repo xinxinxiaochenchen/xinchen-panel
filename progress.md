@@ -162,3 +162,8 @@
 - 前端增加多跳草稿表单与角色展示，套餐可设置 1–8 跳。独立加权排序器通过优先级、健康过滤、3:1 权重分布与稳定重试测试，尚未接入实际运行时。
 - 全量 Go 测试（允许回环监听）、Go vet、前端 28 项测试、TypeScript/生产构建、OpenAPI YAML 解析与 diff 检查通过。独立 PostgreSQL 16 库全部 5 项资源目录集成测试通过，临时数据库和三个测试二进制已清理。
 - 实际 Agent 间中继、多节点配置世代、TCP/UDP 多跳通流和权重切换尚未实现。本切片无新增 migration，正式库保持版本 19。已通过 Termark 发布提交 `3454b70` 到 `/opt/network-control-plane/releases/release-3454b70`，发布包 SHA-256 `95ecab9d6c9c0667d71e1102295cd6eef562fb2ecb6792e1013c765f2d04f0f6`；正式库备份 `ncp-before-3454b70.dump` 权限 0600，已通过 `pg_restore --list` 验证。发布后 API/DB healthy、重启 0，首页/ready 200、明文登录 404，Agent TLS 18443 仅绑定回环；正式库用户/节点/Agent 均为 0。
+
+## 2026-09-27 Agent 中继握手协议基础
+
+- 新增独立 `internal/agentrelay` 包：4 字节长度前缀、4 KiB 帧限制、严格 JSON 字段、`OPEN`/`OPEN_OK`/`OPEN_ERR`、线路世代和目标校验、每条线路 32 字节密钥的 HMAC 证明、并发安全且容量有界的重放窗口。TLS 来源证书绑定与公网 DNS 解析仍属于后续运行时，协议尚未接入 Agent。
+- 测试覆盖修改目标后证明失效、旧世代、时钟窗口边界、重复并发握手、私网 IP、超长帧、未知/重复/大小写别名字段以及握手后数据流完整。全量 Go 测试、Go vet、race 测试及 3 秒 fuzz 测试通过；该切片未改变已部署服务。

@@ -53,8 +53,8 @@ Status: Draft. Implementation begins after the multi-hop transport design is con
 - Modify: `internal/agentproto/envelope.go`
 - Modify: `internal/agentproto/payload.go`
 
-- [ ] Add a bounded length-prefixed `OPEN`, `OPEN_OK`, and `OPEN_ERR` frame with line ID, connection ID, generation, target host/port, and edge proof.
-- [ ] Reject oversized frames, private targets, stale generations, invalid ports, replayed connection IDs, and constant-time secret mismatches.
+- [x] Add a bounded length-prefixed `OPEN`, `OPEN_OK`, and `OPEN_ERR` frame with line ID, connection ID, generation, target host/port, and edge proof.
+- [x] Reject oversized frames, private IP literals, stale generations, invalid ports, replayed connection IDs, and constant-time secret mismatches. DNS targets still require public IP resolution at runtime.
 - [ ] Keep route secrets and target details out of application logs and audit payloads.
 
 ### Task 4: Agent relay runtime
