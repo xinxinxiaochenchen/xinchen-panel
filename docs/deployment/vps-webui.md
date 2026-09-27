@@ -101,6 +101,21 @@ install -d -m 0700 /opt/network-control-plane/state/agent
 chown 65532:65532 /opt/network-control-plane/secrets/agent-credentials /opt/network-control-plane/state/agent
 ```
 
+在控制面服务器为已创建的节点签发一次性令牌。先准备仅管理员可读写的临时目录；`agent-token` 只把令牌 JSON 写入该目录，不会打印令牌：
+
+```sh
+install -d -m 0700 /run/private
+chown 65532:65532 /run/private
+docker compose -f compose.yaml run --rm -T \
+  -e CONTROL_ADMIN_EMAIL='admin@example.com' \
+  -e CONTROL_AGENT_TOKEN_OUTPUT_FILE=/run/private/agent-token.json \
+  -v /run/private:/run/private:rw \
+  api /usr/local/bin/agent-token <node-uuid>
+chmod 0600 /run/private/agent-token.json
+```
+
+这条命令必须在控制面发布目录的 Compose 目录执行；`CONTROL_DATABASE_URL` 由 Compose 根据 `.env` 中的数据库密码注入。令牌文件只通过受控文件传输送到节点 VPS，成功入网后立即删除控制面和节点上的临时副本。
+
 管理员在控制面为节点生成一次性令牌后，把令牌 JSON 以 `0600` 临时文件形式放到节点，使用标准输入完成入网：
 
 ```sh
