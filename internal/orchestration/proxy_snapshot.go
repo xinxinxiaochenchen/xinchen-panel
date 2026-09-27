@@ -53,6 +53,38 @@ type CompiledProxySnapshot struct {
 	Rejected []ForwardRejection
 }
 
+// proxyAccessesForAgent keeps the wire format compatible with Agents that do
+// not advertise proxy_candidates. Such an Agent can only execute its default
+// line; a pool without that line is omitted instead of silently misattributing
+// traffic to the default line.
+func proxyAccessesForAgent(accesses []agentruntime.ProxyAccess, capabilities []string) []agentruntime.ProxyAccess {
+	if slices.Contains(capabilities, "proxy_candidates") {
+		return accesses
+	}
+	result := make([]agentruntime.ProxyAccess, 0, len(accesses))
+	for _, access := range accesses {
+		if len(access.Candidates) == 0 {
+			result = append(result, access)
+			continue
+		}
+		var primary *agentruntime.ProxyLineCandidate
+		for index := range access.Candidates {
+			if access.Candidates[index].LineID == access.LineID {
+				candidate := access.Candidates[index]
+				primary = &candidate
+				break
+			}
+		}
+		if primary == nil {
+			continue
+		}
+		access.Candidates = nil
+		access.RelayGeneration = primary.RelayGeneration
+		result = append(result, access)
+	}
+	return result
+}
+
 func CompileProxySnapshot(node NodeFacts, facts []ProxyFacts, relays []agentruntime.RelayConfig, revision uint64) (CompiledProxySnapshot, error) {
 	result := CompiledProxySnapshot{Snapshot: agentruntime.Snapshot{Revision: revision, ProxyConfig: make([]agentruntime.ProxyAccess, 0)}}
 	if !node.Enabled || !node.GroupEnabled || !node.ProxyCapable || node.ProxyPort < 1 || node.ProxyPort > 65535 {

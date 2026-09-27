@@ -31,20 +31,21 @@ type StateStore interface {
 }
 
 type Config struct {
-	URL               string
-	NodeID            string
-	Version           string
-	RootCAs           *x509.CertPool
-	Certificate       tls.Certificate
-	CertFile          string
-	KeyFile           string
-	HeartbeatInterval time.Duration
-	ReconnectMin      time.Duration
-	ReconnectMax      time.Duration
-	ProxyReady        bool
-	RelayReady        bool
-	UsageOutbox       *FileUsageOutbox
-	LeaseStore        *FileLeaseStore
+	URL                  string
+	NodeID               string
+	Version              string
+	RootCAs              *x509.CertPool
+	Certificate          tls.Certificate
+	CertFile             string
+	KeyFile              string
+	HeartbeatInterval    time.Duration
+	ReconnectMin         time.Duration
+	ReconnectMax         time.Duration
+	ProxyReady           bool
+	RelayReady           bool
+	ProxyCandidatesReady bool
+	UsageOutbox          *FileUsageOutbox
+	LeaseStore           *FileLeaseStore
 }
 
 type Client struct {
@@ -167,6 +168,9 @@ func (c *Client) RunOnce(ctx context.Context) error {
 	}
 	if c.config.RelayReady {
 		capabilities = append(capabilities, "relay")
+	}
+	if c.config.ProxyCandidatesReady {
+		capabilities = append(capabilities, "proxy_candidates")
 	}
 	if err := send(agentproto.TypeHello, agentproto.Hello{AgentVersion: c.config.Version,
 		AppliedRevision: 0, Capabilities: capabilities}); err != nil {

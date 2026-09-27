@@ -40,3 +40,14 @@ func TestOrderExportTargetsRejectsInvalidLineWeight(t *testing.T) {
 		t.Fatal("invalid line weight accepted")
 	}
 }
+
+func TestOrderExportTargetsKeepsAutomaticPoolsSeparate(t *testing.T) {
+	values := []exportTarget{
+		{Target: subscriptionconfig.Target{ID: "pool-a", LineName: "自动线路"}, RankID: "pool-a", Priority: 10, Weight: 1},
+		{Target: subscriptionconfig.Target{ID: "pool-b", LineName: "自动线路"}, RankID: "pool-b", Priority: 20, Weight: 1},
+	}
+	ordered, err := orderExportTargets("subscription", values)
+	if err != nil || len(ordered) != 2 || ordered[0].ID != "pool-a" || ordered[1].ID != "pool-b" {
+		t.Fatalf("automatic pools collapsed: %+v, %v", ordered, err)
+	}
+}

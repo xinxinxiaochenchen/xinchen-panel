@@ -20,7 +20,7 @@ func TestNativeMihomoAcceptsRenderedProfiles(t *testing.T) {
 	target.LineID = "line-jp"
 	policy := &RoutingPolicy{
 		Fallback: Action{Kind: "direct"},
-		Rules: []Rule{{MatchType: "domain_suffix", MatchValue: "example.com", Action: Action{Kind: "line", LineID: target.LineID}}},
+		Rules:    []Rule{{MatchType: "domain_suffix", MatchValue: "example.com", Action: Action{Kind: "line", LineID: target.LineID}}},
 	}
 	for _, format := range []string{"clash", "mihomo"} {
 		t.Run(format, func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestNativeSingBoxAcceptsRenderedProfiles(t *testing.T) {
 		{name: "default"},
 		{name: "routed", policy: &RoutingPolicy{
 			Fallback: Action{Kind: "direct"},
-			Rules: []Rule{{MatchType: "domain_suffix", MatchValue: "example.com", Action: Action{Kind: "line", LineID: target.LineID}}},
+			Rules:    []Rule{{MatchType: "domain_suffix", MatchValue: "example.com", Action: Action{Kind: "line", LineID: target.LineID}}},
 		}},
 		{name: "block-fallback", policy: &RoutingPolicy{Fallback: Action{Kind: "block"}}},
 	}

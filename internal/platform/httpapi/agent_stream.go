@@ -379,6 +379,11 @@ func requireAgentSnapshotCapability(capabilities []string, snapshot agentruntime
 	if len(snapshot.ProxyConfig) > 0 && !slices.Contains(capabilities, "proxy") {
 		return errors.New("Agent proxy TLS capability is not ready")
 	}
+	for _, access := range snapshot.ProxyConfig {
+		if len(access.Candidates) > 0 && !slices.Contains(capabilities, "proxy_candidates") {
+			return errors.New("Agent proxy candidate capability is not ready")
+		}
+	}
 	if len(snapshot.RelayConfig) > 0 && !slices.Contains(capabilities, "relay") {
 		return errors.New("Agent relay capability is not ready")
 	}

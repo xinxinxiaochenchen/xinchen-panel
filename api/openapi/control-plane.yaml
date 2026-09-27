@@ -1082,8 +1082,8 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createProxyAccess
-      summary: Create a Trojan proxy access on one authorized line
-      description: Requires an active membership and an enabled, authorized proxy line. The line_ids and line_options fields are accepted for candidate-pool preparation, but activation currently requires exactly one line. The generated credential is shown only in this response and the owner's dedicated credential endpoint. The current pure IP preview does not expose this route.
+      summary: Create a Trojan proxy access with authorized candidate lines
+      description: Requires an active membership and enabled, authorized proxy lines. line_ids selects one or more candidate lines subject to the plan max_proxy_lines limit; line_options carries priority and weight. The generated credential is shown only in this response and the owner's dedicated credential endpoint. The current pure IP preview does not expose this route.
       security: [{browserSession: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody:

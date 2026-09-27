@@ -11,6 +11,7 @@ type exportTarget struct {
 	Target   subscriptionconfig.Target
 	Priority int
 	Weight   int
+	RankID   string
 }
 
 // orderExportTargets applies the server's line priority/weight policy to the
@@ -24,7 +25,14 @@ func orderExportTargets(connectionID string, values []exportTarget) ([]subscript
 	byLine := make(map[string][]exportTarget, len(values))
 	candidates := make([]orchestration.LineCandidate, 0, len(values))
 	for _, value := range values {
-		byLine[value.Target.LineID] = append(byLine[value.Target.LineID], value)
+		key := value.Target.LineID
+		if value.RankID != "" {
+			key = "AUTO:" + value.RankID
+		}
+		if key == "" {
+			return nil, fmt.Errorf("subscription target has no ranking line")
+		}
+		byLine[key] = append(byLine[key], value)
 	}
 	for line, items := range byLine {
 		if len(items) == 0 {

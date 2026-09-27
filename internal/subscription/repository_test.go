@@ -89,6 +89,49 @@ func TestPostgresSubscriptionLifecycle(t *testing.T) {
 	if body, _, err := repo.Export(ctx, token, "mihomo"); err != nil || !strings.Contains(string(body), password) {
 		t.Fatalf("ready export: %v %s", err, body)
 	}
+	fallbackLine := add(`INSERT INTO lines(id,name,created_by) VALUES(gen_random_uuid(),'Subscription fallback',$1) RETURNING id::text`, owner)
+	if _, err := pool.Exec(ctx, `INSERT INTO line_hops(line_id,position,node_id,role) VALUES($1,0,$2,'egress')`, fallbackLine, node); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO proxy_access_lines(proxy_access_id,line_id,position,priority,weight) VALUES($1,$2,1,20,3)`, access.ID, fallbackLine); err != nil {
+		t.Fatal(err)
+	}
+	fallbackGrant, _ := json.Marshal(map[string]any{"resource_group_ids": []string{group}, "line_ids": []string{fallbackLine}, "limits": map[string]any{"max_subscriptions": 1, "max_hops": 1}})
+	if _, err := pool.Exec(ctx, `UPDATE memberships SET snapshot_json=$2 WHERE user_id=$1`, owner, fallbackGrant); err != nil {
+		t.Fatal(err)
+	}
+	fallbackPayload, _ := json.Marshal(map[string]any{"proxy_config": []any{map[string]any{
+		"id": access.ID, "credential_hash": proxyaccess.TrojanDigest(password),
+		"candidates": []any{map[string]any{"line_id": fallbackLine, "priority": 20, "weight": 3}},
+	}}})
+	if _, err := pool.Exec(ctx, `UPDATE config_revisions SET payload_json=$2 WHERE node_id=$1 AND revision=1`, node, fallbackPayload); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE lines SET enabled=false WHERE id=$1`, line); err != nil {
+		t.Fatal(err)
+	}
+	if body, _, err := repo.Export(ctx, token, "mihomo"); err != nil || strings.Count(string(body), "type: trojan") != 1 || !strings.Contains(string(body), "自动线路") {
+		t.Fatalf("automatic fallback export: %v %s", err, body)
+	}
+	fallbackIDs := []string{access.ID}
+	if _, err := repo.UpdateOwn(ctx, owner, sub.ID, Patch{ProxyAccessIDs: &fallbackIDs}, "fallback-target"); err != nil {
+		t.Fatalf("subscription target cannot use authorized fallback: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE lines SET enabled=true WHERE id=$1`, line); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM proxy_access_lines WHERE proxy_access_id=$1 AND line_id=$2`, access.ID, fallbackLine); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE memberships SET snapshot_json=$2 WHERE user_id=$1`, owner, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE config_revisions SET payload_json=$2 WHERE node_id=$1 AND revision=1`, node, payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM lines WHERE id=$1`, fallbackLine); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := repo.ExportOwn(ctx, other, sub.ID, "mihomo"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner preview: %v", err)
 	}

@@ -26,6 +26,13 @@ func TestDecodeHelloValidatesVersionRevisionAndCapabilities(t *testing.T) {
 	}
 }
 
+func TestDecodeHelloAcceptsProxyCandidateCapability(t *testing.T) {
+	hello, err := DecodeHello([]byte(`{"agent_version":"1.0.0","applied_revision":0,"capabilities":["forward","proxy","relay","proxy_candidates"]}`))
+	if err != nil || len(hello.Capabilities) != 4 {
+		t.Fatalf("candidate-capable Agent rejected: %+v, %v", hello, err)
+	}
+}
+
 func TestDecodeHeartbeatValidatesMetricsAndEngineState(t *testing.T) {
 	valid := Heartbeat{UptimeSeconds: 100, CPUPct: 12.5, MemoryUsedBytes: 1024, RXBytes: 500,
 		TXBytes: 300, Connections: 2, EngineStatus: "running"}

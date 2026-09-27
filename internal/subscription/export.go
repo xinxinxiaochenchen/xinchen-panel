@@ -50,18 +50,34 @@ func (r *PostgresRepository) export(ctx context.Context, owner, subID, hash, for
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := tx.Query(ctx, `SELECT a.id::text,a.name,a.line_id::text,l.name,l.priority,l.weight,COALESCE(l.owner_user_id::text,''),
+	rows, err := tx.Query(ctx, `SELECT a.id::text,a.name,c.line_id::text,l.name,c.priority,c.weight,COALESCE(l.owner_user_id::text,''),
 ARRAY(SELECT nh.group_id::text FROM line_hops lh JOIN nodes nh ON nh.id=lh.node_id WHERE lh.line_id=l.id ORDER BY lh.position),
-n.region,COALESCE(host(n.public_ip),n.host),n.host,n.proxy_port,a.credential_ciphertext
+n.region,COALESCE(host(n.public_ip),n.host),n.host,n.proxy_port,a.credential_ciphertext,c.configured_count,
+EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(cr.payload_json->'proxy_config','[]'::jsonb)) pool
+WHERE pool->>'id'=a.id::text AND pool->>'credential_hash'=a.credential_hash
+AND COALESCE(jsonb_array_length(pool->'candidates'),0)>0) AS pool_applied
 FROM subscription_proxy_targets t JOIN proxy_accesses a ON a.id=t.proxy_access_id AND a.user_id=t.user_id
-JOIN lines l ON l.id=a.line_id JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role IN ('egress','ingress')
+JOIN LATERAL (
+  SELECT pal.line_id,pal.position,pal.priority,pal.weight,
+         (SELECT count(*)::int FROM proxy_access_lines allpal WHERE allpal.proxy_access_id=a.id) AS configured_count
+  FROM proxy_access_lines pal WHERE pal.proxy_access_id=a.id
+  UNION ALL
+  SELECT a.line_id,0,100,1,1
+  WHERE NOT EXISTS(SELECT 1 FROM proxy_access_lines pal0 WHERE pal0.proxy_access_id=a.id)
+) c ON true
+JOIN lines l ON l.id=c.line_id JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role IN ('egress','ingress')
+JOIN line_hops access_entry ON access_entry.line_id=a.line_id AND access_entry.position=0 AND access_entry.node_id=h.node_id
 JOIN nodes n ON n.id=h.node_id JOIN resource_groups g ON g.id=n.group_id
 JOIN agents ag ON ag.node_id=n.id JOIN config_revisions cr ON cr.node_id=ag.node_id AND cr.revision=ag.applied_revision
 WHERE t.subscription_id=$1 AND t.user_id=$2 AND a.enabled AND a.apply_status='active'
 AND l.enabled AND n.enabled AND g.enabled AND 'proxy'=ANY(n.capabilities) AND n.proxy_port IS NOT NULL
 AND ag.status='online' AND ag.last_seen_at>clock_timestamp()-interval '45 seconds'
 AND cr.status='applied' AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(cr.payload_json->'proxy_config','[]'::jsonb)) p
-WHERE p->>'id'=a.id::text AND p->>'credential_hash'=a.credential_hash)
+WHERE p->>'id'=a.id::text AND p->>'credential_hash'=a.credential_hash
+AND (COALESCE(jsonb_array_length(p->'candidates'),0)=0 AND c.line_id=a.line_id
+     OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(p->'candidates','[]'::jsonb)) candidate
+       WHERE candidate->>'line_id'=c.line_id::text
+       AND COALESCE((candidate->>'relay_generation')::bigint,0)=CASE WHEN h.role='egress' THEN 0 ELSE l.relay_generation END)))
 AND (h.role='egress' OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(cr.payload_json->'relay_config','[]'::jsonb)) rc
 WHERE rc->>'line_id'=l.id::text AND rc->>'generation'=l.relay_generation::text AND rc->>'role'='ingress'))
 AND NOT EXISTS(SELECT 1 FROM line_hops h2 JOIN nodes n2 ON n2.id=h2.node_id
@@ -74,36 +90,39 @@ a2.status IS DISTINCT FROM 'online' OR a2.last_seen_at<=clock_timestamp()-interv
 a2.desired_revision IS DISTINCT FROM a2.applied_revision OR cr2.status IS DISTINCT FROM 'applied' OR
 NOT EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(cr2.payload_json->'relay_config','[]'::jsonb)) rc2
 WHERE rc2->>'line_id'=l.id::text AND rc2->>'generation'=l.relay_generation::text)))))
-ORDER BY t.sort_order`, sub.ID, sub.UserID)
+
+ORDER BY t.sort_order,c.priority,c.position,c.line_id`, sub.ID, sub.UserID)
 	if err != nil {
 		return nil, "", fmt.Errorf("query subscription targets: %w", err)
 	}
-	targets := make([]exportTarget, 0)
+	rowsForSelection := make([]candidateExportRow, 0)
 	for rows.Next() {
 		var v subscriptionconfig.Target
 		var lineOwner, sealed string
 		var groups []string
-		var priority, weight int
-		if err := rows.Scan(&v.ID, &v.Name, &v.LineID, &v.LineName, &priority, &weight, &lineOwner, &groups, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed); err != nil {
+		var priority, weight, configuredCount int
+		var poolApplied bool
+		if err := rows.Scan(&v.ID, &v.Name, &v.LineID, &v.LineName, &priority, &weight, &lineOwner, &groups, &v.Region, &v.Server, &v.ServerName, &v.Port, &sealed, &configuredCount, &poolApplied); err != nil {
 			rows.Close()
 			return nil, "", err
 		}
-		if !lineAllowedHops(sub.UserID, v.LineID, lineOwner, groups, grant) {
-			continue
-		}
-		password, err := r.cipher.Open(v.ID, sub.UserID, sealed)
-		if err != nil {
-			rows.Close()
-			return nil, "", fmt.Errorf("decrypt subscription target: %w", err)
-		}
-		v.Password = password
-		targets = append(targets, exportTarget{Target: v, Priority: priority, Weight: weight})
+		rowsForSelection = append(rowsForSelection, candidateExportRow{Target: v, ConfiguredCount: configuredCount, PoolApplied: poolApplied, LineOwner: lineOwner, Groups: groups, Priority: priority, Weight: weight, Sealed: sealed})
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return nil, "", err
 	}
 	rows.Close()
+	selected := selectEligibleExportTargets(sub.UserID, grant, rowsForSelection)
+	targets := make([]exportTarget, 0, len(selected))
+	for _, row := range selected {
+		password, err := r.cipher.Open(row.Target.ID, sub.UserID, row.Sealed)
+		if err != nil {
+			return nil, "", fmt.Errorf("decrypt subscription target: %w", err)
+		}
+		row.Target.Password = password
+		targets = append(targets, exportTarget{Target: row.Target, Priority: row.Priority, Weight: row.Weight, RankID: row.RankID})
+	}
 	if len(targets) == 0 {
 		return nil, "", ErrUnavailable
 	}

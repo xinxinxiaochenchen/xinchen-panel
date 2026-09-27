@@ -228,3 +228,21 @@ func TestProxySnapshotKeepsDirectFallbackWhenDefaultRelayIsUnapplied(t *testing.
 		t.Fatalf("unapplied relay remained executable: %+v", access)
 	}
 }
+
+func TestLegacyAgentReceivesOnlyAvailableDefaultLine(t *testing.T) {
+	pool := agentruntime.ProxyAccess{ID: "pool", LineID: "default", RelayGeneration: 0,
+		Candidates: []agentruntime.ProxyLineCandidate{{LineID: "default", Weight: 1}, {LineID: "fallback", Weight: 1}}}
+	old := proxyAccessesForAgent([]agentruntime.ProxyAccess{pool}, []string{"forward", "proxy"})
+	if len(old) != 1 || len(old[0].Candidates) != 0 || old[0].LineID != "default" {
+		t.Fatalf("old Agent received candidate pool: %+v", old)
+	}
+	pool.Candidates = pool.Candidates[1:]
+	old = proxyAccessesForAgent([]agentruntime.ProxyAccess{pool}, []string{"forward", "proxy"})
+	if len(old) != 0 {
+		t.Fatalf("old Agent received unavailable default: %+v", old)
+	}
+	modern := proxyAccessesForAgent([]agentruntime.ProxyAccess{pool}, []string{"forward", "proxy", "proxy_candidates"})
+	if len(modern) != 1 || len(modern[0].Candidates) != 1 || modern[0].Candidates[0].LineID != "fallback" {
+		t.Fatalf("candidate-capable Agent lost fallback: %+v", modern)
+	}
+}

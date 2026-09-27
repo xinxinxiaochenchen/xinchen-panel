@@ -4,6 +4,26 @@ import { lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadAl
 import { customRolePermissions, loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 import { draftLinePayload } from '../src/features/catalog/lineDraft.ts'
+import { proxyAccessPayload } from '../src/features/catalog/proxyAccessDraft.ts'
+
+test('proxy access payload keeps candidate order and weights', () => {
+  assert.deepEqual(proxyAccessPayload(' Japan pool ', [
+    { lineID: 'line-a', priority: 10, weight: 3 },
+    { lineID: 'line-b', priority: 20, weight: 1 },
+  ]), {
+    name: 'Japan pool', line_id: 'line-a', line_ids: ['line-a', 'line-b'],
+    line_options: [
+      { line_id: 'line-a', priority: 10, weight: 3 },
+      { line_id: 'line-b', priority: 20, weight: 1 },
+    ],
+  })
+  assert.throws(() => proxyAccessPayload('Pool', []), /至少选择一条线路/)
+  assert.throws(() => proxyAccessPayload('Pool', [
+    { lineID: 'line-a', priority: 100, weight: 1 },
+    { lineID: 'line-a', priority: 100, weight: 1 },
+  ]), /不能重复/)
+  assert.throws(() => proxyAccessPayload('Pool', [{ lineID: 'line-a', priority: 100, weight: 0 }]), /权重/)
+})
 
 test('multi-hop draft payload preserves hop roles before activation', () => {
   assert.deepEqual(draftLinePayload(' Japan relay ', ['ingress-id', 'relay-id', 'egress-id'], 20, 3), {

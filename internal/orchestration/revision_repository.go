@@ -144,7 +144,7 @@ func (r *RevisionRepository) reconcileOnce(ctx context.Context, nodeID string) (
 		if err != nil {
 			return DesiredRevision{}, false, err
 		}
-		compiled.Snapshot.ProxyConfig = proxyConfig.Snapshot.ProxyConfig
+		compiled.Snapshot.ProxyConfig = proxyAccessesForAgent(proxyConfig.Snapshot.ProxyConfig, capabilities)
 		compiled.Rejected = append(compiled.Rejected, proxyConfig.Rejected...)
 	}
 	payload, digest, err := CanonicalForwardPayload(compiled)

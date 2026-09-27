@@ -115,7 +115,7 @@ func runAgent(ctx context.Context, cfg AgentConfig) error {
 	}
 	client, err := agentclient.New(agentclient.Config{URL: cfg.StreamURL, NodeID: cfg.NodeID,
 		Version: cfg.Version, RootCAs: roots, Certificate: pair, CertFile: cfg.CertFile, KeyFile: cfg.KeyFile,
-		ProxyReady: proxyTLS != nil, RelayReady: relayState != nil, UsageOutbox: usage, LeaseStore: leases},
+		ProxyReady: proxyTLS != nil, RelayReady: relayState != nil, ProxyCandidatesReady: proxyTLS != nil, UsageOutbox: usage, LeaseStore: leases},
 		func() agentclient.Runtime {
 			options := agentruntime.Options{BindHost: cfg.BindHost, ProxyTLSConfig: proxyTLS, RequireMetering: true}
 			if relayState != nil {

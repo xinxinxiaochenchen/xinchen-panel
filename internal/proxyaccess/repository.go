@@ -66,11 +66,6 @@ FROM memberships WHERE user_id=$1 AND status='active' AND starts_at<=clock_times
 	if len(input.LineIDs) > maxProxyLines {
 		return Access{}, "", ValidationError{"line_ids", "exceeds plan proxy line limit"}
 	}
-	// Keep public activation gated until the PostgreSQL candidate admission and
-	// subscription export paths have been verified end to end.
-	if len(input.LineIDs) > 1 {
-		return Access{}, "", ValidationError{"line_ids", "multi-line proxy activation is not available yet"}
-	}
 	var membershipID string
 	for index, lineID := range input.LineIDs {
 		currentMembership, err := authorizeProxyLine(ctx, tx, ownerID, lineID)

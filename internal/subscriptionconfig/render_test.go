@@ -29,6 +29,20 @@ func TestValidateTemplate(t *testing.T) {
 	}
 }
 
+func TestRoutingAllowsAutomaticTargetButCannotNameItAsSpecificLine(t *testing.T) {
+	automatic := target("Automatic")
+	automatic.LineID = ""
+	automatic.LineName = "自动线路"
+	policy := &RoutingPolicy{Fallback: Action{Kind: "direct"}}
+	if _, _, err := RenderWithRouting("mihomo", "{line} · {name}", []Target{automatic}, policy); err != nil {
+		t.Fatalf("direct fallback with automatic target rejected: %v", err)
+	}
+	policy.Fallback = Action{Kind: "line", LineID: "configured-candidate"}
+	if _, _, err := RenderWithRouting("mihomo", "{name}", []Target{automatic}, policy); err == nil {
+		t.Fatal("automatic target claimed a selectable candidate line")
+	}
+}
+
 func TestRenderSingBox(t *testing.T) {
 	a := target("test \"\\")
 	a.Server = "edge.example.com"

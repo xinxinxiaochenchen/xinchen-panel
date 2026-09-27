@@ -95,7 +95,9 @@ func RenderWithRouting(format, template string, targets []Target, policy *Routin
 	used := map[string]bool{"PROXY": true, "DIRECT": true, "REJECT": true}
 	if policy != nil {
 		for _, target := range targets {
-			used[strings.ToUpper(lineTag(target.LineID))] = true
+			if target.LineID != "" {
+				used[strings.ToUpper(lineTag(target.LineID))] = true
+			}
 		}
 	}
 	for i, target := range targets {
@@ -450,10 +452,9 @@ func validateRouting(format string, targets []Target, policy *RoutingPolicy) err
 	}
 	lines := map[string]bool{}
 	for _, target := range targets {
-		if target.LineID == "" {
-			return errors.New("routing target has no line ID")
+		if target.LineID != "" {
+			lines[target.LineID] = true
 		}
-		lines[target.LineID] = true
 	}
 	check := func(a Action) error {
 		if a.Kind != "direct" && a.Kind != "block" && a.Kind != "line" {
