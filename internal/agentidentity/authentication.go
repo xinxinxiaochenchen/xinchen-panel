@@ -17,8 +17,12 @@ var ErrAgentUnauthorized = errors.New("Agent certificate is not authorized")
 // CertificateNodeID extracts only the control plane's dedicated Agent URI.
 // The TLS server must also verify the certificate chain before using it.
 func CertificateNodeID(certificate *x509.Certificate) (string, error) {
+	return certificateNodeID(certificate, x509.ExtKeyUsageClientAuth, "/agent/")
+}
+
+func certificateNodeID(certificate *x509.Certificate, usage x509.ExtKeyUsage, prefix string) (string, error) {
 	if certificate == nil || len(certificate.URIs) != 1 ||
-		len(certificate.ExtKeyUsage) != 1 || certificate.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth ||
+		len(certificate.ExtKeyUsage) != 1 || certificate.ExtKeyUsage[0] != usage ||
 		certificate.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
 		return "", ErrAgentUnauthorized
 	}
@@ -30,7 +34,6 @@ func CertificateNodeID(certificate *x509.Certificate) (string, error) {
 		identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" || identity.RawFragment != "" {
 		return "", ErrAgentUnauthorized
 	}
-	const prefix = "/agent/"
 	if !strings.HasPrefix(identity.Path, prefix) {
 		return "", ErrAgentUnauthorized
 	}

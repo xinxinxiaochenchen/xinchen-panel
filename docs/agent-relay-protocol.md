@@ -43,3 +43,9 @@
 迁移 20 增加可选 `nodes.relay_port`，仅允许具备 `forward` 能力的节点设置，范围为 1024–65535，必须与代理端口不同。预留保留在停用节点上，同时占用 TCP/UDP。数据库唯一约束防止和用户转发抢占；同一登记主机的代理/中继 TCP 端点也不能重叠。端口变更冲突时整个事务回滚，原端口仍保留。
 
 中继公告地址沿用节点的 `host`；实际绑定地址由 Agent 本地配置决定。设置端口只预留资源，不会启动监听，也不会令多跳草稿可执行。
+
+## TLS 身份（基础实现）
+
+`IssueRelayServerCertificate` 使用专用 Agent CA 对节点本机生成的 Ed25519 CSR 签发服务端证书。CSR 自报身份和 SAN 不生效；签发身份为 `spiffe://network-control-plane/relay/{node_id}`，服务端 SAN 为控制面登记的节点 `host`，证书仅有 ServerAuth 用途。现有 Agent 客户端证书保持 `spiffe://network-control-plane/agent/{node_id}` 和 ClientAuth 用途，两种证书不能互换。
+
+`ClientTLSConfig` 强制 TLS 1.3、CA 链、DNS/IP SAN、预期节点 URI 和当前允许的证书指纹。`ServerTLSConfig` 强制 TLS 1.3 和客户端证书，由调用方对数据库中的节点状态及指纹执行在线授权；OPEN 之后仍须检查此来源节点正是该线路的上一跳。配置工具已经实现并经真实 TLS 握手测试，但服务端证书签发 HTTP API、Agent 安装/续签、监听和线路快照尚未接入。

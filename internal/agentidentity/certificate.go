@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"time"
@@ -70,6 +72,10 @@ func NewIssuer(certificatePEM, privateKeyPEM []byte) (*Issuer, error) {
 }
 
 func (issuer *Issuer) IssueClientCertificate(csrPEM []byte, nodeID string, now time.Time) (IssuedCertificate, error) {
+	return issuer.issueCertificate(csrPEM, nodeID, "", now)
+}
+
+func (issuer *Issuer) issueCertificate(csrPEM []byte, nodeID, relayHost string, now time.Time) (IssuedCertificate, error) {
 	if issuer == nil || issuer.ca == nil || issuer.signer == nil {
 		return IssuedCertificate{}, errors.New("Agent CA issuer is unavailable")
 	}
@@ -111,6 +117,15 @@ func (issuer *Issuer) IssueClientCertificate(csrPEM []byte, nodeID string, now t
 		NotBefore: now.Add(-5 * time.Minute), NotAfter: now.Add(ClientCertificateLifetime),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		URIs: []*url.URL{identity}, BasicConstraintsValid: true}
+	if relayHost != "" {
+		identity.Path = "/relay/" + nodeID
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+		if address, err := netip.ParseAddr(relayHost); err == nil {
+			template.IPAddresses = []net.IP{net.IP(address.AsSlice())}
+		} else {
+			template.DNSNames = []string{relayHost}
+		}
+	}
 	der, err := x509.CreateCertificate(rand.Reader, template, issuer.ca, request.PublicKey, issuer.signer)
 	if err != nil {
 		return IssuedCertificate{}, fmt.Errorf("sign Agent certificate: %w", err)
