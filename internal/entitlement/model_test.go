@@ -62,6 +62,18 @@ func TestNormalizePlanDefaultsAndBoundsProxyLineLimit(t *testing.T) {
 	}
 }
 
+func TestPlanSnapshotKeepsBillingScheduleForAccountDisplay(t *testing.T) {
+	plan := Plan{Name: "Quarterly", BillingMode: "monthly_anchor", PeriodMonths: 3, QuotaBytes: 10_000,
+		DefaultMultiplierMilli: 1250, Limits: PlanLimits{MaxHops: 2, MaxProxyLines: 4}}
+	snapshot := plan.Snapshot()
+	if snapshot.BillingMode != "monthly_anchor" || snapshot.PeriodMonths != 3 || snapshot.DefaultMultiplierMilli != 1250 {
+		t.Fatalf("snapshot billing fields = %+v", snapshot)
+	}
+	if snapshot.Limits.MaxHops != 2 || snapshot.Limits.MaxProxyLines != 4 {
+		t.Fatalf("snapshot limits = %+v", snapshot.Limits)
+	}
+}
+
 func TestNormalizeMembershipRequiresCurrentBoundedTerm(t *testing.T) {
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
 	input := NewMembership{UserID: testUserID, PlanID: testPlanID,

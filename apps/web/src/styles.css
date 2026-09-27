@@ -198,6 +198,15 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .dashboard-card-heading svg { color: var(--accent); }
 .live-tag { color: var(--accent); background: var(--accent-soft); font-size: 9px; letter-spacing: .1em; padding: 6px 8px; border-radius: 5px; font-weight: 800; }
 .plan-name { display: block; font-size: 29px; letter-spacing: -.04em; margin-bottom: 9px; overflow-wrap: anywhere; }
+.scope-card { background: linear-gradient(145deg, var(--surface), color-mix(in srgb, var(--accent-soft) 22%, var(--surface))); }
+.scope-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.scope-grid > div { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); }
+.scope-grid span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.scope-grid svg { color: var(--accent); }
+.scope-grid strong { font-size: 14px; }
+.scope-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; margin-top: 22px; }
+.scope-limits > div { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; }
+.scope-limits strong { color: var(--text); font-size: 11px; }
 .card-divider { border-top: 1px solid var(--border); margin: 26px 0 17px; }
 .detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; color: var(--muted); font-size: 12px; }
 .detail-row strong { color: var(--text); text-align: right; }

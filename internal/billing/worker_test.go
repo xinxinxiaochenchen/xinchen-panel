@@ -65,8 +65,10 @@ func TestPostgresPeriodWorkerRenewsSnapshotOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	var firstSnapshot, nextSnapshot struct {
-		QuotaBytes             int64 `json:"quota_bytes"`
-		DefaultMultiplierMilli int   `json:"default_multiplier_milli"`
+		BillingMode            string `json:"billing_mode"`
+		PeriodMonths           int    `json:"period_months"`
+		QuotaBytes             int64  `json:"quota_bytes"`
+		DefaultMultiplierMilli int    `json:"default_multiplier_milli"`
 	}
 	if err := json.Unmarshal(frozen, &firstSnapshot); err != nil {
 		t.Fatal(err)
@@ -74,7 +76,7 @@ func TestPostgresPeriodWorkerRenewsSnapshotOnce(t *testing.T) {
 	if err := json.Unmarshal(renewed, &nextSnapshot); err != nil {
 		t.Fatal(err)
 	}
-	if firstSnapshot.QuotaBytes != 1000 || nextSnapshot.QuotaBytes != 2000 || nextSnapshot.DefaultMultiplierMilli != 500 {
+	if firstSnapshot.QuotaBytes != 1000 || nextSnapshot.QuotaBytes != 2000 || nextSnapshot.DefaultMultiplierMilli != 500 || nextSnapshot.BillingMode != "monthly_anchor" || nextSnapshot.PeriodMonths != 1 {
 		t.Fatalf("snapshots changed incorrectly: %+v %+v", firstSnapshot, nextSnapshot)
 	}
 	count, err = worker.Sweep(ctx)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Activity, ArrowDownLeft, ArrowUpRight, CalendarDays, CircleUserRound, RefreshCw, ShieldCheck, Wallet } from 'lucide-react'
-import { dailyRange, formatBytes, formatDate, loadResource, type DailyUsage, type Membership, type Resource, type Usage, type User } from '../../lib/dashboard'
+import { Activity, ArrowDownLeft, ArrowUpRight, CalendarDays, CircleUserRound, Gauge, GitBranch, Layers3, RefreshCw, Route, ShieldCheck, Wallet } from 'lucide-react'
+import { billingCycleLabel, dailyRange, formatBytes, formatDate, formatMultiplier, loadResource, type DailyUsage, type Membership, type Resource, type Usage, type User } from '../../lib/dashboard'
 
 type DailyResponse = { items: DailyUsage[] }
 const loading = { kind: 'loading' } as const
@@ -12,7 +12,7 @@ function DataStatus({ state, empty }: { state: Resource<unknown>; empty: string 
   return null
 }
 
-function MembershipCard({ state }: { state: Resource<Membership> }) {
+function MembershipCard({ state, usage }: { state: Resource<Membership>; usage: Resource<Usage> }) {
   return <article className="dashboard-card membership-card">
     <div className="dashboard-card-heading"><span><Wallet size={18} /> 当前套餐</span><span className="live-tag">LIVE DATA</span></div>
     {state.kind === 'ready' ? <>
@@ -21,8 +21,32 @@ function MembershipCard({ state }: { state: Resource<Membership> }) {
       <div className="card-divider" />
       <div className="detail-row"><span>开始日期</span><strong>{formatDate(state.data.starts_at)}</strong></div>
       <div className="detail-row"><span>有效期至</span><strong>{formatDate(state.data.ends_at)}</strong></div>
-      <div className="detail-row"><span>套餐流量</span><strong>{formatBytes(state.data.snapshot.quota_bytes)}</strong></div>
+      <div className="detail-row"><span>账期</span><strong>{billingCycleLabel(state.data.snapshot, state.data.anchor_day, state.data.timezone)}</strong></div>
+      <div className="detail-row"><span>下次重置</span><strong>{usage.kind === 'ready' ? formatDate(usage.data.ends_at) : '加载中…'}</strong></div>
     </> : <DataStatus state={state} empty="当前没有生效的套餐。" />}
+  </article>
+}
+
+function PlanScopeCard({ state }: { state: Resource<Membership> }) {
+  const snapshot = state.kind === 'ready' ? state.data.snapshot : null
+  const limits = snapshot?.limits ?? {}
+  return <article className="dashboard-card scope-card">
+    <div className="dashboard-card-heading"><span><Layers3 size={18} /> 套餐范围与限制</span><span className="live-tag">授权快照</span></div>
+    {snapshot ? <>
+      <div className="scope-grid">
+        <div><span><Layers3 size={15} />节点范围</span><strong>{snapshot.resource_group_ids?.length ?? 0} 个资源域</strong></div>
+        <div><span><Route size={15} />线路范围</span><strong>{snapshot.line_ids?.length ?? 0} 条共享线路</strong></div>
+        <div><span><Gauge size={15} />默认倍率</span><strong>{formatMultiplier(snapshot.default_multiplier_milli)}</strong></div>
+        <div><span><GitBranch size={15} />最大跳数</span><strong>{limits.max_hops ?? 1} 跳</strong></div>
+      </div>
+      <div className="scope-limits">
+        <div><span>每节点转发规则</span><strong>{limits.max_forward_rules_per_node ?? 0}</strong></div>
+        <div><span>代理候选线路</span><strong>{limits.max_proxy_lines ?? 1}</strong></div>
+        <div><span>订阅数量</span><strong>{limits.max_subscriptions ?? 0}</strong></div>
+        <div><span>分流规则</span><strong>{limits.max_routing_rules ?? 0}</strong></div>
+        <div><span>自有线路</span><strong>{limits.allow_custom_lines ? `${limits.max_custom_lines ?? 0} 条` : '不允许'}</strong></div>
+      </div>
+    </> : <DataStatus state={state} empty="当前没有可用的套餐授权。" />}
   </article>
 }
 
@@ -94,7 +118,7 @@ export function DashboardHome({ user }: { user: User }) {
   return <div className="dashboard-home">
     <div className="dashboard-intro"><div><span className="section-overline">PERSONAL OVERVIEW</span><h1>你好，{user.email.split('@')[0]}</h1><p>账户、套餐与真实流量都在这里。</p></div><button className="refresh-button" type="button" onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={16} />刷新数据</button></div>
     <div className="account-strip"><span className="account-avatar"><CircleUserRound size={23} /></span><div><small>当前账户</small><strong>{user.email}</strong></div><span className="account-active"><span />{user.status === 'active' ? '账户正常' : user.status}</span></div>
-    <div className="dashboard-grid"><MembershipCard state={membership} /><UsageCard state={usage} /><DailyCard state={daily} from={from} to={to} /></div>
+    <div className="dashboard-grid"><MembershipCard state={membership} usage={usage} /><PlanScopeCard state={membership} /><UsageCard state={usage} /><DailyCard state={daily} from={from} to={to} /></div>
     <p className="dashboard-footnote">数据来自当前账户的实时接口；账期流量与最近 14 天的 UTC 日统计口径可能不同。</p>
   </div>
 }

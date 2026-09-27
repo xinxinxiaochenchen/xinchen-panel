@@ -67,7 +67,8 @@ func ensurePeriod(ctx context.Context, tx pgx.Tx, membershipID string, at time.T
 	if !window.StartsAt.Equal(schedule.StartsAt) {
 		// A single statement reads a consistent plan, limits and grants snapshot.
 		err = tx.QueryRow(ctx, `SELECT jsonb_build_object(
-   'plan_name',p.name,'quota_bytes',p.quota_bytes,'default_multiplier_milli',p.default_multiplier_milli,
+   'plan_name',p.name,'billing_mode',p.billing_mode,'period_months',p.period_months,
+   'quota_bytes',p.quota_bytes,'default_multiplier_milli',p.default_multiplier_milli,
    'limits',to_jsonb(l)-'plan_id',
    'resource_group_ids',COALESCE((SELECT jsonb_agg(g.resource_group_id ORDER BY g.resource_group_id) FROM plan_resource_group_grants g WHERE g.plan_id=p.id AND g.allowed),'[]'::jsonb),
    'line_ids',COALESCE((SELECT jsonb_agg(g.line_id ORDER BY g.line_id) FROM plan_line_grants g WHERE g.plan_id=p.id AND g.allowed),'[]'::jsonb))

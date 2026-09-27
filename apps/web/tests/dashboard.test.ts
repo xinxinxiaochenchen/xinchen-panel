@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { dailyRange, formatBytes, isSecureLocation, loadResource, loadViewer } from '../src/lib/dashboard.ts'
+import { billingCycleLabel, dailyRange, formatBytes, formatMultiplier, isSecureLocation, loadResource, loadViewer } from '../src/lib/dashboard.ts'
 
 test('public HTTP never requests a session', async () => {
   const viewer = await loadViewer('http:', '203.0.113.7', () => { throw new Error('network was used') })
@@ -27,4 +27,11 @@ test('daily range uses inclusive UTC dates and stays within API limit', () => {
 test('independent dashboard resources preserve empty and permission states', async () => {
   assert.deepEqual(await loadResource('/api/v1/my/membership', async () => new Response(null, { status: 404 })), { kind: 'empty' })
   assert.deepEqual(await loadResource('/api/v1/my/usage/daily', async () => new Response(null, { status: 403 })), { kind: 'error', message: '当前账户无权查看此数据。' })
+})
+
+test('plan display describes anchored billing and multiplier precisely', () => {
+  assert.equal(billingCycleLabel({ billing_mode: 'monthly_anchor', period_months: 1 }, 26, 'Asia/Shanghai'), '每月 26 日重置（Asia/Shanghai）')
+  assert.equal(billingCycleLabel({ billing_mode: 'monthly_anchor', period_months: 3 }, 31, 'UTC'), '每 3 个月按起算日重置（每月 31 日，UTC）')
+  assert.equal(formatMultiplier(1250), '×1.25')
+  assert.equal(formatMultiplier(1000), '×1')
 })

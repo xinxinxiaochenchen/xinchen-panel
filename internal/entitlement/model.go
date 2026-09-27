@@ -62,6 +62,8 @@ type Plan struct {
 
 type Snapshot struct {
 	PlanName               string     `json:"plan_name"`
+	BillingMode            string     `json:"billing_mode"`
+	PeriodMonths           int        `json:"period_months"`
 	QuotaBytes             int64      `json:"quota_bytes"`
 	DefaultMultiplierMilli int        `json:"default_multiplier_milli"`
 	Limits                 PlanLimits `json:"limits"`
@@ -70,7 +72,7 @@ type Snapshot struct {
 }
 
 func (p Plan) Snapshot() Snapshot {
-	return Snapshot{PlanName: p.Name, QuotaBytes: p.QuotaBytes,
+	return Snapshot{PlanName: p.Name, BillingMode: p.BillingMode, PeriodMonths: p.PeriodMonths, QuotaBytes: p.QuotaBytes,
 		DefaultMultiplierMilli: p.DefaultMultiplierMilli, Limits: p.Limits,
 		ResourceGroupIDs: append([]string{}, p.ResourceGroupIDs...),
 		LineIDs:          append([]string{}, p.LineIDs...)}

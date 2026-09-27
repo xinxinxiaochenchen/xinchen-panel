@@ -7,8 +7,26 @@ export type User = {
   permissions: string[]
 }
 
-export type Snapshot = { plan_name: string; quota_bytes: number }
-export type Membership = { id: string; status: string; starts_at: string; ends_at: string; snapshot: Snapshot }
+export type PlanLimits = {
+  max_forward_rules_per_node: number
+  max_subscriptions: number
+  max_routing_rules: number
+  allow_custom_lines: boolean
+  max_custom_lines: number
+  max_hops: number
+  max_proxy_lines: number
+}
+export type Snapshot = {
+  plan_name: string
+  billing_mode?: string
+  period_months?: number
+  quota_bytes: number
+  default_multiplier_milli?: number
+  limits?: Partial<PlanLimits>
+  resource_group_ids?: string[]
+  line_ids?: string[]
+}
+export type Membership = { id: string; status: string; starts_at: string; ends_at: string; anchor_day: number; timezone: string; snapshot: Snapshot }
 export type Usage = {
   starts_at: string
   ends_at: string
@@ -72,4 +90,18 @@ export function formatDate(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }).format(date)
+}
+
+export function formatMultiplier(milli = 1000): string {
+  const value = Number.isFinite(milli) && milli > 0 ? milli / 1000 : 1
+  return `×${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value)}`
+}
+
+export function billingCycleLabel(snapshot: Pick<Snapshot, 'billing_mode' | 'period_months'>, anchorDay: number, timezone: string): string {
+  const months = Number.isInteger(snapshot.period_months) && (snapshot.period_months ?? 0) > 0 ? snapshot.period_months as number : 1
+  const day = Number.isInteger(anchorDay) && anchorDay >= 1 && anchorDay <= 31 ? anchorDay : 1
+  const zone = timezone || 'UTC'
+  if (snapshot.billing_mode && snapshot.billing_mode !== 'monthly_anchor') return `按账期重置（${zone}）`
+  if (months === 1) return `每月 ${day} 日重置（${zone}）`
+  return `每 ${months} 个月按起算日重置（每月 ${day} 日，${zone}）`
 }

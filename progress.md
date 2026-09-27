@@ -290,3 +290,9 @@
 - 修正 `docs/deployment/private-preview.md`：同机 Agent 使用回环 `wss://127.0.0.1:18443`，独立节点单独使用控制面 WSS/HTTPS 地址，并以标准输入传递一次性令牌后删除临时文件。
 - 扩展 `docs/deployment/vps-webui.md`：明确控制面与节点 VPS 的职责分离、mTLS/SAN 要求、独立节点的 compose 命令和中继配置。`git diff --check`、本地 Go 全量测试/vet、WebUI 37 项测试/生产构建，以及 `us bwg` 上基础/Agent/TLS Compose `config --quiet` 均通过；线上健康接口为 200，迁移为 `25|25`。
 - 补充控制面使用 `agent-token` 生成一次性入网令牌的安全命令，令牌只落到临时 `0600` 文件并在节点入网后删除。
+
+## 2026-09-28 套餐首页信息补齐
+
+- 套餐快照新增 `billing_mode` 和 `period_months`，账期续期生成的冻结快照同步保留这两个字段；旧快照仍可正常读取。
+- 登录后的首页新增账期重置、下次重置时间、节点资源域/共享线路范围、默认倍率、最大跳数、转发/代理候选/订阅/分流/自有线路限制卡片。
+- 先写入并验证前端账期和倍率回归，再完成 React 类型检查/生产构建、WebUI 38 项测试、Go 全量测试和 `go vet`。
