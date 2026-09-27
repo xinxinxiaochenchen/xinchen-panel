@@ -184,3 +184,9 @@
 
 - 通过 Termark 发布 `c0af258` 到 `/opt/network-control-plane/releases/release-c0af258`，包 SHA-256 `80be7f2d40cfb8d96fed8fd82792668d05d3dfad48b7077e82ae68ead5f899f0`。正式库升级至迁移 20，升级前备份 `ncp-before-c0af258.dump` 权限 0600，已通过 `pg_restore --list` 验证。
 - 发布后 API/DB healthy、重启 0，首页/ready 200，明文登录 404，Agent TLS 18443 只绑定回环；正式库用户/节点/Agent 均为 0，磁盘可用约 2.4 GB。现有 Nginx Proxy Manager 保持运行。后续提交 `f6edf9b` 的 TLS 基础尚未部署。
+
+## 2026-09-27 独立三节点 TCP 中继执行器
+
+- `internal/agentrelay` 增加出口/中转处理器和出口拨号入口：TLS 对端认证后校验上一跳、线路世代、HMAC 证明和重放窗口；中转只使用已配置下一跳建立新 TLS 并重签 OPEN，出口重新验证公网目标 IP。下游 ACK 后才向上游发送成功；路线撤销关闭整链连接。
+- 使用真实回环 TCP、三节点证书与独立 TLS 会话验证入口→中转→出口字节往返和撤销；测试覆盖私网解析拒绝。TLS 关闭在对端不读关闭通知时曾等待约 5 秒，新增失败测试并改为直接关闭底层连接，随后测试通过。
+- 全量 Go 测试、Go vet、`agentrelay`/`agentidentity` race 测试通过。处理器尚未接入控制面配置快照、Agent 进程、计费或服务器数据面，不能把多跳草稿标为可用。

@@ -21,7 +21,7 @@ import (
 const tlsIngressID = "11111111-1111-4111-8111-111111111111"
 const tlsEgressID = "22222222-2222-4222-8222-222222222222"
 
-func relayTLSFixture(t *testing.T) (*x509.CertPool, tls.Certificate, tls.Certificate) {
+func relayTLSAuthority(t *testing.T) (*x509.CertPool, func(string, bool) tls.Certificate) {
 	t.Helper()
 	public, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -69,6 +69,12 @@ func relayTLSFixture(t *testing.T) (*x509.CertPool, tls.Certificate, tls.Certifi
 	}
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPEM)
+	return roots, issue
+}
+
+func relayTLSFixture(t *testing.T) (*x509.CertPool, tls.Certificate, tls.Certificate) {
+	t.Helper()
+	roots, issue := relayTLSAuthority(t)
 	return roots, issue(tlsIngressID, false), issue(tlsEgressID, true)
 }
 

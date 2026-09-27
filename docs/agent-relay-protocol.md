@@ -49,3 +49,9 @@
 `IssueRelayServerCertificate` 使用专用 Agent CA 对节点本机生成的 Ed25519 CSR 签发服务端证书。CSR 自报身份和 SAN 不生效；签发身份为 `spiffe://network-control-plane/relay/{node_id}`，服务端 SAN 为控制面登记的节点 `host`，证书仅有 ServerAuth 用途。现有 Agent 客户端证书保持 `spiffe://network-control-plane/agent/{node_id}` 和 ClientAuth 用途，两种证书不能互换。
 
 `ClientTLSConfig` 强制 TLS 1.3、CA 链、DNS/IP SAN、预期节点 URI 和当前允许的证书指纹。`ServerTLSConfig` 强制 TLS 1.3 和客户端证书，由调用方对数据库中的节点状态及指纹执行在线授权；OPEN 之后仍须检查此来源节点正是该线路的上一跳。配置工具已经实现并经真实 TLS 握手测试，但服务端证书签发 HTTP API、Agent 安装/续签、监听和线路快照尚未接入。
+
+## 独立 TCP 中继执行器
+
+`agentrelay.Handler` 已实现出口与中转连接处理。每个已应用线路世代保留同一 `ReplayWindow`；处理器在 TLS 握手后核对来源节点 URI、线路上一跳、世代、证明和有效期。中转只能使用快照中的 `NextHop` 地址、TLS 配置和下一边密钥重新签名 OPEN；用户输入不能选择下一跳。出口重新解析目标 DNS，拒绝非公网 IP，并仅拨号通过检查的 IP。下游返回成功后才对上游发送 `open_ok`。撤销线路 context 会关闭整条链，遇到对端不读 TLS 关闭通知时直接关闭底层连接，防止连接清理停顿。
+
+独立测试使用真实回环 TCP 和三段 TLS 会话验证入口 → 中转 → 出口的数据往返及撤销。此执行器尚未由 Agent 配置快照调用，生产中继端口也没有监听。用户计费只允许在未来的入口代理运行时执行，不能在中转或出口重复记录。
