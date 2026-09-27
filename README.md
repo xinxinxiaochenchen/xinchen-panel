@@ -26,7 +26,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。当前纯 IP 预览的正式库已应用至版本 17。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。当前纯 IP 预览的正式库已应用至版本 19。
 
 ## 资源目录开发状态
 
@@ -36,9 +36,9 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 管理员可通过 `/api/v1/admin/plans` 创建带明确资源组、共享单跳线路授权与额度限制的套餐，并通过 `/api/v1/admin/memberships` 为已有用户创建立即生效的订购。订购事务把额度、倍率、限制和授权 ID 冻结在快照中；同一用户不能同时拥有两个有效订购。`/api/v1/my/membership` 和 `/api/v1/my/entitlements` 只读取登录用户自己的有效订购。套餐授权共享线路时要求单跳出口节点属于授权资源组；私有线路不得授予其他用户。创建订购要求结束时间至少比数据库当前时间晚五分钟。接口契约见 [OpenAPI](api/openapi/control-plane.yaml)。
 
-## 单跳线路开发状态
+## 线路开发状态
 
-管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享单跳线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模，首版只接受一个代理出口 hop；自有线路数受订购快照约束。管理列表保留停用的自有线路；实际连接使用应调用 `GetUsableLine` 复核启用、节点能力和当前授权。公网纯 HTTP 预览保持关闭这些路由。
+管理员可通过 `GET/POST /api/v1/admin/lines` 与 `GET/PATCH /api/v1/admin/lines/{id}` 管理共享线路。普通用户可通过 `GET/POST /api/v1/lines`、`GET/PATCH/DELETE /api/v1/lines/{id}` 管理套餐允许的自有线路并查看获授权的共享线路。线路与节点独立建模。单跳线路可执行；2–8 跳只可保存为停用拓扑草稿，创建时检查每个节点能力、资源组授权、套餐 `max_hops` 和自建线路数。草稿不能启用，也不会进入代理连接、订阅或计费数据面。管理列表保留停用的自有线路；实际连接使用应调用 `GetUsableLine` 复核启用、节点能力和当前授权。线路权重目前只有确定性排序器，尚未接入代理运行时。公网纯 HTTP 预览保持关闭这些路由。
 
 ## 直达转发规则开发状态
 

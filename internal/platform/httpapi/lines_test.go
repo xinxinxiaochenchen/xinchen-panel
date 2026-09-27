@@ -41,6 +41,7 @@ func (s lineSessions) VerifyCSRF(ctx context.Context, token, csrf string) (ident
 
 type lineStub struct {
 	createdBy string
+	createdInput catalog.LineInput
 	readFor   string
 	updatedBy string
 	deletedBy string
@@ -53,6 +54,7 @@ func (s *lineStub) CreateSharedLine(_ context.Context, input catalog.LineInput, 
 		return catalog.Line{}, s.createErr
 	}
 	s.createdBy = actorID
+	s.createdInput = input
 	return catalog.Line{ID: testLineID, Name: input.Name, Hops: []catalog.LineHop{{NodeID: input.NodeID, Role: "egress"}}}, nil
 }
 func (s *lineStub) CreateCustomLine(_ context.Context, input catalog.LineInput, ownerID, _ string) (catalog.Line, error) {
@@ -60,7 +62,29 @@ func (s *lineStub) CreateCustomLine(_ context.Context, input catalog.LineInput, 
 		return catalog.Line{}, s.createErr
 	}
 	s.createdBy = ownerID
+	s.createdInput = input
 	return catalog.Line{ID: testLineID, OwnerUserID: &ownerID, Name: input.Name, Hops: []catalog.LineHop{{NodeID: input.NodeID, Role: "egress"}}}, nil
+}
+
+func TestLineRoutesAcceptDisabledMultiHopTopologyOnly(t *testing.T) {
+	store := &lineStub{}
+	handler := NewHandlerWithLines(testLogger(), nil, lineSessions{}, nil, nil, nil, store)
+	hops := `[{"position":0,"node_id":"11111111-1111-7111-8111-111111111111","role":"ingress"},{"position":1,"node_id":"33333333-3333-7333-8333-333333333333","role":"egress"}]`
+	accepted := httptest.NewRecorder()
+	handler.ServeHTTP(accepted, catalogRequest(http.MethodPost, "/api/v1/lines", "member-token", "valid-csrf", `{"name":"Draft","enabled":false,"hops":`+hops+`}`))
+	if accepted.Code != 201 || store.createdBy != "member-id" || len(store.createdInput.Hops) != 2 || store.createdInput.Enabled {
+		t.Fatalf("disabled multi-hop route = %d %+v %s", accepted.Code, store.createdInput, accepted.Body.String())
+	}
+	for _, body := range []string{
+		`{"name":"Active","hops":` + hops + `}`,
+		`{"name":"Both","node_id":"` + testLineNodeID + `","enabled":false,"hops":` + hops + `}`,
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodPost, "/api/v1/lines", "member-token", "valid-csrf", body))
+		if response.Code != 422 {
+			t.Fatalf("invalid multi-hop route = %d %s", response.Code, response.Body.String())
+		}
+	}
 }
 func (s *lineStub) ListAllLines(context.Context, int, string) ([]catalog.Line, error) {
 	return []catalog.Line{{ID: testLineID, Name: "Shared JP"}}, nil

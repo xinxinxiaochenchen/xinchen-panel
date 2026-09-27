@@ -8,6 +8,8 @@ import (
 )
 
 const lineNodeID = "11111111-1111-7111-8111-111111111111"
+const lineRelayID = "22222222-2222-7222-8222-222222222222"
+const lineExitID = "33333333-3333-7333-8333-333333333333"
 
 func TestNormalizeLine(t *testing.T) {
 	input := NewLine{Name: "  Japan  ", NodeID: lineNodeID, Tags: []string{" fast ", "japan"}}
@@ -43,6 +45,33 @@ func TestNormalizeLine(t *testing.T) {
 	}
 	if _, err := NormalizeLine(NewLine{Name: "bad multiplier", NodeID: lineNodeID, MultiplierMilli: intPtr(0)}, true); err == nil {
 		t.Fatal("accepted zero shared multiplier")
+	}
+}
+
+func TestNormalizeLineTopology(t *testing.T) {
+	for _, hops := range [][]LineHop{
+		{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 1, NodeID: lineExitID, Role: "egress"}},
+		{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 1, NodeID: lineRelayID, Role: "relay"}, {Position: 2, NodeID: lineExitID, Role: "egress"}},
+	} {
+		line, err := NormalizeLine(NewLine{Name: "Multi", Hops: hops, Enabled: boolPtr(false)}, false)
+		if err != nil || line.NodeID != "" || !reflect.DeepEqual(line.Hops, hops) || line.Enabled {
+			t.Fatalf("normalized multi-hop = %+v, %v", line, err)
+		}
+	}
+	for _, input := range []NewLine{
+		{Name: "missing"},
+		{Name: "both", NodeID: lineNodeID, Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "egress"}}},
+		{Name: "enabled", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 1, NodeID: lineExitID, Role: "egress"}}},
+		{Name: "single alternate", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "egress"}}, Enabled: boolPtr(false)},
+		{Name: "reordered", Hops: []LineHop{{Position: 1, NodeID: lineExitID, Role: "egress"}, {Position: 0, NodeID: lineNodeID, Role: "ingress"}}, Enabled: boolPtr(false)},
+		{Name: "gap", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 2, NodeID: lineExitID, Role: "egress"}}, Enabled: boolPtr(false)},
+		{Name: "duplicate", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 1, NodeID: lineNodeID, Role: "egress"}}, Enabled: boolPtr(false)},
+		{Name: "middle role", Hops: []LineHop{{Position: 0, NodeID: lineNodeID, Role: "ingress"}, {Position: 1, NodeID: lineRelayID, Role: "egress"}, {Position: 2, NodeID: lineExitID, Role: "egress"}}, Enabled: boolPtr(false)},
+		{Name: "invalid id", Hops: []LineHop{{Position: 0, NodeID: "bad", Role: "ingress"}, {Position: 1, NodeID: lineExitID, Role: "egress"}}, Enabled: boolPtr(false)},
+	} {
+		if _, err := NormalizeLine(input, false); err == nil {
+			t.Fatalf("accepted invalid topology: %+v", input)
+		}
 	}
 }
 

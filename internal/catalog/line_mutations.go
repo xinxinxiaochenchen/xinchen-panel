@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"controlplane/internal/platform/id"
 	"github.com/jackc/pgx/v5"
@@ -13,7 +14,7 @@ import (
 )
 
 func lineByID(ctx context.Context, tx pgx.Tx, lineID string) (Line, error) {
-	line, err := scanLine(tx.QueryRow(ctx, lineSelect+` WHERE`+singleHopWhere+` AND l.id=$1`, lineID))
+	line, err := scanLine(tx.QueryRow(ctx, lineSelect+` WHERE`+validLineWhere+` AND l.id=$1`, lineID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Line{}, ErrNotFound
 	}
@@ -73,15 +74,25 @@ WHERE user_id=$1 AND status='active' AND starts_at<=clock_timestamp() AND ends_a
 		if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
 			return Line{}, fmt.Errorf("decode line entitlement: %w", err)
 		}
-		var groupID string
-		if err := tx.QueryRow(ctx, `SELECT group_id::text FROM nodes WHERE id=$1 FOR SHARE`, before.Hops[0].NodeID).Scan(&groupID); err != nil {
-			return Line{}, fmt.Errorf("load line node group: %w", err)
-		}
-		if !snapshot.Limits.AllowCustomLines || snapshot.Limits.MaxHops < 1 || !slices.Contains(snapshot.ResourceGroupIDs, groupID) {
+		if !snapshot.Limits.AllowCustomLines || snapshot.Limits.MaxHops < len(before.Hops) {
 			return Line{}, ErrNotFound
+		}
+		hops := append([]LineHop(nil), before.Hops...)
+		slices.SortFunc(hops, func(a, b LineHop) int { return strings.Compare(a.NodeID, b.NodeID) })
+		for _, hop := range hops {
+			var groupID string
+			if err := tx.QueryRow(ctx, `SELECT group_id::text FROM nodes WHERE id=$1 FOR SHARE`, hop.NodeID).Scan(&groupID); err != nil {
+				return Line{}, fmt.Errorf("load line node group: %w", err)
+			}
+			if !slices.Contains(snapshot.ResourceGroupIDs, groupID) {
+				return Line{}, ErrNotFound
+			}
 		}
 	}
 	if patch.Enabled != nil && *patch.Enabled {
+		if len(before.Hops) > 1 {
+			return Line{}, ErrNotFound
+		}
 		_, err := lockUsableProxyNode(ctx, tx, before.Hops[0].NodeID)
 		if err != nil {
 			return Line{}, err

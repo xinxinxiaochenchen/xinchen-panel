@@ -53,10 +53,10 @@ function LineCard({ line, user, onChanged }: { line: LineRecord; user: User; onC
   return <article className="catalog-card">
     <div className="catalog-card-head"><span className="catalog-icon"><Route size={18} /></span><span className={`status-chip ${line.enabled ? 'status-online' : 'status-offline'}`}><i />{line.enabled ? '启用' : '停用'}</span></div>
     <div className="catalog-card-name"><strong>{line.name}</strong><span>{line.owner_user_id ? '我的线路' : '共享线路'}</span></div>
-    <div className="line-topology">{line.hops.length ? line.hops.map((hop, index) => <span className="hop" key={`${hop.position}-${hop.node_id}`}><span>{hop.role === 'egress' ? '出口' : hop.role}</span><strong>{hop.node_id.slice(0, 8)}</strong>{index < line.hops.length - 1 && <ArrowUpRight size={14} />}</span>) : <span className="muted">暂无拓扑信息</span>}</div>
+    <div className="line-topology">{line.hops.length ? line.hops.map((hop, index) => <span className="hop" key={`${hop.position}-${hop.node_id}`}><span>{({ ingress: '入口', relay: '中转', egress: '出口' } as Record<string, string>)[hop.role] ?? hop.role}</span><strong>{hop.node_id.slice(0, 8)}</strong>{index < line.hops.length - 1 && <ArrowUpRight size={14} />}</span>) : <span className="muted">暂无拓扑信息</span>}</div>
     <div className="catalog-detail-grid"><div><small>优先级</small><strong>{line.priority}</strong></div><div><small>权重</small><strong>{line.weight}</strong></div><div><small>倍率</small><strong>{multiplier}</strong></div><div><small>标签</small><strong>{line.tags.length ? line.tags.join(' / ') : '—'}</strong></div></div>
-    <div className="catalog-card-foot"><span>{line.hops.length === 1 ? '单跳线路' : `${line.hops.length} 跳线路`}</span><span><Layers3 size={13} /> {line.hops.length} 个节点</span></div>
-    {canToggle && <div className="catalog-card-actions"><EditLine line={line} user={user} onSaved={onChanged} /><button className="catalog-toggle" type="button" disabled={busy} onClick={() => void toggle()}>{busy ? '正在保存…' : line.enabled ? '停用线路' : '启用线路'}</button></div>}
+    <div className="catalog-card-foot"><span>{line.hops.length === 1 ? '单跳线路' : `${line.hops.length} 跳拓扑草稿，暂不可用`}</span><span><Layers3 size={13} /> {line.hops.length} 个节点</span></div>
+    {canToggle && <div className="catalog-card-actions"><EditLine line={line} user={user} onSaved={onChanged} />{line.hops.length === 1 && <button className="catalog-toggle" type="button" disabled={busy} onClick={() => void toggle()}>{busy ? '正在保存…' : line.enabled ? '停用线路' : '启用线路'}</button>}</div>}
     {error && <p className="catalog-page-error" role="alert">{error}</p>}
   </article>
 }

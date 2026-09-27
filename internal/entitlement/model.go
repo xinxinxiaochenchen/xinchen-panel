@@ -94,8 +94,8 @@ func NormalizePlan(input NewPlan) (PlanInput, error) {
 	if limits.MaxHops == 0 {
 		limits.MaxHops = 1
 	}
-	if limits.MaxHops != 1 {
-		return PlanInput{}, ValidationError{"limits.max_hops", "MVP supports one hop"}
+	if limits.MaxHops < 1 || limits.MaxHops > 8 {
+		return PlanInput{}, ValidationError{"limits.max_hops", "expected 1 to 8"}
 	}
 	if limits.MaxForwardRulesPerNode < 0 || limits.MaxSubscriptions < 0 || limits.MaxRoutingRules < 0 || limits.MaxCustomLines < 0 {
 		return PlanInput{}, ValidationError{"limits", "limits must be non-negative"}

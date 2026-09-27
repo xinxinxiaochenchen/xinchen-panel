@@ -19,15 +19,15 @@ Status: Draft. Implementation begins after the multi-hop transport design is con
 - Modify: `internal/catalog/line_repository.go`
 - Modify: `internal/catalog/line_mutations.go`
 - Modify: `internal/catalog/line_repository_test.go`
-- Create: `migrations/000019_multi_hop_line_ports.up.sql`
-- Create: `migrations/000019_multi_hop_line_ports.down.sql`
+- Create: `migrations/000020_multi_hop_line_ports.up.sql`
+- Create: `migrations/000020_multi_hop_line_ports.down.sql`
 - Modify: `api/openapi/control-plane.yaml`
 
-- [ ] Add a typed hop input with contiguous positions, unique nodes, exactly one ingress and egress, and relay roles only in the middle.
-- [ ] Keep existing one-node requests compatible by translating the current `node_id` input to one egress hop.
+- [x] Add a typed hop input with contiguous positions, unique nodes, exactly one ingress and egress, and relay roles only in the middle; multi-hop remains disabled draft only.
+- [x] Keep existing one-node requests compatible by translating the current `node_id` input to one egress hop.
 - [ ] Add nullable node relay bind host/port fields with a database uniqueness constraint for enabled listeners.
-- [ ] Lock all nodes and resource groups in sorted UUID order before checking capability, enabled state, group grants, and `max_hops`.
-- [ ] Test two-hop and three-hop authorization, duplicate nodes, role mismatch, disabled relay, missing forward capability, and `max_hops=2` allowing one or two hops.
+- [x] Lock all draft nodes and resource groups in sorted UUID order before checking capability, enabled state, group grants, and `max_hops`.
+- [x] Test two-hop and three-hop authorization, duplicate nodes, role mismatch, disabled relay, missing forward capability, and `max_hops=2` allowing one or two hops.
 
 ### Task 2: Compile per-Agent TCP relay snapshots
 
@@ -81,7 +81,8 @@ Status: Draft. Implementation begins after the multi-hop transport design is con
 - Modify: `internal/agentruntime/proxy.go`
 - Modify: `internal/billing/admission.go`
 
-- [ ] Select the lowest healthy priority tier, then use a stable connection-ID hash over positive weights.
+- [x] Add and test a pure selector that orders healthy candidates by priority and stable connection-ID weighted rank. Runtime wiring remains below.
+- [ ] Use the selector only after all hop ACK and health checks when opening a new connection.
 - [ ] Retry another healthy line only before opening a logical metered connection; keep the original line and multiplier fixed after admission.
 - [ ] Test priority, weighted distribution, stable retries, unhealthy ACK gating, and one ledger connection for a multi-hop stream.
 
@@ -95,6 +96,6 @@ Status: Draft. Implementation begins after the multi-hop transport design is con
 - Modify: `progress.md`
 
 - [ ] Run focused tests, full Go tests with loopback permissions, race tests for relay state, `go vet ./...`, OpenAPI parsing, and frontend build.
-- [ ] Run migrations 1–19 up/down/up in an isolated PostgreSQL 16 database.
+- [ ] Run migrations 1–20 up/down/up in an isolated PostgreSQL 16 database.
 - [ ] Run a three-Agent TCP integration test with one ingress, one relay, and one egress and assert ingress-only usage accounting.
 - [ ] Build and deploy through Termark only after all verification passes; retain a database backup and verify public HTTP remains read-only.

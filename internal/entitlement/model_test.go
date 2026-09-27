@@ -25,6 +25,10 @@ func TestNormalizePlanFreezesSortedExplicitGrants(t *testing.T) {
 	if !reflect.DeepEqual(plan.ResourceGroupIDs, []string{testGroupID}) || !reflect.DeepEqual(plan.LineIDs, []string{testLineID}) {
 		t.Fatalf("grants = %+v %+v", plan.ResourceGroupIDs, plan.LineIDs)
 	}
+	multi, err := NormalizePlan(NewPlan{Name: "Multi", Limits: PlanLimits{AllowCustomLines: true, MaxCustomLines: 2, MaxHops: 3}})
+	if err != nil || multi.Limits.MaxHops != 3 {
+		t.Fatalf("multi-hop allowance = %+v, %v", multi, err)
+	}
 	ordered, err := NormalizePlan(NewPlan{Name: "Sorted", ResourceGroupIDs: []string{testLineID, testGroupID}})
 	if err != nil || !reflect.DeepEqual(ordered.ResourceGroupIDs, []string{testGroupID, testLineID}) {
 		t.Fatalf("sorted grants = %+v, %v", ordered.ResourceGroupIDs, err)
@@ -35,7 +39,7 @@ func TestNormalizePlanFreezesSortedExplicitGrants(t *testing.T) {
 		{Name: "Bad", QuotaBytes: 1, ResourceGroupIDs: []string{testGroupID, testGroupID}},
 		{Name: "Bad", QuotaBytes: 1, LineIDs: []string{testLineID, testLineID}},
 		{Name: "Bad", QuotaBytes: 1, Limits: PlanLimits{MaxForwardRulesPerNode: -1}},
-		{Name: "Bad", QuotaBytes: 1, Limits: PlanLimits{MaxHops: 2}},
+		{Name: "Bad", QuotaBytes: 1, Limits: PlanLimits{MaxHops: 9}},
 		{Name: "Bad", QuotaBytes: 1, DefaultMultiplierMilli: intPointer(0)},
 	} {
 		if _, err := NormalizePlan(input); err == nil {

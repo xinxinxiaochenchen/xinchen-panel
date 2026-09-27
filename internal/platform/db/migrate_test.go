@@ -78,8 +78,8 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 18 {
-		t.Fatalf("expected custom RBAC migration 18; found %d migrations", len(migrations))
+	if len(migrations) != 19 {
+		t.Fatalf("expected audit pagination migration 19; found %d migrations", len(migrations))
 	}
 	for i, migration := range migrations {
 		if migration.Version != int64(i+1) {

@@ -829,14 +829,14 @@ paths:
   /api/v1/admin/lines:
     get:
       operationId: listAllLines
-      summary: List single-hop lines (administrator)
+      summary: List lines and disabled multi-hop topology drafts (administrator)
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
       responses:
         '200':
-          description: Single-hop lines
+          description: Lines and disabled topology drafts
           content:
             application/json:
               schema: {$ref: '#/components/schemas/LineList'}
@@ -845,7 +845,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createSharedLine
-      summary: Create a shared single-hop line (administrator)
+      summary: Create a shared single-hop line or disabled multi-hop topology draft (administrator)
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -871,7 +871,7 @@ paths:
       - {$ref: '#/components/parameters/LineID'}
     get:
       operationId: getLineAsAdmin
-      summary: Get a single-hop line (administrator)
+      summary: Get a line or topology draft (administrator)
       security: [{browserSession: []}]
       responses:
         '200':
@@ -924,7 +924,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createOwnLine
-      summary: Create an authorized owned single-hop line
+      summary: Create an authorized owned single-hop line or disabled multi-hop topology draft
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -1792,11 +1792,24 @@ components:
         next_cursor: {type: ['string', 'null']}
     NewLine:
       type: object
-      required: [name, node_id]
+      required: [name]
       additionalProperties: false
+      oneOf:
+        - required: [node_id]
+          not: {required: [hops]}
+        - required: [hops, enabled]
+          not: {required: [node_id]}
+          properties:
+            enabled: {const: false}
       properties:
         name: {type: string, minLength: 1, maxLength: 100}
-        node_id: {type: string, format: uuid, description: 'Sole egress hop; immutable in this release.'}
+        node_id: {type: string, format: uuid, description: 'Sole egress hop for an executable single-hop line.'}
+        hops:
+          type: array
+          minItems: 2
+          maxItems: 8
+          description: 'Disabled topology draft only. Positions must be contiguous from zero, nodes unique, roles ingress then relay nodes then egress. Every node and resource group is checked against current authorization; data-plane execution is not yet available.'
+          items: {$ref: '#/components/schemas/LineHop'}
         enabled: {type: boolean, default: true}
         priority: {type: integer, minimum: 0, maximum: 1000, default: 100}
         weight: {type: integer, minimum: 1, maximum: 100, default: 1}
@@ -1825,9 +1838,9 @@ components:
       type: object
       required: [position, node_id, role]
       properties:
-        position: {type: integer, const: 0}
+        position: {type: integer, minimum: 0, maximum: 7}
         node_id: {type: string, format: uuid}
-        role: {type: string, const: egress}
+        role: {type: string, enum: [ingress, relay, egress]}
     Line:
       type: object
       required: [id, owner_user_id, name, enabled, priority, weight, multiplier_milli, tags, hops, created_at, updated_at]
@@ -1845,7 +1858,7 @@ components:
         hops:
           type: array
           minItems: 1
-          maxItems: 1
+          maxItems: 8
           items: {$ref: '#/components/schemas/LineHop'}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
@@ -2023,7 +2036,7 @@ components:
         max_routing_rules: {type: integer, minimum: 0, default: 0}
         allow_custom_lines: {type: boolean, default: false}
         max_custom_lines: {type: integer, minimum: 0, default: 0}
-        max_hops: {type: integer, const: 1, default: 1}
+        max_hops: {type: integer, minimum: 1, maximum: 8, default: 1}
     PlanLimits:
       allOf:
         - {$ref: '#/components/schemas/NewPlanLimits'}

@@ -3,6 +3,20 @@ import assert from 'node:assert/strict'
 import { loadAllCatalogPages, loadCatalogPage, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
 import { customRolePermissions, loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
+import { draftLinePayload } from '../src/features/catalog/lineDraft.ts'
+
+test('multi-hop draft payload preserves hop roles and cannot be enabled', () => {
+  assert.deepEqual(draftLinePayload(' Japan relay ', ['ingress-id', 'relay-id', 'egress-id'], 20, 3), {
+    name: 'Japan relay', enabled: false, priority: 20, weight: 3,
+    hops: [
+      { position: 0, node_id: 'ingress-id', role: 'ingress' },
+      { position: 1, node_id: 'relay-id', role: 'relay' },
+      { position: 2, node_id: 'egress-id', role: 'egress' },
+    ],
+  })
+  assert.throws(() => draftLinePayload('Draft', ['same', 'same'], 100, 1), /不同节点/)
+  assert.throws(() => draftLinePayload('Draft', ['only-one'], 100, 1), /2 至 8/)
+})
 
 test('catalog page sends opaque cursor without exposing another resource path', async () => {
   const calls: string[] = []

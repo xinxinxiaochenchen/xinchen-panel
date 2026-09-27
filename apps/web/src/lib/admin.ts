@@ -106,6 +106,7 @@ export type PlanDraft = {
   maxSubscriptions: number;
   maxRouting: number;
   maxCustomLines: number;
+  maxHops?: number;
   groupIDs: string[];
   lineIDs: string[];
 };
@@ -150,6 +151,8 @@ export function buildPlanInput(draft: PlanDraft) {
   )
     throw new Error("计费倍率超出允许范围。");
   const maxCustomLines = wholeNonnegative(draft.maxCustomLines, "自建线路数");
+  const maxHops = draft.maxHops ?? 1;
+  if (!Number.isInteger(maxHops) || maxHops < 1 || maxHops > 8) throw new Error("线路跳数必须是 1 到 8 的整数。");
   return {
     name: draft.name.trim(),
     quota_bytes: quotaBytes,
@@ -163,7 +166,7 @@ export function buildPlanInput(draft: PlanDraft) {
       max_routing_rules: wholeNonnegative(draft.maxRouting, "分流规则数"),
       allow_custom_lines: maxCustomLines > 0,
       max_custom_lines: maxCustomLines,
-      max_hops: 1,
+      max_hops: maxHops,
     },
     resource_group_ids: [...draft.groupIDs],
     line_ids: [...draft.lineIDs],

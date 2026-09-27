@@ -6,18 +6,20 @@ import (
 )
 
 type NewLine struct {
-	Name            string   `json:"name"`
-	NodeID          string   `json:"node_id"`
-	Enabled         *bool    `json:"enabled,omitempty"`
-	Priority        *int     `json:"priority,omitempty"`
-	Weight          *int     `json:"weight,omitempty"`
-	MultiplierMilli *int     `json:"multiplier_milli,omitempty"`
-	Tags            []string `json:"tags,omitempty"`
+	Name            string    `json:"name"`
+	NodeID          string    `json:"node_id"`
+	Hops            []LineHop `json:"hops,omitempty"`
+	Enabled         *bool     `json:"enabled,omitempty"`
+	Priority        *int      `json:"priority,omitempty"`
+	Weight          *int      `json:"weight,omitempty"`
+	MultiplierMilli *int      `json:"multiplier_milli,omitempty"`
+	Tags            []string  `json:"tags,omitempty"`
 }
 
 type LineInput struct {
 	Name            string
 	NodeID          string
+	Hops            []LineHop
 	Enabled         bool
 	Priority        int
 	Weight          int
@@ -59,7 +61,20 @@ func NormalizeLine(input NewLine, shared bool) (LineInput, error) {
 	if len(name) < 1 || len(name) > 100 {
 		return LineInput{}, ValidationError{"name", "expected 1 to 100 characters"}
 	}
-	if !ValidID(input.NodeID) {
+	if input.Hops != nil {
+		if input.NodeID != "" {
+			return LineInput{}, ValidationError{"hops", "cannot combine hops and node_id"}
+		}
+		if err := validateLineTopology(input.Hops); err != nil {
+			return LineInput{}, err
+		}
+		if len(input.Hops) < 2 {
+			return LineInput{}, ValidationError{"hops", "use node_id for single-hop lines"}
+		}
+		if input.Enabled == nil || *input.Enabled {
+			return LineInput{}, ValidationError{"enabled", "multi-hop execution is not available; save disabled topology only"}
+		}
+	} else if !ValidID(input.NodeID) {
 		return LineInput{}, ValidationError{"node_id", "expected UUID"}
 	}
 	priority, weight, enabled := 100, 1, true
@@ -99,8 +114,34 @@ func NormalizeLine(input NewLine, shared bool) (LineInput, error) {
 		seen[tag] = true
 		tags = append(tags, tag)
 	}
-	return LineInput{Name: name, NodeID: input.NodeID, Enabled: enabled, Priority: priority,
+	hops := append([]LineHop(nil), input.Hops...)
+	for i := range hops {
+		hops[i].NodeID = strings.ToLower(hops[i].NodeID)
+	}
+	return LineInput{Name: name, NodeID: strings.ToLower(input.NodeID), Hops: hops, Enabled: enabled, Priority: priority,
 		Weight: weight, MultiplierMilli: input.MultiplierMilli, Tags: tags}, nil
+}
+
+func validateLineTopology(hops []LineHop) error {
+	if len(hops) < 1 || len(hops) > 8 {
+		return ValidationError{"hops", "expected 1 to 8 ordered hops"}
+	}
+	seen := make(map[string]bool, len(hops))
+	for position, hop := range hops {
+		nodeID := strings.ToLower(hop.NodeID)
+		role := "relay"
+		if position == 0 {
+			role = "ingress"
+		}
+		if position == len(hops)-1 {
+			role = "egress"
+		}
+		if hop.Position != position || hop.Role != role || !ValidID(nodeID) || seen[nodeID] {
+			return ValidationError{"hops", "expected unique node UUIDs, contiguous positions and ingress/relay/egress order"}
+		}
+		seen[nodeID] = true
+	}
+	return nil
 }
 
 func NormalizeLinePatch(input LinePatch, shared bool) (LinePatch, error) {

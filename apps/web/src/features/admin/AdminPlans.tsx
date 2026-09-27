@@ -25,6 +25,7 @@ export function PlanPanel({
   const [maxSubscriptions, setMaxSubscriptions] = useState(3);
   const [maxRouting, setMaxRouting] = useState(20);
   const [maxCustom, setMaxCustom] = useState(0);
+  const [maxHops, setMaxHops] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [multiplier, setMultiplier] = useState(1);
@@ -43,6 +44,7 @@ export function PlanPanel({
         maxSubscriptions,
         maxRouting,
         maxCustomLines: maxCustom,
+        maxHops,
         groupIDs: selectedGroups,
         lineIDs: selectedLines,
       });
@@ -194,6 +196,9 @@ export function PlanPanel({
               onChange={(event) => setMaxCustom(Number(event.target.value))}
             />
             <span className="catalog-form-label">授权资源域</span>
+            <label htmlFor="admin-plan-hops">线路跳数上限</label>
+            <input id="admin-plan-hops" type="number" min={1} max={8} step={1} value={maxHops} onChange={(event) => setMaxHops(Number(event.target.value))} />
+            <small className="catalog-form-note">当前可执行单跳；多跳拓扑可保存，执行功能尚在开发。</small>
             <div className="catalog-check-list">
               {groups
                 .filter((group) => group.enabled)
