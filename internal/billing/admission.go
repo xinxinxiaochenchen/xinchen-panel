@@ -251,17 +251,57 @@ WHERE a.id=$1 AND n.id=$2 AND n.enabled AND g.enabled FOR SHARE OF a,n,g`, agent
  WHERE f.id=$1 AND f.ingress_node_id=$2 AND f.user_id=p.user_id AND f.enabled AND f.line_id IS NULL FOR SHARE OF f`, req.ResourceID, nodeID, periodID, payload).Scan(&multiplier, &authorized)
 	} else {
 		err = tx.QueryRow(ctx, `SELECT COALESCE(l.multiplier_milli,n.multiplier_milli,(p.snapshot_json->>'default_multiplier_milli')::bigint),
- EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE($4::jsonb->'proxy_config','[]'::jsonb)) e
- WHERE e->>'id'=a.id::text AND e->>'user_id'=a.user_id::text AND e->>'line_id'=a.line_id::text
- AND e->>'credential_hash'=a.credential_hash AND (e->>'ingress_port')::int=n.proxy_port
- AND (e->>'expires_at')::timestamptz>=$5)
- AND COALESCE(p.snapshot_json->'resource_group_ids','[]'::jsonb) ? n.group_id::text
- AND (l.owner_user_id IS NULL AND COALESCE(p.snapshot_json->'line_ids','[]'::jsonb) ? l.id::text
- OR l.owner_user_id=a.user_id AND COALESCE((p.snapshot_json->'limits'->>'allow_custom_lines')::boolean,false))
- AND NOT EXISTS(SELECT 1 FROM line_hops h2 WHERE h2.line_id=l.id AND h2.position<>0)
- FROM proxy_accesses a JOIN lines l ON l.id=a.line_id JOIN line_hops h ON h.line_id=l.id AND h.position=0 AND h.role='egress'
- JOIN nodes n ON n.id=h.node_id JOIN billing_periods p ON p.id=$3
- WHERE a.id=$1 AND h.node_id=$2 AND a.user_id=p.user_id AND a.line_id=$6::uuid AND a.enabled AND l.enabled FOR SHARE OF a,l`, req.ResourceID, nodeID, periodID, payload, now, lineID).Scan(&multiplier, &authorized)
+EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE($4::jsonb->'proxy_config','[]'::jsonb)) e
+WHERE e->>'id'=a.id::text AND e->>'user_id'=a.user_id::text AND e->>'line_id'=a.line_id::text
+AND e->>'credential_hash'=a.credential_hash AND (e->>'ingress_port')::int=n.proxy_port
+AND (e->>'expires_at')::timestamptz>=$5
+AND (topology.hop_count=1 AND COALESCE((e->>'relay_generation')::bigint,0)=0
+     OR topology.hop_count>1 AND (e->>'relay_generation')::bigint=l.relay_generation))
+AND COALESCE(p.snapshot_json->'resource_group_ids','[]'::jsonb) ? n.group_id::text
+AND (l.owner_user_id IS NULL AND COALESCE(p.snapshot_json->'line_ids','[]'::jsonb) ? l.id::text
+     OR l.owner_user_id=a.user_id AND COALESCE((p.snapshot_json->'limits'->>'allow_custom_lines')::boolean,false))
+AND topology.hop_count BETWEEN 1 AND 8
+AND topology.hop_count<=COALESCE((p.snapshot_json->'limits'->>'max_hops')::int,1)
+AND (topology.hop_count=1 AND h.role='egress' OR topology.hop_count>1 AND h.role='ingress')
+AND NOT EXISTS(SELECT 1 FROM line_hops step
+JOIN nodes hop_node ON hop_node.id=step.node_id
+JOIN resource_groups hop_group ON hop_group.id=hop_node.group_id
+LEFT JOIN agents hop_agent ON hop_agent.node_id=hop_node.id
+WHERE step.line_id=l.id AND (
+    step.position>=topology.hop_count
+    OR step.role<>CASE WHEN step.position=topology.hop_count-1 THEN 'egress'
+                       WHEN step.position=0 THEN 'ingress' ELSE 'relay' END
+    OR NOT hop_node.enabled OR NOT hop_group.enabled
+    OR NOT (COALESCE(p.snapshot_json->'resource_group_ids','[]'::jsonb) ? hop_node.group_id::text)
+    OR topology.hop_count=1 AND (hop_node.proxy_port IS NULL OR NOT 'proxy'=ANY(hop_node.capabilities))
+    OR topology.hop_count>1 AND (
+         hop_node.relay_port IS NULL OR NOT 'forward'=ANY(hop_node.capabilities)
+         OR step.position=0 AND (hop_node.proxy_port IS NULL OR NOT 'proxy'=ANY(hop_node.capabilities))
+         OR hop_agent.status IS DISTINCT FROM 'online'
+         OR hop_agent.last_seen_at<=clock_timestamp()-interval '45 seconds'
+         OR hop_agent.desired_revision IS DISTINCT FROM hop_agent.applied_revision
+         OR NOT 'relay'=ANY(hop_agent.capabilities)
+         OR NOT (COALESCE(hop_agent.cert_expires_at>clock_timestamp(),false)
+                 OR EXISTS(SELECT 1 FROM agent_certificate_grants cg
+                           WHERE cg.node_id=hop_node.id AND cg.expires_at>clock_timestamp()))
+         OR NOT EXISTS(SELECT 1 FROM agent_relay_certificate_grants rg
+                       WHERE rg.node_id=hop_node.id AND rg.expires_at>clock_timestamp())
+         OR NOT EXISTS(SELECT 1 FROM config_revisions hop_revision
+                       WHERE hop_revision.node_id=hop_node.id AND hop_revision.revision=hop_agent.applied_revision
+                         AND hop_revision.status='applied'
+                         AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(hop_revision.payload_json->'relay_config','[]'::jsonb)) route
+                                    WHERE route->>'line_id'=l.id::text
+                                      AND route->>'generation'=l.relay_generation::text
+                                      AND route->>'role'=step.role)))))
+FROM proxy_accesses a JOIN lines l ON l.id=a.line_id
+JOIN line_hops h ON h.line_id=l.id AND h.position=0
+JOIN nodes n ON n.id=h.node_id
+JOIN agents ag ON ag.node_id=n.id
+JOIN LATERAL (SELECT count(*) AS hop_count FROM line_hops lh WHERE lh.line_id=l.id) topology ON true
+JOIN billing_periods p ON p.id=$3
+WHERE a.id=$1 AND h.node_id=$2 AND a.user_id=p.user_id AND a.line_id=$6::uuid
+AND a.enabled AND l.enabled AND ag.status='online' AND ag.last_seen_at>clock_timestamp()-interval '45 seconds'
+AND ag.applied_revision=$7 AND 'proxy'=ANY(ag.capabilities) FOR SHARE OF a,l,ag`, req.ResourceID, nodeID, periodID, payload, now, lineID, req.Revision).Scan(&multiplier, &authorized)
 	}
 	if err != nil {
 		return 0, databaseError(err)

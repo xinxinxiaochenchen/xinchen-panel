@@ -1,6 +1,6 @@
 # Agent 用量报告与重放
 
-本页描述已经实现的报告通道和控制面连接准入。Agent 客户端的额度请求、本地计量与崩溃恢复尚待接入；当前不能开放真实代理。
+本页描述已经实现的报告通道、连接准入和额度租约。Agent 已接入额度请求、本地计量与崩溃恢复。正式环境仍需完成节点入网、受信任的 HTTPS 管理入口与真实通流验收。
 
 ## 消息
 
@@ -53,7 +53,7 @@
 
 同一条 mTLS WebSocket 流承载以下消息。Agent 发送 `connection_open`，字段为 `request_id`、`connection_id`、`resource_kind`（`forward`/`proxy`）、`resource_id`、`revision`、`requested_bytes`。后续发送 `quota_request`，字段为 `request_id`、`connection_id`、`revision`、`requested_bytes`。单次请求最多 1 MiB。请求中不允许包含用户、账期或倍率。
 
-控制面在一个事务内验证已应用配置、资源、账户及冻结套餐授权，建立连接会话并发放首份租约。每份租约永久绑定一个连接，未使用的续租也能按原请求 ID 幂等重试。`quota_grant` 返回连接和请求 ID、账期 ID、倍率、租约 ID、发放与已消费字节、租约状态、签发/到期时间及账期结束时间。租约最长 30 秒；重试返回原租约，不延长到期时间。
+控制面在一个事务内验证已应用配置、资源、账户及冻结套餐授权，建立连接会话并发放首份租约。多跳代理连接只在入口申请租约和记录一条用量会话；授权还要求每跳资源组在套餐范围内、节点与 Agent 在线、证书有效、期望配置已应用，且中继配置与线路当前世代一致。套餐的 `max_hops` 限制整条线路。每份租约永久绑定一个连接，未使用的续租也能按原请求 ID 幂等重试。`quota_grant` 返回连接和请求 ID、账期 ID、倍率、租约 ID、发放与已消费字节、租约状态、签发/到期时间及账期结束时间。租约最长 30 秒；重试返回原租约，不延长到期时间。
 
 停止转发且用量批次收到 ACK 后，Agent 发送 `quota_settle`，包含请求 ID、连接 ID、租约 ID 和最终计费消耗字节；控制面返回 `quota_settled`。拒绝时返回 `quota_denied`，错误码限定为 `QUOTA_EXHAUSTED`、`NOT_AUTHORIZED`、`CONFLICT` 或 `RETRY_LATER`。服务端异常不会把数据库错误内容发送给 Agent。
 
