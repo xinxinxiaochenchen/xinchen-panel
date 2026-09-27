@@ -31,9 +31,9 @@ func (s *relaySecretMemory) GetOrCreate(_ context.Context, line string, generati
 func TestCompileRelaySnapshotsGatesAndSharesOnlyAdjacentSecrets(t *testing.T) {
 	store := &relaySecretMemory{}
 	facts := RelayLineFacts{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 7, Enabled: true, Hops: []RelayHopFact{
-		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true, DesiredGeneration: 7, AppliedGeneration: 7},
-		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayMiddle, Host: "mid.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, DesiredGeneration: 7, AppliedGeneration: 7},
-		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e426", Role: agentruntime.RelayEgress, Host: "eg.example.com", RelayPort: 24443, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, DesiredGeneration: 7, AppliedGeneration: 7},
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true},
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayMiddle, Host: "mid.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true},
+		{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e426", Role: agentruntime.RelayEgress, Host: "eg.example.com", RelayPort: 24443, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true},
 	}}
 	compiled, diags, err := CompileRelaySnapshots(context.Background(), []RelayLineFacts{facts}, store)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestCompileRelaySnapshotsGatesAndSharesOnlyAdjacentSecrets(t *testing.T) {
 }
 func TestCompileRelaySnapshotsOmitsIncompleteLinesAndReportsReason(t *testing.T) {
 	store := &relaySecretMemory{}
-	line := RelayLineFacts{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 1, Enabled: true, Hops: []RelayHopFact{{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true, DesiredGeneration: 1, AppliedGeneration: 1}, {NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayEgress, Host: "mid.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: false, RelayCapable: true, DesiredGeneration: 1, AppliedGeneration: 1}}}
+	line := RelayLineFacts{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 1, Enabled: true, Hops: []RelayHopFact{{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true}, {NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayEgress, Host: "mid.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: false, RelayCapable: true}}}
 	got, diag, err := CompileRelaySnapshots(context.Background(), []RelayLineFacts{line}, store)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestCompileRelaySnapshotsOmitsIncompleteLinesAndReportsReason(t *testing.T)
 }
 func TestCompileRelaySnapshotsRejectsSecretStoreFailure(t *testing.T) {
 	store := failingRelaySecretStore{}
-	line := RelayLineFacts{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 1, Enabled: true, Hops: []RelayHopFact{{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true, DesiredGeneration: 1, AppliedGeneration: 1}, {NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayEgress, Host: "eg.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, DesiredGeneration: 1, AppliedGeneration: 1}}}
+	line := RelayLineFacts{LineID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423", Generation: 1, Enabled: true, Hops: []RelayHopFact{{NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e424", Role: agentruntime.RelayIngress, Host: "in.example.com", RelayPort: 24441, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true, ProxyCapable: true}, {NodeID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e425", Role: agentruntime.RelayEgress, Host: "eg.example.com", RelayPort: 24442, AgentFingerprints: []string{strings.Repeat("a", 64)}, RelayFingerprints: []string{strings.Repeat("b", 64)}, Online: true, RelayCapable: true}}}
 	if _, _, err := CompileRelaySnapshots(context.Background(), []RelayLineFacts{line}, store); !errors.Is(err, errSecretStore) {
 		t.Fatalf("error=%v", err)
 	}

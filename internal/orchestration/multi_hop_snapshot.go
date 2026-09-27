@@ -33,8 +33,6 @@ type RelayHopFact struct {
 	ProxyCapable      bool
 	AgentFingerprints []string
 	RelayFingerprints []string
-	DesiredGeneration uint64
-	AppliedGeneration uint64
 }
 type RelayLineFacts struct {
 	LineID     string
@@ -173,9 +171,6 @@ func validateRelayLineFacts(line RelayLineFacts) string {
 		}
 		if i == 0 && !hop.ProxyCapable {
 			return "ingress Agent lacks proxy capability"
-		}
-		if hop.DesiredGeneration != line.Generation || hop.AppliedGeneration != line.Generation {
-			return "hop Agent generation is not converged"
 		}
 	}
 	return ""
