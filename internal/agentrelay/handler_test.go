@@ -31,7 +31,7 @@ func TestEgressHandlerAuthenticatesAndForwardsTCP(t *testing.T) {
 	routeContext, revoke := context.WithCancel(context.Background())
 	defer revoke()
 	route := &Route{LineID: testLineID, Generation: 7, PreviousNodeID: tlsIngressID,
-		PreviousSecret: secret, Window: NewReplayWindow(16), Context: routeContext, ExpiresAt: time.Now().Add(time.Minute)}
+		PreviousSecret: secret, Window: NewReplayWindow(16), Context: routeContext}
 	echoClient, echoServer := net.Pipe()
 	defer echoClient.Close()
 	defer echoServer.Close()

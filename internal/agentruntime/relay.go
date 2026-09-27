@@ -113,7 +113,7 @@ func buildRelayRoutes(parent context.Context, configs []RelayConfig, clientTLS R
 	}
 	for _, config := range configs {
 		routeCtx, cancel := context.WithCancel(parent)
-		route := &agentrelay.Route{LineID: config.LineID, Generation: config.Generation, PreviousNodeID: config.PreviousNodeID, PreviousSecret: append([]byte(nil), config.PreviousSecret...), PreviousFingerprints: append([]string(nil), config.PreviousFingerprints...), Window: agentrelay.NewReplayWindow(4096), Context: routeCtx, ExpiresAt: time.Now().Add(5 * time.Minute)}
+		route := &agentrelay.Route{LineID: config.LineID, Generation: config.Generation, PreviousNodeID: config.PreviousNodeID, PreviousSecret: append([]byte(nil), config.PreviousSecret...), PreviousFingerprints: append([]string(nil), config.PreviousFingerprints...), Window: agentrelay.NewReplayWindow(4096), Context: routeCtx}
 		if config.Next != nil {
 			if clientTLS == nil {
 				cancel()

@@ -39,7 +39,7 @@ func TestBuildRelayRoutesUsesImmutableRouteAndTLSBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(routes) != 1 || len(cancels) != 1 || routes[cfg.LineID].Window == nil {
+	if len(routes) != 1 || len(cancels) != 1 || routes[cfg.LineID].Window == nil || !routes[cfg.LineID].ExpiresAt.IsZero() {
 		t.Fatalf("routes=%v cancels=%v", routes, cancels)
 	}
 }

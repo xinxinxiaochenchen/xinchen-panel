@@ -72,7 +72,7 @@ func (handler *Handler) HandleConn(parent context.Context, client *tls.Conn) err
 	}
 	route, ok := handler.Routes(request.LineID)
 	if !ok || route == nil || route.PreviousNodeID != peerID || route.Context == nil ||
-		route.Context.Err() != nil || !route.ExpiresAt.After(time.Now()) {
+		route.Context.Err() != nil || !route.ExpiresAt.IsZero() && !route.ExpiresAt.After(time.Now()) {
 		return reject("UNAUTHORIZED")
 	}
 	if len(route.PreviousFingerprints) > 0 {
@@ -93,8 +93,11 @@ func (handler *Handler) HandleConn(parent context.Context, client *tls.Conn) err
 	}
 	stopRoute := context.AfterFunc(route.Context, cancel)
 	defer stopRoute()
-	expires := time.AfterFunc(time.Until(route.ExpiresAt), cancel)
-	defer expires.Stop()
+	var expires *time.Timer
+	if !route.ExpiresAt.IsZero() {
+		expires = time.AfterFunc(time.Until(route.ExpiresAt), cancel)
+		defer expires.Stop()
+	}
 	dialCtx, dialCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer dialCancel()
 	var upstream net.Conn
