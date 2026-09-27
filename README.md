@@ -81,7 +81,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 后续阶段
 
-下一阶段重点是受信任 HTTPS 管理入口、正式管理员及节点入网，以及在正式节点上复核配置撤销和真实流量。隔离数据库和临时 Agent 已通过 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。可执行多跳和线路权重切换仍在开发。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+下一阶段重点是完成线路绑定转发的控制面授权、配置下发与计费准入，然后接入线路权重运行时选择。Agent 已具备经认证的 TCP/UDP 多跳线路绑定转发执行能力，UDP 节点间数据报帧和回环通流已有测试；用户 API 尚不能创建线路绑定转发规则。隔离数据库和临时 Agent 已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前 `us bwg` 的纯 IP 只读预览见[部署说明](docs/deployment/us-bwg-preview.md)；旧 `us dmit` 的历史部署见[历史记录](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 
