@@ -1,5 +1,7 @@
 # 进度
 
+- 2026-09-27：线路健康详情已发布到 `us bwg` 的 `release-line-health-20260927`。新增管理员和授权用户线路健康 API，按单跳/多跳显示节点能力、Agent 在线、证书、配置 revision 与当前线路世代是否应用；线路页显示状态、原因和每跳进度。真实 PostgreSQL 16.10 独立临时库通过授权和在线状态集成测试后已清理；Go 全量测试、vet、前端 31 项测试、生产构建和 OpenAPI 解析通过。发布包 SHA-256 `2dfea9d7e7f5a96ae3d38db71b0dee8ef43cd559bcfb6979acdf49b6f906d42c`；正式库升级前备份 `ncp-before-line-health-20260927.dump` 权限 0600 且可读。发布后迁移版本仍为 23，API/DB healthy、重启 0，公网首页/ready 200、登录和未授权线路健康路由 404，正式库用户/节点/Agent 均为 0。真实三 Agent 公网通流、线路权重运行时接入、受信任 HTTPS 管理入口及正式节点入网仍待完成。
+
 - 2026-09-27：`us bwg` 升级到 `release-multihop-20260927`。线路启用 API、整条线路的套餐授权、代理连接创建、订阅导出和下游 ACK 后入口重新收敛已接通；新增 migration 23 允许 Agent `relay` 能力。独立 PostgreSQL 16.10 测试库验证了线路启用、每跳授权、订阅仅在当前世代全跳 ACK 后导出、ACK 触发入口重新收敛，测试库与临时包已清理。Go 全量测试、vet、前端 29 项测试与生产构建、OpenAPI YAML 解析通过。发布包 SHA-256 `924d11e95a0c35291f51e355bcb5c34ac4222b7e2b8ae4002fec2eabc490a136`，升级前正式库备份 0600 并经 `pg_restore --list` 校验；迁移版本 23、API/DB healthy、API 重启 0，公网首页/ready 200、登录 404。正式库用户/节点/Agent 均为 0，真实三 Agent 公网通流、线路健康状态 UI 和权重运行时选择仍待完成。
 
 - 2026-09-27：按用户确认将纯 IP 预览部署到 Termark 资产 `us bwg`（`144.34.238.89`），使用独立目录 `/opt/network-control-plane/releases/release-e69c44d` 与独立 Compose 项目。Linux amd64 发布包 SHA-256 `6a9566331a7b69d4c52e8b4211e91652e9cb6ee1c60b2f2a16f15367c0849e91`，上传后复核一致；服务器新建 PostgreSQL 16.10 数据卷，真实迁移应用至版本 22。API/DB 均 healthy、重启 0，公网首页和 ready 返回 200，明文登录返回 404；正式库用户、节点、Agent 均为 0。原有 Nginx Proxy Manager 80/81/443 与 embyproxy 8787 保持运行。当前仅为只读预览，多跳线路仍不能启用，真实 Agent 通流与 HTTPS 管理入口尚未验收。

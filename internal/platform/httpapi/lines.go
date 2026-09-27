@@ -21,6 +21,11 @@ type LineStore interface {
 	DeleteOwnLine(context.Context, string, string, string) error
 }
 
+type lineHealthStore interface {
+	GetLineHealth(context.Context, string) (catalog.LineHealth, error)
+	GetAllowedLineHealth(context.Context, string, string) (catalog.LineHealth, error)
+}
+
 func registerLineRoutes(mux *http.ServeMux, sessions IdentitySessions, store LineStore) {
 	mux.HandleFunc("/api/v1/admin/lines", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -104,6 +109,10 @@ func registerLineRoutes(mux *http.ServeMux, sessions IdentitySessions, store Lin
 		}
 	})
 	mux.HandleFunc("/api/v1/admin/lines/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/health") {
+			serveLineHealth(w, r, sessions, store, true)
+			return
+		}
 		lineID, ok := lineIDFromPath(w, r, "/api/v1/admin/lines/")
 		if !ok {
 			return
@@ -139,6 +148,10 @@ func registerLineRoutes(mux *http.ServeMux, sessions IdentitySessions, store Lin
 		}
 	})
 	mux.HandleFunc("/api/v1/lines/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/health") {
+			serveLineHealth(w, r, sessions, store, false)
+			return
+		}
 		lineID, ok := lineIDFromPath(w, r, "/api/v1/lines/")
 		if !ok {
 			return
@@ -184,6 +197,45 @@ func registerLineRoutes(mux *http.ServeMux, sessions IdentitySessions, store Lin
 			WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 		}
 	})
+}
+
+func serveLineHealth(w http.ResponseWriter, r *http.Request, sessions IdentitySessions, store LineStore, admin bool) {
+	if r.Method != http.MethodGet {
+		WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		return
+	}
+	prefix := "/api/v1/lines/"
+	permission := "lines.read"
+	if admin {
+		prefix = "/api/v1/admin/lines/"
+		permission = "lines.write"
+	}
+	lineID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, prefix), "/health")
+	if !catalog.ValidID(lineID) || strings.Contains(lineID, "/") {
+		WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+		return
+	}
+	actor, ok := catalogPrincipal(w, r, sessions, permission, false)
+	if !ok {
+		return
+	}
+	health, ok := store.(lineHealthStore)
+	if !ok {
+		WriteError(w, r, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "line health unavailable")
+		return
+	}
+	var value catalog.LineHealth
+	var err error
+	if admin {
+		value, err = health.GetLineHealth(r.Context(), lineID)
+	} else {
+		value, err = health.GetAllowedLineHealth(r.Context(), actor.ID, lineID)
+	}
+	if err != nil {
+		writeLineError(w, r, err)
+		return
+	}
+	writeCatalogJSON(w, http.StatusOK, value)
 }
 
 func lineIDFromPath(w http.ResponseWriter, r *http.Request, prefix string) (string, bool) {

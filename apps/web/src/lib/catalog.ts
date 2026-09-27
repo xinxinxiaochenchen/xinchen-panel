@@ -47,6 +47,45 @@ export type LineRecord = {
   updated_at: string
 }
 
+export type LineHealthRecord = {
+  line_id: string
+  state: 'disabled' | 'unavailable' | 'converging' | 'ready'
+  reason: string
+  generation: number
+  hops: {
+    position: number
+    node_id: string
+    role: string
+    node_enabled: boolean
+    group_enabled: boolean
+    proxy_capable: boolean
+    relay_capable: boolean
+    proxy_port_ready: boolean
+    relay_port_ready: boolean
+    agent_online: boolean
+    certificate_ready: boolean
+    relay_certificate_ready: boolean
+    desired_revision: number
+    applied_revision: number
+    relay_applied: boolean
+  }[]
+}
+
+export function lineHealthStateLabel(state: string): string {
+  return ({ ready: '就绪', converging: '收敛中', unavailable: '不可用', disabled: '已停用' } as Record<string, string>)[state] ?? state
+}
+
+export function lineHealthReasonLabel(reason: string): string {
+  return ({ line_disabled: '线路已停用', invalid_topology: '线路拓扑无效', node_disabled: '节点或资源组已停用', proxy_unavailable: '代理入口不可用', relay_unavailable: '中继能力或端口不可用', agent_offline: 'Agent 离线', certificate_unavailable: '节点证书不可用', relay_pending: '等待中继配置应用', config_pending: '等待节点配置应用' } as Record<string, string>)[reason] ?? reason
+}
+
+export function lineHopHealthLabel(hop: Pick<LineHealthRecord['hops'][number], 'agent_online' | 'certificate_ready' | 'relay_certificate_ready' | 'relay_applied' | 'desired_revision' | 'applied_revision'>, multiHop: boolean): string {
+  if (!hop.agent_online) return 'Agent 离线'
+  if (!hop.certificate_ready || multiHop && !hop.relay_certificate_ready) return multiHop && !hop.relay_certificate_ready ? '中继证书不可用' : '节点证书不可用'
+  if (hop.desired_revision !== hop.applied_revision || multiHop && !hop.relay_applied) return '待应用'
+  return '已应用'
+}
+
 export type ForwardRecord = {
   id: string
   user_id: string
@@ -77,6 +116,21 @@ export type CatalogResource<T> =
   | { kind: 'error'; message: string }
 
 export type MutationResource<T> = { kind: 'ready'; data: T } | { kind: 'error'; message: string }
+
+export async function loadLineHealth(lineID: string, admin: boolean, request: typeof fetch = fetch): Promise<{ kind: 'ready'; data: LineHealthRecord } | { kind: 'error'; message: string }> {
+  const prefix = admin ? '/api/v1/admin/lines/' : '/api/v1/lines/'
+  try {
+    const response = await request(`${prefix}${encodeURIComponent(lineID)}/health`, { credentials: 'same-origin', cache: 'no-store' })
+    if (response.status === 403) return { kind: 'error', message: '当前账户无权查看此线路健康状态。' }
+    if (response.status === 401) return { kind: 'error', message: '登录已过期，请重新登录。' }
+    if (!response.ok) return { kind: 'error', message: `健康状态请求失败（${response.status}）` }
+    const data = await response.json() as LineHealthRecord
+    if (!data || typeof data.state !== 'string' || !Array.isArray(data.hops)) return { kind: 'error', message: '服务端返回了无效线路健康状态。' }
+    return { kind: 'ready', data }
+  } catch {
+    return { kind: 'error', message: '线路健康状态暂不可用。' }
+  }
+}
 
 export async function loadCatalogPage<T>(path: string, cursor: string | null, request: typeof fetch = fetch): Promise<CatalogResource<T>> {
   const query = new URLSearchParams({ limit: '50' })

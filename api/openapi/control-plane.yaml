@@ -941,6 +941,22 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/lines/{id}/health:
+    parameters:
+      - {$ref: '#/components/parameters/LineID'}
+    get:
+      operationId: getAdminLineHealth
+      summary: Get current line health and Agent convergence (administrator)
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Line health
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LineHealth'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /api/v1/lines:
     get:
       operationId: listAllowedLines
@@ -1032,6 +1048,22 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/lines/{id}/health:
+    parameters:
+      - {$ref: '#/components/parameters/LineID'}
+    get:
+      operationId: getAllowedLineHealth
+      summary: Get current health of an allowed line
+      security: [{browserSession: []}]
+      responses:
+        '200':
+          description: Line health
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LineHealth'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /api/v1/proxy-accesses:
     get:
       operationId: listOwnProxyAccesses
@@ -1896,6 +1928,36 @@ components:
           items: {$ref: '#/components/schemas/LineHop'}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+    LineHopHealth:
+      type: object
+      required: [position, node_id, role, node_enabled, group_enabled, proxy_capable, relay_capable, proxy_port_ready, relay_port_ready, agent_online, certificate_ready, relay_certificate_ready, desired_revision, applied_revision, relay_applied]
+      properties:
+        position: {type: integer}
+        node_id: {type: string, format: uuid}
+        role: {type: string, enum: [ingress, relay, egress]}
+        node_enabled: {type: boolean}
+        group_enabled: {type: boolean}
+        proxy_capable: {type: boolean}
+        relay_capable: {type: boolean}
+        proxy_port_ready: {type: boolean}
+        relay_port_ready: {type: boolean}
+        agent_online: {type: boolean}
+        certificate_ready: {type: boolean}
+        relay_certificate_ready: {type: boolean}
+        desired_revision: {type: integer, format: int64}
+        applied_revision: {type: integer, format: int64}
+        relay_applied: {type: boolean}
+    LineHealth:
+      type: object
+      required: [line_id, state, reason, generation, hops]
+      properties:
+        line_id: {type: string, format: uuid}
+        state: {type: string, enum: [disabled, unavailable, converging, ready]}
+        reason: {type: string, description: 'Machine-readable reason code; empty when ready.'}
+        generation: {type: integer, format: int64, description: 'Multi-hop relay generation; zero for single-hop lines.'}
+        hops:
+          type: array
+          items: {$ref: '#/components/schemas/LineHopHealth'}
     LineList:
       type: object
       required: [items, next_cursor]

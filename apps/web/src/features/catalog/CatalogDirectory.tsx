@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Activity, ArrowUpRight, CircleDashed, Gauge, Globe2, Layers3, RefreshCw, Route, Server } from 'lucide-react'
 import type { Section } from '../../app/sections'
-import { capabilityLabel, loadCatalogPage, nodeStatusLabel, type CatalogPage, type CatalogResource, type LineRecord, type NodeRecord } from '../../lib/catalog'
+import { capabilityLabel, lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadCatalogPage, loadLineHealth, nodeStatusLabel, type CatalogPage, type CatalogResource, type LineHealthRecord, type LineRecord, type NodeRecord } from '../../lib/catalog'
 import type { User } from '../../lib/dashboard'
 import { CreateLine, csrfToken } from './CreateLine'
 import { mutateCatalog } from '../../lib/catalog'
@@ -42,6 +42,17 @@ function LineCard({ line, user, onChanged }: { line: LineRecord; user: User; onC
   const canToggle = togglePath !== null
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [health, setHealth] = useState<{ state: 'loading' } | { state: 'ready'; data: LineHealthRecord } | { state: 'error'; message: string }>({ state: 'loading' })
+  const adminHealth = user.permissions.includes('lines.write')
+  useEffect(() => {
+    let active = true
+    setHealth({ state: 'loading' })
+    void loadLineHealth(line.id, adminHealth).then((result) => {
+      if (!active) return
+      setHealth(result.kind === 'ready' ? { state: 'ready', data: result.data } : { state: 'error', message: result.message })
+    })
+    return () => { active = false }
+  }, [line.id, line.enabled, line.updated_at, adminHealth])
   async function toggle() {
     setBusy(true)
     setError('')
@@ -55,7 +66,9 @@ function LineCard({ line, user, onChanged }: { line: LineRecord; user: User; onC
     <div className="catalog-card-name"><strong>{line.name}</strong><span>{line.owner_user_id ? '我的线路' : '共享线路'}</span></div>
     <div className="line-topology">{line.hops.length ? line.hops.map((hop, index) => <span className="hop" key={`${hop.position}-${hop.node_id}`}><span>{({ ingress: '入口', relay: '中转', egress: '出口' } as Record<string, string>)[hop.role] ?? hop.role}</span><strong>{hop.node_id.slice(0, 8)}</strong>{index < line.hops.length - 1 && <ArrowUpRight size={14} />}</span>) : <span className="muted">暂无拓扑信息</span>}</div>
     <div className="catalog-detail-grid"><div><small>优先级</small><strong>{line.priority}</strong></div><div><small>权重</small><strong>{line.weight}</strong></div><div><small>倍率</small><strong>{multiplier}</strong></div><div><small>标签</small><strong>{line.tags.length ? line.tags.join(' / ') : '—'}</strong></div></div>
-    <div className="catalog-card-foot"><span>{line.hops.length === 1 ? '单跳线路' : `${line.hops.length} 跳线路${line.enabled ? ' · 等待节点配置收敛' : ' · 已停用'}`}</span><span><Layers3 size={13} /> {line.hops.length} 个节点</span></div>
+    <div className="catalog-card-foot"><span>{line.hops.length === 1 ? '单跳线路' : `${line.hops.length} 跳线路`}</span><span><Layers3 size={13} /> {line.hops.length} 个节点</span><span className={`status-chip status-${health.state === 'ready' ? health.data.state : health.state === 'error' ? 'offline' : 'pending'}`} title={health.state === 'ready' ? lineHealthReasonLabel(health.data.reason) : health.state === 'error' ? health.message : '正在读取线路健康状态'}><i />{health.state === 'ready' ? lineHealthStateLabel(health.data.state) : health.state === 'error' ? '状态未知' : '读取中'}</span></div>
+    {health.state === 'ready' && health.data.reason && <p className="catalog-form-note">{lineHealthReasonLabel(health.data.reason)}{health.data.generation > 0 ? ` · 世代 ${health.data.generation}` : ''}</p>}
+    {health.state === 'ready' && health.data.hops.length > 0 && <div className="line-health-hops">{health.data.hops.map((hop) => <span key={`${hop.position}-${hop.node_id}`} className={`health-hop ${lineHopHealthLabel(hop, health.data.hops.length > 1) === '已应用' ? 'health-hop-ok' : 'health-hop-offline'}`}>{hop.position + 1}. {hop.node_id.slice(0, 8)} · {lineHopHealthLabel(hop, health.data.hops.length > 1)}</span>)}</div>}
     {canToggle && <div className="catalog-card-actions"><EditLine line={line} user={user} onSaved={onChanged} /><button className="catalog-toggle" type="button" disabled={busy} onClick={() => void toggle()}>{busy ? '正在保存…' : line.enabled ? '停用线路' : '启用线路'}</button></div>}
     {error && <p className="catalog-page-error" role="alert">{error}</p>}
   </article>

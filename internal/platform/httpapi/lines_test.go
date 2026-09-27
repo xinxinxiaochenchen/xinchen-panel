@@ -49,6 +49,51 @@ type lineStub struct {
 	lines        []catalog.Line
 }
 
+type lineHealthStub struct {
+	*lineStub
+	adminID string
+	userID  string
+}
+
+func (s *lineHealthStub) GetLineHealth(_ context.Context, lineID string) (catalog.LineHealth, error) {
+	s.adminID = lineID
+	return catalog.LineHealth{LineID: lineID, State: "converging", Reason: "relay_pending", Hops: []catalog.LineHopHealth{}}, nil
+}
+
+func (s *lineHealthStub) GetAllowedLineHealth(_ context.Context, userID, lineID string) (catalog.LineHealth, error) {
+	s.userID = userID
+	if lineID != testLineID {
+		return catalog.LineHealth{}, catalog.ErrNotFound
+	}
+	return catalog.LineHealth{LineID: lineID, State: "ready", Hops: []catalog.LineHopHealth{}}, nil
+}
+
+func TestLineHealthRoutesRequireScopeAndReadOnlyMethod(t *testing.T) {
+	store := &lineHealthStub{lineStub: &lineStub{}}
+	handler := NewHandlerWithLines(testLogger(), nil, lineSessions{}, nil, nil, nil, store)
+	for _, tc := range []struct {
+		method, path, token string
+		status              int
+	}{
+		{http.MethodGet, "/api/v1/lines/" + testLineID + "/health", "member-token", 200},
+		{http.MethodGet, "/api/v1/admin/lines/" + testLineID + "/health", "admin-token", 200},
+		{http.MethodGet, "/api/v1/admin/lines/" + testLineID + "/health", "member-token", 403},
+		{http.MethodGet, "/api/v1/lines/" + testLineID + "/health", "", 401},
+		{http.MethodPost, "/api/v1/lines/" + testLineID + "/health", "member-token", 405},
+		{http.MethodGet, "/api/v1/lines/33333333-3333-7333-8333-333333333333/health", "member-token", 404},
+		{http.MethodGet, "/api/v1/lines/" + testLineID + "/nested/health", "member-token", 404},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(tc.method, tc.path, tc.token, "", ""))
+		if response.Code != tc.status {
+			t.Fatalf("%s %s token=%q: %d %s", tc.method, tc.path, tc.token, response.Code, response.Body.String())
+		}
+	}
+	if store.userID != "member-id" || store.adminID != testLineID {
+		t.Fatalf("scope was not passed to repository: %+v", store)
+	}
+}
+
 func (s *lineStub) CreateSharedLine(_ context.Context, input catalog.LineInput, actorID, _ string) (catalog.Line, error) {
 	if s.createErr != nil {
 		return catalog.Line{}, s.createErr

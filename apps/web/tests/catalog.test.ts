@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadAllCatalogPages, loadCatalogPage, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
+import { lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadAllCatalogPages, loadCatalogPage, loadLineHealth, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
 import { customRolePermissions, loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 import { draftLinePayload } from '../src/features/catalog/lineDraft.ts'
@@ -16,6 +16,38 @@ test('multi-hop draft payload preserves hop roles before activation', () => {
   })
   assert.throws(() => draftLinePayload('Draft', ['same', 'same'], 100, 1), /不同节点/)
   assert.throws(() => draftLinePayload('Draft', ['only-one'], 100, 1), /2 至 8/)
+})
+
+test('line health labels expose operator-friendly state and reason', () => {
+  assert.equal(lineHealthStateLabel('ready'), '就绪')
+  assert.equal(lineHealthStateLabel('converging'), '收敛中')
+  assert.equal(lineHealthStateLabel('unavailable'), '不可用')
+  assert.equal(lineHealthStateLabel('disabled'), '已停用')
+  assert.equal(lineHealthStateLabel('unknown'), 'unknown')
+  assert.equal(lineHealthReasonLabel('relay_pending'), '等待中继配置应用')
+  assert.equal(lineHealthReasonLabel('agent_offline'), 'Agent 离线')
+  assert.equal(lineHealthReasonLabel('other'), 'other')
+  const hop = { node_enabled: true, group_enabled: true, proxy_capable: true, proxy_port_ready: true, relay_capable: true, relay_port_ready: true, agent_online: true, certificate_ready: true, relay_certificate_ready: true, relay_applied: true, desired_revision: 2, applied_revision: 2, role: 'relay' }
+  assert.equal(lineHopHealthLabel(hop, true), '已应用')
+  assert.equal(lineHopHealthLabel({ ...hop, relay_applied: false }, true), '待应用')
+  assert.equal(lineHopHealthLabel({ ...hop, agent_online: false }, true), 'Agent 离线')
+  assert.equal(lineHopHealthLabel({ ...hop, relay_certificate_ready: false }, true), '中继证书不可用')
+})
+
+test('line health uses scoped endpoint and reports denied access', async () => {
+  let path = ''
+  const ready = await loadLineHealth('line-id', true, async (input) => {
+    path = String(input)
+    return Response.json({ line_id: 'line-id', state: 'ready', reason: '', generation: 2, hops: [] })
+  })
+  assert.equal(path, '/api/v1/admin/lines/line-id/health')
+  assert.equal(ready.kind, 'ready')
+  const denied = await loadLineHealth('line-id', false, async (input) => {
+    path = String(input)
+    return new Response(null, { status: 403 })
+  })
+  assert.equal(path, '/api/v1/lines/line-id/health')
+  assert.deepEqual(denied, { kind: 'error', message: '当前账户无权查看此线路健康状态。' })
 })
 
 test('catalog page sends opaque cursor without exposing another resource path', async () => {
