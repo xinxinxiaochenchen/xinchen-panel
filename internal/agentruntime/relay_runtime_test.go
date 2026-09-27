@@ -27,10 +27,38 @@ func TestRelayReplacementCancelsOldContextAndRetainsReplayWindow(t *testing.T) {
 	defer newCancel()
 	old := &agentrelay.Route{Generation: 7, Context: oldContext, Window: agentrelay.NewReplayWindow(16)}
 	fresh := &agentrelay.Route{Generation: 7, Context: newContext, Window: agentrelay.NewReplayWindow(16)}
-	endpoint := &relayEndpoint{routes: map[string]*agentrelay.Route{"line": old}, cancels: map[string]context.CancelFunc{"line": oldCancel}}
-	endpoint.replace(map[string]*agentrelay.Route{"line": fresh}, map[string]context.CancelFunc{"line": newCancel})
+	before := RelayConfig{LineID: "line", Generation: 7, Role: RelayEgress, PreviousNodeID: "previous"}
+	after := before
+	after.PreviousNodeID = "rotated"
+	endpoint := &relayEndpoint{routes: map[string]*agentrelay.Route{"line": old}, configs: map[string]RelayConfig{"line": before}, cancels: map[string]context.CancelFunc{"line": oldCancel}}
+	endpoint.replace(map[string]*agentrelay.Route{"line": fresh}, map[string]context.CancelFunc{"line": newCancel}, []RelayConfig{after})
 	if oldContext.Err() == nil || newContext.Err() != nil || fresh.Window != old.Window {
 		t.Fatal("relay replacement did not revoke old stream and preserve replay protection")
+	}
+}
+
+func TestRelayReplacementPreservesUnchangedRouteContext(t *testing.T) {
+	oldContext, oldCancel := context.WithCancel(context.Background())
+	newContext, newCancel := context.WithCancel(context.Background())
+	defer oldCancel()
+	defer newCancel()
+	old := &agentrelay.Route{
+		LineID: "line", Generation: 7, PreviousNodeID: "previous",
+		PreviousSecret: []byte("previous-secret"), PreviousFingerprints: []string{"fingerprint"},
+		Context: oldContext, Window: agentrelay.NewReplayWindow(16),
+		Next: &agentrelay.NextHop{Address: "relay.example:24443", Secret: []byte("next-secret")},
+	}
+	fresh := &agentrelay.Route{
+		LineID: "line", Generation: 7, PreviousNodeID: "previous",
+		PreviousSecret: []byte("previous-secret"), PreviousFingerprints: []string{"fingerprint"},
+		Context: newContext, Window: agentrelay.NewReplayWindow(16),
+		Next: &agentrelay.NextHop{Address: "relay.example:24443", Secret: []byte("next-secret")},
+	}
+	config := RelayConfig{LineID: "line", Generation: 7, Role: RelayMiddle, PreviousNodeID: "previous", PreviousSecret: []byte("previous-secret"), PreviousFingerprints: []string{"fingerprint"}, Next: &RelayNextHop{Address: "relay.example:24443", Secret: []byte("next-secret")}}
+	endpoint := &relayEndpoint{routes: map[string]*agentrelay.Route{"line": old}, configs: map[string]RelayConfig{"line": cloneRelayConfig(config)}, cancels: map[string]context.CancelFunc{"line": oldCancel}}
+	endpoint.replace(map[string]*agentrelay.Route{"line": fresh}, map[string]context.CancelFunc{"line": newCancel}, []RelayConfig{config})
+	if oldContext.Err() != nil || newContext.Err() == nil || endpoint.routes["line"] != old || endpoint.routes["line"].Window != old.Window {
+		t.Fatal("unchanged relay replacement revoked the active route")
 	}
 }
 func TestBuildRelayRoutesUsesImmutableRouteAndTLSBuilder(t *testing.T) {

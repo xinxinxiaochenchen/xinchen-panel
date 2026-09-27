@@ -1,12 +1,14 @@
 package agentruntime
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 
@@ -19,6 +21,7 @@ type relayEndpoint struct {
 	mu             sync.RWMutex
 	listener       net.Listener
 	routes         map[string]*agentrelay.Route
+	configs        map[string]RelayConfig
 	cancels        map[string]context.CancelFunc
 	cancel         context.CancelFunc
 	done           chan struct{}
@@ -27,7 +30,7 @@ type relayEndpoint struct {
 
 func newRelayEndpoint(parent context.Context, listener net.Listener, handler *agentrelay.Handler, max int) *relayEndpoint {
 	ctx, cancel := context.WithCancel(parent)
-	endpoint := &relayEndpoint{listener: listener, routes: map[string]*agentrelay.Route{}, cancels: map[string]context.CancelFunc{}, cancel: cancel, done: make(chan struct{}), maxConnections: make(chan struct{}, max)}
+	endpoint := &relayEndpoint{listener: listener, routes: map[string]*agentrelay.Route{}, configs: map[string]RelayConfig{}, cancels: map[string]context.CancelFunc{}, cancel: cancel, done: make(chan struct{}), maxConnections: make(chan struct{}, max)}
 	handler.Routes = func(lineID string) (*agentrelay.Route, bool) {
 		endpoint.mu.RLock()
 		defer endpoint.mu.RUnlock()
@@ -70,19 +73,53 @@ func (e *relayEndpoint) serve(ctx context.Context, handler *agentrelay.Handler) 
 	}
 }
 
-func (e *relayEndpoint) replace(routes map[string]*agentrelay.Route, cancels map[string]context.CancelFunc) {
+func (e *relayEndpoint) replace(routes map[string]*agentrelay.Route, cancels map[string]context.CancelFunc, configs []RelayConfig) {
 	e.mu.Lock()
-	oldRoutes, oldCancels := e.routes, e.cancels
+	oldRoutes, oldCancels, oldConfigs := e.routes, e.cancels, e.configs
+	nextConfigs := make(map[string]RelayConfig, len(configs))
+	for _, config := range configs {
+		nextConfigs[config.LineID] = cloneRelayConfig(config)
+	}
 	for line, route := range routes {
-		if old := oldRoutes[line]; old != nil && old.Generation == route.Generation {
+		if old := oldRoutes[line]; old != nil && sameRelayConfig(oldConfigs[line], nextConfigs[line]) {
+			cancels[line]()
+			routes[line], cancels[line] = old, oldCancels[line]
+			delete(oldCancels, line)
+		} else if old != nil && old.Generation == route.Generation {
 			route.Window = old.Window
 		}
 	}
-	e.routes, e.cancels = routes, cancels
+	e.routes, e.cancels, e.configs = routes, cancels, nextConfigs
 	e.mu.Unlock()
 	for _, cancel := range oldCancels {
 		cancel()
 	}
+}
+
+func sameRelayConfig(left, right RelayConfig) bool {
+	if left.LineID != right.LineID || left.Generation != right.Generation || left.Role != right.Role ||
+		left.PreviousNodeID != right.PreviousNodeID || !bytes.Equal(left.PreviousSecret, right.PreviousSecret) ||
+		!slices.Equal(left.PreviousFingerprints, right.PreviousFingerprints) || (left.Next == nil) != (right.Next == nil) {
+		return false
+	}
+	if left.Next == nil {
+		return true
+	}
+	return left.Next.NodeID == right.Next.NodeID && left.Next.Address == right.Next.Address &&
+		left.Next.Port == right.Next.Port && bytes.Equal(left.Next.Secret, right.Next.Secret) &&
+		slices.Equal(left.Next.Fingerprints, right.Next.Fingerprints)
+}
+
+func cloneRelayConfig(config RelayConfig) RelayConfig {
+	config.PreviousSecret = bytes.Clone(config.PreviousSecret)
+	config.PreviousFingerprints = slices.Clone(config.PreviousFingerprints)
+	if config.Next != nil {
+		next := *config.Next
+		next.Secret = bytes.Clone(next.Secret)
+		next.Fingerprints = slices.Clone(next.Fingerprints)
+		config.Next = &next
+	}
+	return config
 }
 
 func (e *relayEndpoint) close() {
@@ -90,7 +127,7 @@ func (e *relayEndpoint) close() {
 	_ = e.listener.Close()
 	e.mu.Lock()
 	cancels := e.cancels
-	e.routes, e.cancels = map[string]*agentrelay.Route{}, map[string]context.CancelFunc{}
+	e.routes, e.cancels, e.configs = map[string]*agentrelay.Route{}, map[string]context.CancelFunc{}, map[string]RelayConfig{}
 	e.mu.Unlock()
 	for _, cancel := range cancels {
 		cancel()
@@ -174,6 +211,6 @@ func (r *Runtime) applyRelay(configs []RelayConfig) error {
 		}
 		r.relay = newRelayEndpoint(context.Background(), tls.NewListener(listener, r.options.RelayTLSConfig.Clone()), handler, r.options.MaxTCPConnections)
 	}
-	r.relay.replace(routes, cancels)
+	r.relay.replace(routes, cancels, configs)
 	return nil
 }

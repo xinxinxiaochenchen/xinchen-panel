@@ -212,7 +212,18 @@ func TestThreeRuntimeProxyRelaysAndMetersOnlyIngress(t *testing.T) {
 	if meters[0].upload.Load() != int64(len(payload)) || meters[0].download.Load() != int64(len(payload)) {
 		t.Fatal("relay handshake bytes were included in ingress payload accounting")
 	}
-	if err := runtimes[1].Apply(context.Background(), Snapshot{Revision: 2}); err != nil {
+	if err := runtimes[1].Apply(context.Background(), Snapshot{Revision: 2, RelayConfig: []RelayConfig{configs[1]}}); err != nil {
+		t.Fatal(err)
+	}
+	continued := []byte("stream survives unchanged relay snapshot")
+	if _, err := c.Write(continued); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, len(continued))
+	if _, err := io.ReadFull(c, got); err != nil || !bytes.Equal(got, continued) {
+		t.Fatalf("unchanged relay snapshot interrupted active stream: %v", err)
+	}
+	if err := runtimes[1].Apply(context.Background(), Snapshot{Revision: 3}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Read(make([]byte, 1)); err == nil {

@@ -1,5 +1,7 @@
 # 进度
 
+- 2026-09-27：修复 Agent 多跳运行时在“同一线路世代、同一跳配置、仅整体快照 revision 变化”时误撤销活动连接的问题。中继端点现在保留已应用线路配置的独立副本；相同配置复用旧 route context、TLS 连接配置与 replay window，线路世代、来源、密钥、下一跳或线路撤销仍会关闭旧连接。新增三 Agent 活动 TCP 连接跨 revision 收发回归和 context/replay-window 测试。Go 全量测试、Agent runtime race 测试、Go vet 均通过。
+
 - 2026-09-27：完成多跳计费准入版本在 `us bwg` 的独立验证与发布。Termark 资产 `3gT8EEbgstANh4T7` 上临时 PostgreSQL 16 测试库运行 `TestPostgresMultiHopAdmissionRequiresCurrentRouteAndChargesIngressOnce` 通过，迁移 1–23 后已删除临时库和测试程序。正式库升级前备份 `/opt/network-control-plane/backups/ncp-before-billing-multihop-20260927.dump` 权限 0600，并经 `pg_restore --list` 校验；发布目录为 `/opt/network-control-plane/releases/release-billing-multihop-20260927`。发布时发现归档漏掉 `apps/web/dist`，已补传并重建镜像。最终迁移版本 23，API/DB healthy、重启 0，首页/ready 返回 200、明文登录 404，正式库用户/节点/Agent 仍为 0。后续仍需真实三 Agent 公网 TCP 通流、线路权重运行时接入、正式管理员与受信任 HTTPS 入口；UDP 多跳尚未实现。
 
 - 2026-09-27：继续多跳计费准入：入口申请额度时增加整条线路的资源组、节点/Agent 能力、45 秒在线、控制与中继证书、每跳 ACK、线路世代及套餐 `max_hops` 校验；用量会话仍只归属入口并冻结线路与倍率。新增 PostgreSQL 集成回归，覆盖下游 ACK、线路世代、证书、资源组与跳数拒绝；在资源组停用的证书撤销后重建测试基线，防止误判。当前本地完整 Go 测试和 vet、前端 31 项测试与构建通过，Linux amd64 程序与发布包已构建。Mac 锁定导致 Termark 无法访问 `us bwg`，独立 PostgreSQL 集成测试与正式发布仍待执行；线上仍是 `release-line-health-20260927`。
