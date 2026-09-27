@@ -42,6 +42,7 @@ type NewRule struct {
 	TargetPort    int     `json:"target_port"`
 	Protocol      string  `json:"protocol"`
 	Enabled       *bool   `json:"enabled,omitempty"`
+	LineID        *string `json:"line_id,omitempty"`
 }
 
 type RuleInput struct {
@@ -53,6 +54,7 @@ type RuleInput struct {
 	TargetPort    int
 	Protocol      string
 	Enabled       bool
+	LineID        *string
 }
 
 type RulePatch struct {
@@ -93,6 +95,9 @@ func NormalizeRule(input NewRule) (RuleInput, error) {
 	}
 	var targetNodeID, targetHost *string
 	if input.TargetNodeID != nil {
+		if input.LineID != nil {
+			return RuleInput{}, ValidationError{"line_id", "line-bound rules require a public host target"}
+		}
 		if !catalog.ValidID(*input.TargetNodeID) {
 			return RuleInput{}, ValidationError{"target_node_id", "expected UUID"}
 		}
@@ -104,6 +109,14 @@ func NormalizeRule(input NewRule) (RuleInput, error) {
 			return RuleInput{}, ValidationError{"target_host", "expected public IP address or DNS hostname"}
 		}
 		targetHost = &host
+	}
+	var lineID *string
+	if input.LineID != nil {
+		if !catalog.ValidID(*input.LineID) {
+			return RuleInput{}, ValidationError{"line_id", "expected UUID"}
+		}
+		value := strings.ToLower(*input.LineID)
+		lineID = &value
 	}
 	if input.TargetPort < 1 || input.TargetPort > 65535 {
 		return RuleInput{}, ValidationError{"target_port", "expected port 1 to 65535"}
@@ -117,7 +130,7 @@ func NormalizeRule(input NewRule) (RuleInput, error) {
 	}
 	return RuleInput{Name: name, IngressNodeID: strings.ToLower(input.IngressNodeID),
 		IngressPort: input.IngressPort, TargetNodeID: targetNodeID, TargetHost: targetHost,
-		TargetPort: input.TargetPort, Protocol: input.Protocol, Enabled: enabled}, nil
+		TargetPort: input.TargetPort, Protocol: input.Protocol, Enabled: enabled, LineID: lineID}, nil
 }
 
 func NormalizeRulePatch(input RulePatch) (RulePatch, error) {

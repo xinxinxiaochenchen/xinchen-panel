@@ -28,15 +28,18 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 
 type entitlementSnapshot struct {
 	ResourceGroupIDs []string `json:"resource_group_ids"`
+	LineIDs          []string `json:"line_ids"`
 	Limits           struct {
-		MaxForwardRulesPerNode int `json:"max_forward_rules_per_node"`
+		MaxForwardRulesPerNode int  `json:"max_forward_rules_per_node"`
+		AllowCustomLines       bool `json:"allow_custom_lines"`
+		MaxHops                int  `json:"max_hops"`
 	} `json:"limits"`
 }
 
 func (r *PostgresRepository) CreateRule(ctx context.Context, input RuleInput, ownerID, requestID string) (Rule, error) {
 	normalized, err := NormalizeRule(NewRule{Name: input.Name, IngressNodeID: input.IngressNodeID,
 		IngressPort: input.IngressPort, TargetNodeID: input.TargetNodeID, TargetHost: input.TargetHost,
-		TargetPort: input.TargetPort, Protocol: input.Protocol, Enabled: &input.Enabled})
+		TargetPort: input.TargetPort, Protocol: input.Protocol, Enabled: &input.Enabled, LineID: input.LineID})
 	if err != nil {
 		return Rule{}, err
 	}
@@ -72,6 +75,11 @@ func (r *PostgresRepository) CreateRule(ctx context.Context, input RuleInput, ow
 	if !slices.Contains(snapshot.ResourceGroupIDs, ingressGroup) {
 		return Rule{}, ErrNotFound
 	}
+	if normalized.LineID != nil {
+		if err := authorizeForwardLine(ctx, tx, ownerID, normalized.IngressNodeID, *normalized.LineID, snapshot); err != nil {
+			return Rule{}, err
+		}
+	}
 	policyKind := "public_host"
 	var policyGroupID *string
 	if normalized.TargetNodeID != nil {
@@ -102,13 +110,13 @@ func (r *PostgresRepository) CreateRule(ctx context.Context, input RuleInput, ow
 	rule := Rule{ID: ruleID, UserID: ownerID, Name: normalized.Name,
 		IngressNodeID: normalized.IngressNodeID, IngressPort: normalized.IngressPort,
 		TargetNodeID: normalized.TargetNodeID, TargetHost: normalized.TargetHost,
-		TargetPort: normalized.TargetPort, Protocol: normalized.Protocol,
+		TargetPort: normalized.TargetPort, LineID: normalized.LineID, Protocol: normalized.Protocol,
 		Enabled: normalized.Enabled, ApplyStatus: status}
 	err = tx.QueryRow(ctx, `INSERT INTO forward_rules(id,user_id,name,ingress_node_id,ingress_port,
-target_node_id,target_host,target_port,protocol,enabled,apply_status)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING created_at,updated_at`,
+target_node_id,target_host,target_port,line_id,protocol,enabled,apply_status)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING created_at,updated_at`,
 		rule.ID, rule.UserID, rule.Name, rule.IngressNodeID, rule.IngressPort,
-		rule.TargetNodeID, rule.TargetHost, rule.TargetPort, rule.Protocol,
+		rule.TargetNodeID, rule.TargetHost, rule.TargetPort, rule.LineID, rule.Protocol,
 		rule.Enabled, rule.ApplyStatus).Scan(&rule.CreatedAt, &rule.UpdatedAt)
 	if err != nil {
 		return Rule{}, fmt.Errorf("insert forward rule: %w", mapDatabaseError(err))

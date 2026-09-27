@@ -50,14 +50,16 @@ func TestPostgresMultiHopAdmissionRequiresCurrentRouteAndChargesIngressOnce(t *t
 	owner := add(`INSERT INTO users(id,email,password_hash,status) VALUES(gen_random_uuid(),$1,'hash','active') RETURNING id::text`, "bill-multi-"+suffix+"@example.invalid")
 	group := add(`INSERT INTO resource_groups(id,code,name,region) VALUES(gen_random_uuid(),$1,$1,'JP') RETURNING id::text`, "BILL.MULTI."+suffix)
 	egressGroup := add(`INSERT INTO resource_groups(id,code,name,region) VALUES(gen_random_uuid(),$1,$1,'JP') RETURNING id::text`, "BILL.MULTI.EGRESS."+suffix)
-	ingress := add(`INSERT INTO nodes(id,group_id,name,region,host,proxy_port,relay_port,capabilities) VALUES(gen_random_uuid(),$1,'Ingress','JP',$2,443,24441,ARRAY['proxy','forward']) RETURNING id::text`, group, "bill-in-"+suffix+".example.invalid")
+	ingress := add(`INSERT INTO nodes(id,group_id,name,region,host,proxy_port,relay_port,capabilities,multiplier_milli) VALUES(gen_random_uuid(),$1,'Ingress','JP',$2,443,24441,ARRAY['proxy','forward'],2000) RETURNING id::text`, group, "bill-in-"+suffix+".example.invalid")
 	egress := add(`INSERT INTO nodes(id,group_id,name,region,host,relay_port,capabilities) VALUES(gen_random_uuid(),$1,'Egress','JP',$2,24442,ARRAY['forward']) RETURNING id::text`, egressGroup, "bill-out-"+suffix+".example.invalid")
 	line := add(`INSERT INTO lines(id,name,owner_user_id,created_by,multiplier_milli) VALUES(gen_random_uuid(),$1,$2,$2,2000) RETURNING id::text`, "Bill multi "+suffix, owner)
 	exec(`INSERT INTO line_hops(line_id,position,node_id,role) VALUES($1,0,$2,'ingress'),($1,1,$3,'egress')`, line, ingress, egress)
 	plan := add(`INSERT INTO plans(id,name,quota_bytes) VALUES(gen_random_uuid(),$1,1000000) RETURNING id::text`, "Bill multi plan "+suffix)
-	snapshot, _ := json.Marshal(map[string]any{"plan_name": "Bill multi", "quota_bytes": 1000000, "default_multiplier_milli": 1000, "resource_group_ids": []string{group, egressGroup}, "line_ids": []string{}, "limits": map[string]any{"allow_custom_lines": true, "max_hops": 2}})
+	snapshot, _ := json.Marshal(map[string]any{"plan_name": "Bill multi", "quota_bytes": 1000000, "default_multiplier_milli": 1000, "resource_group_ids": []string{group, egressGroup}, "line_ids": []string{}, "limits": map[string]any{"allow_custom_lines": true, "max_hops": 2, "max_forward_rules_per_node": 1}})
 	member := add(`INSERT INTO memberships(id,user_id,plan_id,starts_at,ends_at,status,anchor_day,timezone,snapshot_json) VALUES(gen_random_uuid(),$1,$2,clock_timestamp()-interval '1 hour',clock_timestamp()+interval '1 day','active',1,'UTC',$3) RETURNING id::text`, owner, plan, snapshot)
 	access := add(`INSERT INTO proxy_accesses(id,user_id,line_id,name,credential_hash,credential_ciphertext) VALUES(gen_random_uuid(),$1,$2,'Bill access',$3,$4) RETURNING id::text`, owner, line, strings.Repeat("a", 56), strings.Repeat("b", 64))
+	forwardRule := add(`INSERT INTO forward_rules(id,user_id,name,ingress_node_id,ingress_port,target_host,target_port,line_id,protocol) VALUES(gen_random_uuid(),$1,'Bill UDP relay',$2,24553,'example.org',53,$3,'UDP') RETURNING id::text`, owner, ingress, line)
+	forwardPolicy := add(`INSERT INTO forward_target_policies(id,kind,protocol,port_start,port_end) VALUES(gen_random_uuid(),'public_host','UDP',53,53) RETURNING id::text`)
 	for _, spec := range []struct{ node, fingerprint string }{{ingress, strings.Repeat("a", 64)}, {egress, strings.Repeat("b", 64)}} {
 		exec(`INSERT INTO agents(id,node_id,status,last_seen_at,desired_revision,applied_revision,capabilities,cert_fingerprint,cert_expires_at) VALUES(gen_random_uuid(),$1,'online',clock_timestamp(),1,1,ARRAY['proxy','relay'],$2,clock_timestamp()+interval '1 day')`, spec.node, spec.fingerprint)
 		exec(`INSERT INTO agent_relay_certificate_grants(node_id,fingerprint,csr_digest,certificate_pem,host,expires_at) VALUES($1,$2,$3,$4,'relay.example.invalid',clock_timestamp()+interval '1 day')`, spec.node, strings.Repeat("c", 64), strings.Repeat("d", 64), []byte("test"))
@@ -66,7 +68,7 @@ func TestPostgresMultiHopAdmissionRequiresCurrentRouteAndChargesIngressOnce(t *t
 	if err := pool.QueryRow(ctx, `SELECT ends_at FROM memberships WHERE id=$1`, member).Scan(&memberEnd); err != nil {
 		t.Fatal(err)
 	}
-	ingressPayload, _ := json.Marshal(map[string]any{"proxy_config": []any{map[string]any{"id": access, "user_id": owner, "line_id": line, "credential_hash": strings.Repeat("a", 56), "ingress_port": 443, "relay_generation": 1, "expires_at": memberEnd}}, "relay_config": []any{map[string]any{"line_id": line, "generation": 1, "role": "ingress"}}})
+	ingressPayload, _ := json.Marshal(map[string]any{"proxy_config": []any{map[string]any{"id": access, "user_id": owner, "line_id": line, "credential_hash": strings.Repeat("a", 56), "ingress_port": 443, "relay_generation": 1, "expires_at": memberEnd}}, "forward_config": []any{map[string]any{"id": forwardRule, "ingress_port": 24553, "target_host": "example.org", "target_port": 53, "protocol": "UDP", "enabled": true, "line_id": line, "relay_generation": 1}}, "relay_config": []any{map[string]any{"line_id": line, "generation": 1, "role": "ingress"}}})
 	egressPayload, _ := json.Marshal(map[string]any{"relay_config": []any{map[string]any{"line_id": line, "generation": 1, "role": "egress"}}})
 	exec(`INSERT INTO config_revisions(node_id,revision,sha256,payload_json,status,applied_at) VALUES($1,1,$2,$3,'applied',clock_timestamp())`, ingress, strings.Repeat("e", 64), ingressPayload)
 	exec(`INSERT INTO config_revisions(node_id,revision,sha256,payload_json,status,applied_at) VALUES($1,1,$2,$3,'applied',clock_timestamp())`, egress, strings.Repeat("f", 64), egressPayload)
@@ -81,6 +83,8 @@ func TestPostgresMultiHopAdmissionRequiresCurrentRouteAndChargesIngressOnce(t *t
 		_, _ = pool.Exec(cleanup, `DELETE FROM agent_relay_certificate_grants WHERE node_id=ANY($1::uuid[])`, []string{ingress, egress})
 		_, _ = pool.Exec(cleanup, `DELETE FROM agents WHERE node_id=ANY($1::uuid[])`, []string{ingress, egress})
 		_, _ = pool.Exec(cleanup, `DELETE FROM proxy_accesses WHERE id=$1`, access)
+		_, _ = pool.Exec(cleanup, `DELETE FROM forward_rules WHERE id=$1`, forwardRule)
+		_, _ = pool.Exec(cleanup, `DELETE FROM forward_target_policies WHERE id=$1`, forwardPolicy)
 		_, _ = pool.Exec(cleanup, `DELETE FROM outbox_events WHERE aggregate_id=$1`, member)
 		_, _ = pool.Exec(cleanup, `DELETE FROM memberships WHERE id=$1`, member)
 		_, _ = pool.Exec(cleanup, `DELETE FROM lines WHERE id=$1`, line)
@@ -97,6 +101,24 @@ func TestPostgresMultiHopAdmissionRequiresCurrentRouteAndChargesIngressOnce(t *t
 	request := func() OpenRequest {
 		return OpenRequest{ConnectionID: newID(), RequestID: newID(), ResourceKind: "proxy", ResourceID: access, Revision: 1, RequestedBytes: 100}
 	}
+	forwardRequest := func() OpenRequest {
+		return OpenRequest{ConnectionID: newID(), RequestID: newID(), ResourceKind: "forward", ResourceID: forwardRule, Revision: 1, RequestedBytes: 100}
+	}
+	forwardReq := forwardRequest()
+	forwardGrant, err := repo.OpenConnection(ctx, ingress, forwardReq)
+	if err != nil || forwardGrant.MultiplierMilli != 2000 {
+		t.Fatalf("line-bound UDP forward admission: %v", err)
+	}
+	// A rule can change after admission. An existing session must remain bound
+	// to the line that was frozen when its first quota lease was issued.
+	exec(`UPDATE forward_rules SET line_id=NULL WHERE id=$1`, forwardRule)
+	if _, err := repo.OpenConnection(ctx, ingress, forwardRequest()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old relayed snapshot admitted newly direct forward rule: %v", err)
+	}
+	if _, err := repo.RenewConnectionLease(ctx, ingress, RenewRequest{ConnectionID: forwardReq.ConnectionID, RequestID: newID(), Revision: 1, RequestedBytes: 100}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("forward session changed from line to direct and renewed: %v", err)
+	}
+	exec(`UPDATE forward_rules SET line_id=$2 WHERE id=$1`, forwardRule, line)
 	exec(`UPDATE agents SET desired_revision=2 WHERE node_id=$1`, egress)
 	if _, err := repo.OpenConnection(ctx, ingress, request()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("stale downstream ACK admitted: %v", err)
@@ -112,7 +134,7 @@ func TestPostgresMultiHopAdmissionRequiresCurrentRouteAndChargesIngressOnce(t *t
 	if err := pool.QueryRow(ctx, `SELECT line_id::text FROM usage_sessions WHERE id=$1`, req.ConnectionID).Scan(&frozenLine); err != nil || frozenLine != line {
 		t.Fatalf("frozen line = %s %v", frozenLine, err)
 	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM usage_sessions WHERE user_id=$1`, owner).Scan(&sessionCount); err != nil || sessionCount != 1 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM usage_sessions WHERE user_id=$1`, owner).Scan(&sessionCount); err != nil || sessionCount != 2 {
 		t.Fatalf("logical ingress sessions = %d %v", sessionCount, err)
 	}
 	exec(`UPDATE config_revisions SET payload_json=jsonb_set(payload_json,'{relay_config,0,generation}','2') WHERE node_id=$1 AND revision=1`, egress)

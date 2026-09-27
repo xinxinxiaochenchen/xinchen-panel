@@ -67,7 +67,9 @@ FROM nodes n JOIN resource_groups g ON g.id=n.group_id WHERE n.id=$1`, nodeID).S
 
 const forwardFactsQuery = `SELECT f.id::text,f.ingress_node_id::text,f.ingress_port,
 COALESCE(f.target_node_id::text,''),COALESCE(nt.group_id::text,''),COALESCE(f.target_host,host(nt.public_ip),nt.host,''),
-f.target_port,f.protocol,f.enabled,u.status='active',m.snapshot_json,
+f.target_port,f.protocol,f.enabled,u.status='active',m.snapshot_json,COALESCE(f.line_id::text,''),COALESCE(l.relay_generation,0),
+COALESCE(l.enabled,false),COALESCE(l.owner_user_id::text,''),f.user_id::text,
+COALESCE((SELECT array_agg(hg.group_id::text ORDER BY hh.position) FROM line_hops hh JOIN nodes hg ON hg.id=hh.node_id WHERE hh.line_id=l.id),'{}'::text[]),
 COALESCE(nt.enabled,false),COALESCE(gt.enabled,false),
 EXISTS (SELECT 1 FROM forward_target_policies p
         WHERE p.enabled AND p.kind=CASE WHEN f.target_node_id IS NULL THEN 'public_host' ELSE 'node' END
@@ -79,6 +81,7 @@ EXISTS (SELECT 1 FROM forward_target_policies p
         AND p.port_start<=f.target_port AND p.port_end>=f.target_port)
 FROM forward_rules f
 JOIN users u ON u.id=f.user_id
+LEFT JOIN lines l ON l.id=f.line_id
 LEFT JOIN nodes nt ON nt.id=f.target_node_id
 LEFT JOIN resource_groups gt ON gt.id=nt.group_id
 LEFT JOIN LATERAL (SELECT snapshot_json FROM memberships mm
@@ -98,17 +101,25 @@ func readForwardFacts(ctx context.Context, tx pgx.Tx, nodeID string) ([]ForwardF
 	for rows.Next() {
 		var fact ForwardFacts
 		var memberSnapshot []byte
+		var generation int64
 		if err := rows.Scan(&fact.ID, &fact.IngressNodeID, &fact.IngressPort,
 			&fact.TargetNodeID, &fact.TargetGroupID, &fact.TargetHost, &fact.TargetPort,
-			&fact.Protocol, &fact.Enabled, &fact.OwnerActive, &memberSnapshot,
+			&fact.Protocol, &fact.Enabled, &fact.OwnerActive, &memberSnapshot, &fact.LineID, &generation,
+			&fact.LineEnabled, &fact.LineOwnerID, &fact.OwnerID, &fact.HopGroupIDs,
 			&fact.TargetNodeEnabled, &fact.TargetGroupEnabled, &fact.TCPPolicyAllowed, &fact.UDPPolicyAllowed); err != nil {
 			return nil, fmt.Errorf("scan forward snapshot facts: %w", err)
+		}
+		if generation > 0 {
+			fact.RelayGeneration = uint64(generation)
 		}
 		if memberSnapshot != nil {
 			var grant struct {
 				ResourceGroupIDs []string `json:"resource_group_ids"`
+				LineIDs          []string `json:"line_ids"`
 				Limits           struct {
-					MaxForwardRulesPerNode int `json:"max_forward_rules_per_node"`
+					MaxForwardRulesPerNode int  `json:"max_forward_rules_per_node"`
+					AllowCustomLines       bool `json:"allow_custom_lines"`
+					MaxHops                int  `json:"max_hops"`
 				} `json:"limits"`
 			}
 			if err := json.Unmarshal(memberSnapshot, &grant); err != nil {
@@ -118,6 +129,9 @@ func readForwardFacts(ctx context.Context, tx pgx.Tx, nodeID string) ([]ForwardF
 			}
 			fact.MembershipActive = true
 			fact.MemberGroupIDs = grant.ResourceGroupIDs
+			fact.MemberLineIDs = grant.LineIDs
+			fact.AllowCustomLines = grant.Limits.AllowCustomLines
+			fact.MaxHops = grant.Limits.MaxHops
 			fact.MaxForwardRulesPerNode = grant.Limits.MaxForwardRulesPerNode
 		}
 		facts = append(facts, fact)

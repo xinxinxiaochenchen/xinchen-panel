@@ -60,6 +60,11 @@ func (r *PostgresRepository) UpdateOwnRule(ctx context.Context, ownerID, ruleID 
 		if !slices.Contains(snapshot.ResourceGroupIDs, groupID) {
 			return Rule{}, ErrNotFound
 		}
+		if preview.LineID != nil {
+			if err := authorizeForwardLine(ctx, tx, ownerID, preview.IngressNodeID, *preview.LineID, snapshot); err != nil {
+				return Rule{}, err
+			}
+		}
 		policyKind := "public_host"
 		var policyGroupID *string
 		if preview.TargetNodeID != nil {
@@ -82,7 +87,8 @@ func (r *PostgresRepository) UpdateOwnRule(ctx context.Context, ownerID, ruleID 
 		}
 		if before.IngressNodeID != preview.IngressNodeID || before.IngressPort != preview.IngressPort ||
 			before.TargetPort != preview.TargetPort || before.Protocol != preview.Protocol ||
-			!sameStringPtr(before.TargetNodeID, preview.TargetNodeID) || !sameStringPtr(before.TargetHost, preview.TargetHost) {
+			!sameStringPtr(before.TargetNodeID, preview.TargetNodeID) || !sameStringPtr(before.TargetHost, preview.TargetHost) ||
+			!sameStringPtr(before.LineID, preview.LineID) {
 			return Rule{}, ErrConflict
 		}
 	} else {

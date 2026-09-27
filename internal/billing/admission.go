@@ -165,8 +165,8 @@ func resourceOwner(ctx context.Context, tx pgx.Tx, kind, resourceID string) (str
 	var owner, lineID string
 	switch kind {
 	case "forward":
-		err := tx.QueryRow(ctx, `SELECT user_id::text FROM forward_rules WHERE id=$1`, resourceID).Scan(&owner)
-		return owner, "", databaseError(err)
+		err := tx.QueryRow(ctx, `SELECT user_id::text,COALESCE(line_id::text,'') FROM forward_rules WHERE id=$1`, resourceID).Scan(&owner, &lineID)
+		return owner, lineID, databaseError(err)
 	case "proxy":
 		err := tx.QueryRow(ctx, `SELECT user_id::text,line_id::text FROM proxy_accesses WHERE id=$1`, resourceID).Scan(&owner, &lineID)
 		return owner, lineID, databaseError(err)
@@ -232,11 +232,14 @@ WHERE a.id=$1 AND n.id=$2 AND n.enabled AND g.enabled FOR SHARE OF a,n,g`, agent
 	var authorized bool
 	var multiplier int64
 	if req.ResourceKind == "forward" {
-		err = tx.QueryRow(ctx, `SELECT COALESCE(n.multiplier_milli,(p.snapshot_json->>'default_multiplier_milli')::bigint),
+		err = tx.QueryRow(ctx, `SELECT COALESCE(l.multiplier_milli,n.multiplier_milli,(p.snapshot_json->>'default_multiplier_milli')::bigint),
  EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE($4::jsonb->'forward_config','[]'::jsonb)) e
  WHERE e->>'id'=f.id::text AND (e->>'ingress_port')::int=f.ingress_port
  AND e->>'target_host'=COALESCE(f.target_host,host(nt.public_ip),nt.host,'')
- AND (e->>'target_port')::int=f.target_port AND e->>'protocol'=f.protocol AND e->>'enabled'='true')
+ AND (e->>'target_port')::int=f.target_port AND e->>'protocol'=f.protocol AND e->>'enabled'='true'
+ AND (f.line_id IS NULL AND COALESCE(e->>'line_id','')=''
+      OR f.line_id IS NOT NULL AND e->>'line_id'=f.line_id::text
+         AND (e->>'relay_generation')::bigint=l.relay_generation))
  AND COALESCE(p.snapshot_json->'resource_group_ids','[]'::jsonb) ? n.group_id::text
  AND COALESCE((p.snapshot_json->'limits'->>'max_forward_rules_per_node')::int,0)>0
  AND (f.target_node_id IS NULL OR (nt.enabled AND gt.enabled AND COALESCE(p.snapshot_json->'resource_group_ids','[]'::jsonb) ? nt.group_id::text))
@@ -247,8 +250,13 @@ WHERE a.id=$1 AND n.id=$2 AND n.enabled AND g.enabled FOR SHARE OF a,n,g`, agent
  AND fp.port_start<=f.target_port AND fp.port_end>=f.target_port))
  FROM forward_rules f JOIN nodes n ON n.id=f.ingress_node_id
  JOIN billing_periods p ON p.id=$3 LEFT JOIN nodes nt ON nt.id=f.target_node_id
+ LEFT JOIN lines l ON l.id=f.line_id
  LEFT JOIN resource_groups gt ON gt.id=nt.group_id
- WHERE f.id=$1 AND f.ingress_node_id=$2 AND f.user_id=p.user_id AND f.enabled AND f.line_id IS NULL FOR SHARE OF f`, req.ResourceID, nodeID, periodID, payload).Scan(&multiplier, &authorized)
+ WHERE f.id=$1 AND f.ingress_node_id=$2 AND f.user_id=p.user_id AND f.enabled
+ AND (f.line_id IS NULL OR (l.enabled AND EXISTS(SELECT 1 FROM line_hops lh WHERE lh.line_id=l.id AND lh.position=0 AND lh.node_id=n.id)
+   AND ((l.owner_user_id IS NULL AND COALESCE(p.snapshot_json->'line_ids','[]'::jsonb) ? l.id::text)
+     OR (l.owner_user_id=f.user_id AND COALESCE((p.snapshot_json->'limits'->>'allow_custom_lines')::boolean,false)))
+   )) FOR SHARE OF f`, req.ResourceID, nodeID, periodID, payload).Scan(&multiplier, &authorized)
 	} else {
 		err = tx.QueryRow(ctx, `SELECT COALESCE(l.multiplier_milli,n.multiplier_milli,(p.snapshot_json->>'default_multiplier_milli')::bigint),
 EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE($4::jsonb->'proxy_config','[]'::jsonb)) e
@@ -305,6 +313,12 @@ AND ag.applied_revision=$7 AND 'proxy'=ANY(ag.capabilities) FOR SHARE OF a,l,ag`
 	}
 	if err != nil {
 		return 0, databaseError(err)
+	}
+	if authorized && req.ResourceKind == "forward" && lineID != "" {
+		authorized, err = authorizeForwardRoute(ctx, tx, lineID, periodID, nodeID)
+		if err != nil {
+			return 0, err
+		}
 	}
 	if !authorized || multiplier < 1 || multiplier > 100000 {
 		return 0, ErrNotFound
@@ -397,7 +411,10 @@ func (r *PostgresRepository) RenewConnectionLease(ctx context.Context, nodeID st
 	if !sameID(currentOwner, ownerID) {
 		return AdmissionGrant{}, ErrNotFound
 	}
-	if kind == "proxy" && (frozenLine == nil || !sameID(currentLine, *frozenLine)) {
+	if kind == "proxy" && frozenLine == nil {
+		return AdmissionGrant{}, ErrNotFound
+	}
+	if (frozenLine == nil && currentLine != "") || (frozenLine != nil && !sameID(currentLine, *frozenLine)) {
 		return AdmissionGrant{}, ErrNotFound
 	}
 	freshMultiplier, err := authorizeResource(ctx, tx, nodeID, agentID, periodID, OpenRequest{ResourceKind: kind, ResourceID: resourceID, Revision: req.Revision}, currentLine, now)

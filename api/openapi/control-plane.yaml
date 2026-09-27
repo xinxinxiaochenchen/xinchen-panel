@@ -1198,8 +1198,8 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createForwardRule
-      summary: Reserve a direct TCP, UDP or BOTH forwarding port
-      description: The target kind, physical protocol and destination port must match enabled administrator policies; absent policies deny by default. The rule remains pending until the ingress Agent applies it. A disabled rule still reserves its port. Multi-hop line selection is not accepted by this endpoint yet.
+      summary: Reserve a TCP, UDP or BOTH forwarding port
+      description: The target kind, physical protocol and destination port must match enabled administrator policies; absent policies deny by default. An optional line_id binds a public-host target to an authorized enabled multi-hop line whose first hop is the ingress node. The rule remains pending until the ingress Agent applies it. A disabled rule still reserves its port.
       security: [{browserSession: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -2066,6 +2066,7 @@ components:
         target_node_id: {type: string, format: uuid}
         target_host: {type: string, description: 'Public IP literal or DNS hostname; resolved addresses must be checked by the Agent.'}
         target_port: {type: integer, minimum: 1, maximum: 65535}
+        line_id: {type: string, format: uuid, description: 'Optional enabled multi-hop line. Requires target_host and an authorized ingress node.'}
         protocol: {type: string, enum: [TCP, UDP, BOTH]}
         enabled: {type: boolean, default: true}
     ForwardRulePatch:
@@ -2087,7 +2088,7 @@ components:
         target_node_id: {type: ['string', 'null'], format: uuid}
         target_host: {type: ['string', 'null']}
         target_port: {type: integer}
-        line_id: {type: ['string', 'null'], format: uuid, description: 'Always null in the direct-only release.'}
+        line_id: {type: ['string', 'null'], format: uuid}
         protocol: {type: string, enum: [TCP, UDP, BOTH]}
         enabled: {type: boolean}
         apply_status: {type: string, enum: [pending, active, apply_failed, disabled]}

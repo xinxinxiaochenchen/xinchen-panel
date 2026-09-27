@@ -30,6 +30,21 @@ func TestNormalizeRuleAcceptsDirectTargetsAndProtocols(t *testing.T) {
 	}
 }
 
+func TestNormalizeRuleAcceptsLineBoundPublicTarget(t *testing.T) {
+	host := "example.org"
+	line := "44444444-4444-4444-8444-444444444444"
+	got, err := NormalizeRule(NewRule{Name: "relay dns", IngressNodeID: testIngressID, IngressPort: 24001,
+		TargetHost: &host, TargetPort: 53, Protocol: "UDP", LineID: &line})
+	if err != nil || got.LineID == nil || *got.LineID != line {
+		t.Fatalf("line-bound forward=%+v, err=%v", got, err)
+	}
+	target := testTargetID
+	if _, err := NormalizeRule(NewRule{Name: "bad line target", IngressNodeID: testIngressID, IngressPort: 24001,
+		TargetNodeID: &target, TargetPort: 53, Protocol: "UDP", LineID: &line}); err == nil {
+		t.Fatal("line-bound node target accepted")
+	}
+}
+
 func TestNormalizeRuleRejectsInvalidTargetsAndPorts(t *testing.T) {
 	base := NewRule{Name: "game", IngressNodeID: testIngressID,
 		IngressPort: 24000, TargetPort: 443, Protocol: "TCP"}

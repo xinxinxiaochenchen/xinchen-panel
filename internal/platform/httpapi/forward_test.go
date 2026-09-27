@@ -177,10 +177,11 @@ func TestForwardRoutesMapValidationLimitAndPagination(t *testing.T) {
 	if invalid.Code != 422 {
 		t.Fatalf("private destination = %d", invalid.Code)
 	}
-	unexpectedLine := httptest.NewRecorder()
-	handler.ServeHTTP(unexpectedLine, catalogRequest(http.MethodPost, "/api/v1/forward-rules", "member-token", "valid-csrf", strings.Replace(body, `"protocol":"TCP"`, `"protocol":"TCP","line_id":null`, 1)))
-	if unexpectedLine.Code != 400 {
-		t.Fatalf("unsupported line_id = %d %s", unexpectedLine.Code, unexpectedLine.Body.String())
+	store.createErr = nil
+	lineBound := httptest.NewRecorder()
+	handler.ServeHTTP(lineBound, catalogRequest(http.MethodPost, "/api/v1/forward-rules", "member-token", "valid-csrf", strings.Replace(body, `"protocol":"TCP"`, `"protocol":"TCP","line_id":"44444444-4444-4444-8444-444444444444"`, 1)))
+	if lineBound.Code != 201 {
+		t.Fatalf("line-bound create = %d %s", lineBound.Code, lineBound.Body.String())
 	}
 	first := httptest.NewRecorder()
 	handler.ServeHTTP(first, catalogRequest(http.MethodGet, "/api/v1/forward-rules?limit=1", "member-token", "", ""))

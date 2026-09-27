@@ -2,6 +2,8 @@ package orchestration
 
 import (
 	"testing"
+
+	"controlplane/internal/agentruntime"
 )
 
 func validForwardFacts() ForwardFacts {
@@ -9,6 +11,32 @@ func validForwardFacts() ForwardFacts {
 		ID: "rule-b", IngressNodeID: "node-1", IngressPort: 24000, TargetHost: "example.org", TargetPort: 443,
 		Protocol: "TCP", Enabled: true, OwnerActive: true, MembershipActive: true,
 		MemberGroupIDs: []string{"ingress", "target"}, MaxForwardRulesPerNode: 1, TCPPolicyAllowed: true,
+	}
+}
+
+func TestCompileForwardSnapshotIncludesAuthorizedLineBoundRule(t *testing.T) {
+	node := NodeFacts{ID: "node-1", GroupID: "ingress", Enabled: true, GroupEnabled: true, ForwardCapable: true}
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = 3
+	}
+	line := "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e423"
+	fact := validForwardFacts()
+	fact.ID = "relay-rule"
+	fact.LineID = line
+	fact.RelayGeneration = 1
+	fact.LineEnabled = true
+	fact.MemberLineIDs = []string{line}
+	fact.HopGroupIDs = []string{"ingress", "egress"}
+	fact.MemberGroupIDs = []string{"ingress", "egress"}
+	fact.MaxHops = 2
+	fact.OwnerID = "owner"
+	compiled, err := CompileForwardSnapshot(node, []ForwardFacts{fact}, 1, []agentruntime.RelayConfig{{
+		LineID: line, Generation: 1, Role: agentruntime.RelayIngress,
+		Next: &agentruntime.RelayNextHop{NodeID: "33333333-3333-4333-8333-333333333333", Address: "relay.example.org:24443", Port: 24443, Secret: secret, Fingerprints: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+	}})
+	if err != nil || len(compiled.Snapshot.Rules) != 1 || compiled.Snapshot.Rules[0].LineID != line {
+		t.Fatalf("line-bound rule=%+v, rejected=%+v, err=%v", compiled.Snapshot.Rules, compiled.Rejected, err)
 	}
 }
 

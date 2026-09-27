@@ -39,6 +39,15 @@ type ForwardFacts struct {
 	TCPPolicyAllowed       bool
 	UDPPolicyAllowed       bool
 	EligibilityError       string
+	LineID                 string
+	RelayGeneration        uint64
+	LineEnabled            bool
+	LineOwnerID            string
+	OwnerID                string
+	MemberLineIDs          []string
+	AllowCustomLines       bool
+	MaxHops                int
+	HopGroupIDs            []string
 }
 
 type ForwardRejection struct {
@@ -53,8 +62,12 @@ type CompiledForwardSnapshot struct {
 
 // CompileForwardSnapshot omits malformed rules individually so they cannot
 // prevent unrelated authorization revocations from reaching the Agent.
-func CompileForwardSnapshot(node NodeFacts, facts []ForwardFacts, revision uint64) (CompiledForwardSnapshot, error) {
-	result := CompiledForwardSnapshot{Snapshot: agentruntime.Snapshot{Revision: revision,
+func CompileForwardSnapshot(node NodeFacts, facts []ForwardFacts, revision uint64, relays ...[]agentruntime.RelayConfig) (CompiledForwardSnapshot, error) {
+	var relayConfig []agentruntime.RelayConfig
+	if len(relays) > 0 {
+		relayConfig = relays[0]
+	}
+	result := CompiledForwardSnapshot{Snapshot: agentruntime.Snapshot{Revision: revision, RelayConfig: relayConfig,
 		Rules: make([]agentruntime.Rule, 0, len(facts))}}
 	if _, err := agentruntime.ValidateSnapshot(result.Snapshot); err != nil {
 		return CompiledForwardSnapshot{}, err
@@ -83,6 +96,24 @@ func CompileForwardSnapshot(node NodeFacts, facts []ForwardFacts, revision uint6
 			!slices.Contains(fact.MemberGroupIDs, fact.TargetGroupID)) {
 			continue
 		}
+		if fact.LineID != "" {
+			if !fact.LineEnabled || fact.RelayGeneration == 0 || len(fact.HopGroupIDs) < 2 ||
+				len(fact.HopGroupIDs) > fact.MaxHops ||
+				(fact.LineOwnerID == "" && !slices.Contains(fact.MemberLineIDs, fact.LineID) ||
+					fact.LineOwnerID != "" && (fact.LineOwnerID != fact.OwnerID || !fact.AllowCustomLines)) {
+				continue
+			}
+			granted := true
+			for _, groupID := range fact.HopGroupIDs {
+				if !slices.Contains(fact.MemberGroupIDs, groupID) {
+					granted = false
+					break
+				}
+			}
+			if !granted {
+				continue
+			}
+		}
 		switch fact.Protocol {
 		case "TCP":
 			if !fact.TCPPolicyAllowed {
@@ -102,8 +133,9 @@ func CompileForwardSnapshot(node NodeFacts, facts []ForwardFacts, revision uint6
 			continue
 		}
 		rule := agentruntime.Rule{ID: fact.ID, IngressPort: fact.IngressPort,
-			TargetHost: fact.TargetHost, TargetPort: fact.TargetPort, Protocol: fact.Protocol, Enabled: true}
-		if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: revision, Rules: []agentruntime.Rule{rule}}); err != nil {
+			TargetHost: fact.TargetHost, TargetPort: fact.TargetPort, Protocol: fact.Protocol, Enabled: true,
+			LineID: fact.LineID, RelayGeneration: fact.RelayGeneration}
+		if _, err := agentruntime.ValidateSnapshot(agentruntime.Snapshot{Revision: revision, Rules: []agentruntime.Rule{rule}, RelayConfig: relayConfig}); err != nil {
 			result.Rejected = append(result.Rejected, ForwardRejection{fact.ID, err.Error()})
 			continue
 		}
