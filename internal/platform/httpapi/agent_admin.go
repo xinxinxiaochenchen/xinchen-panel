@@ -50,7 +50,7 @@ func registerAgentTokenRoutes(mux *http.ServeMux, sessions IdentitySessions, sto
 			WriteError(w, r, http.StatusInternalServerError, "INTERNAL", "internal server error")
 			return
 		}
-		cookie, _ := r.Cookie(sessionCookieName)
+		cookie, _ := identitySessionCookie(r)
 		verified, err := verifier.VerifyPassword(r.Context(), cookie.Value, input.Password)
 		if errors.Is(err, identity.ErrInvalidCredentials) || errors.Is(err, identity.ErrUnauthenticated) {
 			WriteError(w, r, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid credentials")

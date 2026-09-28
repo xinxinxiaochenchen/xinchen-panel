@@ -60,12 +60,7 @@ export function planScopeLabels(snapshot: Pick<Snapshot, 'resource_group_ids' | 
   }
 }
 
-export function isSecureLocation(protocol: string, hostname: string): boolean {
-  return protocol === 'https:' || protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)
-}
-
-export async function loadViewer(protocol: string, hostname: string, request: typeof fetch = fetch): Promise<Viewer> {
-  if (!isSecureLocation(protocol, hostname)) return { kind: 'preview' }
+export async function loadViewer(_protocol: string, _hostname: string, request: typeof fetch = fetch): Promise<Viewer> {
   const response = await request('/api/v1/me', { credentials: 'same-origin', cache: 'no-store' })
   if (response.status === 404) return { kind: 'preview' }
   if (response.status === 401) return { kind: 'guest' }

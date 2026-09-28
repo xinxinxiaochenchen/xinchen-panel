@@ -58,7 +58,12 @@ def collect_release_files(root: Path) -> list[Path]:
     if missing_compose:
         raise ValueError("Compose files are missing: " + ", ".join(path.name for path in missing_compose))
 
-    paths = [root / "bin" / name for name in BINARIES]
+    docs = [root / "README.md", root / "docs" / "deployment" / "vps-webui.md"]
+    missing_docs = [path for path in docs if not path.is_file()]
+    if missing_docs:
+        raise ValueError("release documentation is missing: " + ", ".join(str(path.relative_to(root)) for path in missing_docs))
+
+    paths = docs + [root / "bin" / name for name in BINARIES]
     paths += [root / "apps" / "web" / "dist"]
     paths += [root / "migrations"]
     paths += [root / "deployments" / "compose" / name for name in COMPOSE_FILES]

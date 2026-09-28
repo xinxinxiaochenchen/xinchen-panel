@@ -5,7 +5,7 @@ services:
   agent:
     build:
       context: ../..
-      dockerfile: deployments/compose/Dockerfile.agent
+      dockerfile: ${CONTROL_AGENT_DOCKERFILE:-deployments/compose/Dockerfile.agent}
     network_mode: host
     restart: unless-stopped
     read_only: true

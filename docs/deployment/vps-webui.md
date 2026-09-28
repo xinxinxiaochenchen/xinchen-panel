@@ -1,191 +1,242 @@
-# VPS WebUI 部署
+# VPS 正式版部署
 
-本项目是浏览器访问的 Web 控制台，不包含原生 App。控制面、前端静态资源和 PostgreSQL 通过 Docker Compose 运行；节点数据面由独立 Agent 运行。本说明适用于 Linux amd64 VPS。
+本项目通过浏览器使用。控制面、React WebUI 和 PostgreSQL 用 Docker Compose 运行，节点数据面由独立 Go Agent 执行。管理入口支持纯 IP HTTP，HTTPS 自行选择；Agent mTLS 和 Trojan TLS 分别配置。本说明适用于 Linux VPS。
 
-## 从 GitHub 一键启动只读 WebUI
+## 1. 源码一键安装
 
-VPS 先安装 curl、Git、Docker Engine 和 Compose 插件（[Docker 官方安装说明](https://docs.docker.com/engine/install/)）。以 root 运行以下一条命令，下载安装并启动纯 IP 只读预览：
+安装 curl、Git、Docker Engine 和 Compose 插件（[Docker 安装说明](https://docs.docker.com/engine/install/)），以 root 运行：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-preview
+curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-http
 ```
 
-完成后访问 `http://服务器IP:18080/`。如公网无法访问，检查服务器与云平台防火墙的 TCP 18080 规则。脚本只检查 Docker 和 Git，不自动安装或升级系统依赖。首次编译需要访问 GitHub、npm、Go 模块和容器镜像仓库，建议为源码构建准备至少 2 GiB 可用内存；低内存 VPS 可采用下文预编译发布包流程。
+首次输入管理员邮箱和 12–72 字节密码，密码不会回显。安装器生成随机数据库密码和代理凭据密钥、构建前后端、应用迁移、初始化管理员并启动服务。访问 `http://服务器IP:18080/` 登录；服务器及云平台防火墙需允许 TCP 18080。安装目录默认 `/opt/xinchen-panel`，可用 `XINCHEN_PANEL_DIR=/absolute/path` 指定。
 
-安装目录默认为 `/opt/xinchen-panel`；用 `XINCHEN_PANEL_DIR=/absolute/path sh xinchen-panel-install.sh --public-preview` 可选择其他可写目录。入口脚本首次克隆 `main`，重复运行时只在同仓库、无本地改动的 `main` 分支上执行 `git pull --ff-only`，遇到不同仓库、其他分支、冲突或本地改动会停止，不覆盖文件。下载命令使用 `&&`，下载失败不会执行不完整脚本。已克隆源码的用户仍可运行 `sh scripts/deploy-vps.sh [--public-preview]`。
+| 参数 | 用途 |
+| --- | --- |
+| `--public-http` | 可操作的 IP HTTP 面板，绑定 `0.0.0.0:18080` |
+| `--https` | 可操作面板，绑定 `127.0.0.1:18080`，使用 Secure Cookie，自行配置 HTTPS 反代 |
+| `--public-preview` | 只读 HTTP 预览，关闭账户和写操作 |
+| 无参数 | 首次使用 HTTP；已有安装保留原模式 |
 
-脚本直接在 Docker 中编译 Go 控制面与 React WebUI，不要求 VPS 预装 Go 或 Node.js；首次运行会生成 `deployments/compose/.env`（权限 `0600`、随机数据库密码），执行 migration，并等待 API 健康检查。省略 `--public-preview` 时只在 `127.0.0.1:18080` 提供 HTTP，由你自己的 Nginx/Caddy HTTPS 反代。纯 IP 模式绑定 `0.0.0.0:18080`，浏览器登录和写接口仍关闭。
+HTTP 使用 `control_session`/`control_csrf` host-only Cookie，HTTPS 使用 Secure `__Host-control_session`/`__Host-control_csrf`。两种模式均验证账户、权限、CSRF 和浏览器请求来源。HTTPS 模式应通过 HTTPS 入口访问。
 
-重复运行同一命令会保留已有 `.env` 和 PostgreSQL 数据卷。检测到已有数据库卷时，脚本在迁移前把自定义格式备份保存到 Git 忽略的 `.local/backups/`，并用 `pg_restore --list` 校验；备份失败则停止升级。每次部署都显式运行一次新的 migration 容器，成功后才启动或更新 API；迁移失败不会重启 API，也不会自动执行 down migration。若数据库卷存在而当前目录没有原 `.env`，脚本会拒绝生成新密码。已有 `.env` 的绑定地址需与本次选择的模式一致；切换为公网预览须先明确修改 `CONTROL_BIND_IP`。启用过浏览器认证的实例应按下文 HTTPS 步骤运维，不使用只读预览脚本覆盖。
+不需要在 VPS 安装 Go 或 Node.js。首次编译需访问 GitHub、npm、Go 模块和镜像仓库，建议为构建准备至少 2 GiB 可用内存；低内存机器可采用第 2 节发布包方式。安装器检查依赖，不自动升级系统 Docker。
 
-当前工作机没有 Docker，因此源码镜像和真实 Compose 启动必须在装有 Docker 的 Linux VPS 上做最终验证。以下发布包流程仍可用于离线构建与传输。
+### 无人值守安装
 
-## 1. 构建发布包
-
-在构建机的项目根目录准备 Go 1.27.1、Node.js 22，然后执行：
+准备仅当前管理员可读的绝对路径密码文件，权限 `0600` 或 `0400`。文件只放一行密码，不将密码写入命令参数、`.env` 或 Git：
 
 ```sh
-./scripts/build-linux-amd64.sh
+CONTROL_ADMIN_EMAIL='owner@example.com' \
+CONTROL_ADMIN_PASSWORD_FILE=/root/private/panel-admin-password \
+  sh xinchen-panel-install.sh --public-http
+```
+
+安装后自行保管或移除初始密码文件。后续更新根据数据库中的管理员状态跳过初始化，不读取密码文件、不修改现有管理员密码。初始化失败时 API 不启动；修正输入后再次执行即可。
+
+## 2. 预编译发布包
+
+构建机准备 Go 1.27.1 和 Node.js 22：
+
+```sh
+sh scripts/build-linux-amd64.sh
 sh scripts/build-release-archive.sh
 ```
 
-第一个脚本生成 Linux amd64 控制面、迁移、管理员初始化、节点初始化、Agent 和 Agent 入网令牌程序，并构建 WebUI。第二个脚本生成 `release-<UTC 时间>.tar.gz` 并打印 SHA-256。归档只收录这些二进制、`apps/web/dist`、完整迁移对和预编译镜像所需的 Compose 文件；打包前会检查缺失文件与二进制架构。把归档上传 VPS 后解压到独立版本目录，再进入其 `deployments/compose` 目录操作。发布归档不包含 `.env`、私钥、数据库文件和 macOS 的 `._*` 文件。VPS 需要 Docker Engine 与 Compose 插件。
+归档包含 Linux amd64 程序、WebUI、全部迁移、Compose 文件及部署说明，不包含数据库、`.env`、密钥或 AppleDouble 文件。解压到独立版本目录，进入 `deployments/compose`。以下命令针对发布包；源码 checkout 手动执行 API Compose 命令时需额外加入 `-f compose.source.yaml`。
 
-## 2. 启动控制面和 WebUI
-
-以下命令用于上文的预编译发布包部署。源码一键安装已完成构建与迁移；手动管理源码镜像时，每条 Compose 命令都需添加 `-f compose.source.yaml`（包括登录与 Agent overlay），避免选择发布包专用的 `Dockerfile.prebuilt`。
-
-进入 Compose 目录，创建权限为 `0600` 的 `.env`。数据库密码使用足够长的十六进制随机串，避免连接 URL 中的保留字符：
-
-```dotenv
-POSTGRES_PASSWORD=替换为至少32位十六进制随机串
-CONTROL_BIND_IP=127.0.0.1
-CONTROL_BROWSER_AUTH_ENABLED=false
-```
-
-启动数据库、迁移和控制面：
+准备持久密钥（发布目录之外）：
 
 ```sh
-docker compose -f compose.yaml build
-docker compose -f compose.yaml up -d db migrate api
-curl http://127.0.0.1:18080/api/v1/health/ready
+install -d -o 65532 -g 65532 -m 0700 /opt/xinchen-panel/secrets/proxy
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' > /opt/xinchen-panel/secrets/proxy/proxy.key
+chmod 0600 /opt/xinchen-panel/secrets/proxy/proxy.key
+chown 65532:65532 /opt/xinchen-panel/secrets/proxy/proxy.key
 ```
 
-以上配置只绑定服务器回环地址，由 Nginx/Caddy 负责 HTTPS 反代。如需从公网纯 IP 临时查看只读页面，可将 `CONTROL_BIND_IP` 设为 `0.0.0.0` 并保持 `CONTROL_BROWSER_AUTH_ENABLED=false`；此模式不提供登录、写操作或订阅 Token。生产管理入口须恢复为回环绑定并使用 HTTPS。
-
-## 3. 启用浏览器登录
-
-先在服务器上创建 32 字节的代理凭据加密密钥，文件权限必须为 `0600`：
-
-```sh
-install -d -o 65532 -g 65532 -m 0700 /opt/network-control-plane/secrets/proxy
-python3 - <<'PY' > /opt/network-control-plane/secrets/proxy/proxy.key
-import base64, os
-print(base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('='))
-PY
-chmod 0600 /opt/network-control-plane/secrets/proxy/proxy.key
-chown 65532:65532 /opt/network-control-plane/secrets/proxy/proxy.key
-```
-
-将 `.env` 改为：
+复制 `.env.example` 为 `.env`，权限 `0600`，写入真实配置：
 
 ```dotenv
+POSTGRES_PASSWORD=替换为openssl_rand_hex_32生成的随机十六进制密码
+CONTROL_DEPLOYMENT_MODE=http
+CONTROL_BIND_IP=0.0.0.0
 CONTROL_BROWSER_AUTH_ENABLED=true
-CONTROL_PROXY_CREDENTIAL_SECRET_DIR=/opt/network-control-plane/secrets/proxy
+CONTROL_BROWSER_COOKIE_SECURE=false
+CONTROL_PROXY_CREDENTIAL_SECRET_DIR=/opt/xinchen-panel/secrets/proxy
 ```
 
-先通过标准输入创建管理员：
+启动数据库并迁移，初始化管理员，最后启动 API：
 
 ```sh
-read -r -s -p '管理员初始密码: ' NCP_ADMIN_PASSWORD
+docker compose -f compose.yaml -f compose.proxy-secrets.yaml build migrate api
+docker compose -f compose.yaml -f compose.proxy-secrets.yaml up -d --wait db
+docker compose -f compose.yaml -f compose.proxy-secrets.yaml run --rm -T --no-deps migrate
+read -r -s -p '管理员初始密码: ' PANEL_INITIAL_PASSWORD
 printf '\n'
-printf '%s\n' "$NCP_ADMIN_PASSWORD" | docker compose -f compose.yaml run --rm -T \
-  -e CONTROL_ADMIN_EMAIL='admin@example.com' api \
-  /usr/local/bin/admin-bootstrap
-unset NCP_ADMIN_PASSWORD
+printf '%s\n' "$PANEL_INITIAL_PASSWORD" | docker compose -f compose.yaml -f compose.proxy-secrets.yaml \
+  run --rm -T --no-deps -e CONTROL_ADMIN_EMAIL='owner@example.com' \
+  api /usr/local/bin/admin-bootstrap --if-needed
+unset PANEL_INITIAL_PASSWORD
+docker compose -f compose.yaml -f compose.proxy-secrets.yaml up -d --no-deps api
 ```
 
-该命令从标准输入读取管理员密码，运行时输入至少 12 字节的密码。再加载密钥覆盖文件并重建 API：
+以上 `read -s -p` 示例使用 Bash。`admin-bootstrap --status` 输出 `configured` 或 `empty`；`--if-needed` 保留已有管理员。普通 `admin-bootstrap` 可显式创建额外管理员。
 
-```sh
-docker compose -f compose.yaml -f compose.proxy-secrets.yaml up -d --force-recreate api
+## 3. 登录后的配置顺序
+
+1. 管理页创建资源域和节点，登记地址、能力及代理/中继端口。
+2. 按第 5 节启用控制面的 Agent 入口，并让节点 Agent 入网；节点页查看在线与配置状态。
+3. 创建共享线路；多跳每一跳登记中继端口，并启用持久线路密钥。
+4. 创建用户和套餐，将节点资源域、线路、额度与限制授予用户；创建有效套餐授权。
+5. 转发业务先配置管理员目标策略，再由用户创建 TCP/UDP 转发规则。
+6. 代理业务由用户创建代理连接、订阅及可选分流 Profile。Agent 配置应用成功后，订阅才导出可用目标。
+
+管理页可维护用户、节点资料及启停、套餐生命周期、授权取消、角色、规则集、Agent 撤销、流量统计与审计。用户可维护自有线路、转发、代理连接、订阅、分流及密码。新库没有示例业务数据，空列表表示尚未配置。
+
+## 4. 可选 HTTPS 管理入口
+
+源码安装运行 `sh scripts/deploy-vps.sh --https`，将面板改为回环绑定和 Secure Cookie，再用 Nginx/Caddy 反代到 `http://127.0.0.1:18080`。反代保留 Host，并按需要传递 WebSocket Upgrade。浏览器访问你的 HTTPS 地址。
+
+发布包手动部署修改 `.env`：
+
+```dotenv
+CONTROL_DEPLOYMENT_MODE=https
+CONTROL_BIND_IP=127.0.0.1
+CONTROL_BROWSER_AUTH_ENABLED=true
+CONTROL_BROWSER_COOKIE_SECURE=true
 ```
 
-## 4. HTTPS 反代
-
-Nginx 只需要把 HTTPS 管理域名反代到 `127.0.0.1:18080`，并转发 WebSocket Upgrade 头；不要把 PostgreSQL 端口映射到公网。启用浏览器登录前，确保 `CONTROL_BIND_IP` 已恢复为 `127.0.0.1`，并为反代配置真实客户端 IP 限流。
+加载原有密钥及 Agent/relay overlay 后重建 API。切换模式后重新登录。改回 HTTP 时源码安装运行 `sh scripts/deploy-vps.sh --public-http`；发布包改回第 2 节配置。管理 HTTPS 不影响节点使用的 CA 或已有 Agent 身份。
 
 ## 5. 节点 Agent
 
-创建节点后，用管理员权限生成一次性入网令牌；令牌只写入控制面服务器私有文件，不打印到标准输出。Agent 使用 `compose.agent-local.yaml` 在节点 VPS 上运行，控制面只运行 `compose.agent-tls.yaml`。生产多跳线路再叠加 `compose.relay-secrets.yaml`。Agent 的证书、CA 私钥、代理服务端证书和线路密钥都应放在发布目录之外。
+### 5.1 控制面专用 TLS 入口
 
-如果使用发布包中的 `node-bootstrap` 在控制面数据库中初始化节点，可用
-`CONTROL_NODE_RELAY_PORT` 一并登记中继端口；该字段会参与幂等校验并写入节点记录。只有具备
-`forward` 能力的节点才应设置中继端口，且端口必须和代理端口不同：
+管理 WebUI 可以使用 HTTP；节点连接控制面的专用 18443 TLS/mTLS 入口。准备 CA 和带实际控制面 IP 或域名 SAN 的服务端证书。以下 Bash 示例为 IPv4 控制面创建私有 CA，节点通过显式 CA 文件信任它：
 
 ```sh
-docker compose -f compose.yaml run --rm -T \
-  -e CONTROL_ADMIN_EMAIL='admin@example.com' \
-  -e CONTROL_NODE_GROUP_CODE='RFC.JPT1' \
-  -e CONTROL_NODE_GROUP_NAME='Tokyo' \
-  -e CONTROL_NODE_GROUP_REGION='JP' \
-  -e CONTROL_NODE_NAME='Tokyo 1' \
-  -e CONTROL_NODE_REGION='JP' \
-  -e CONTROL_NODE_HOST='node.example.com' \
-  -e CONTROL_NODE_CAPABILITIES='proxy,forward' \
-  -e CONTROL_NODE_PROXY_PORT=443 \
-  -e CONTROL_NODE_RELAY_PORT=24443 \
-  api /usr/local/bin/node-bootstrap
+PANEL_CONTROL_IP=203.0.113.10
+PANEL_TLS_DIR=/opt/xinchen-panel/secrets/agent-tls
+install -d -m 0700 "$PANEL_TLS_DIR"
+openssl genpkey -algorithm ED25519 -out "$PANEL_TLS_DIR/agent-ca.key"
+openssl req -new -x509 -key "$PANEL_TLS_DIR/agent-ca.key" -days 3650 \
+  -subj '/CN=Panel Agent CA' -addext 'basicConstraints=critical,CA:TRUE' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' -out "$PANEL_TLS_DIR/agent-ca.crt"
+openssl genpkey -algorithm ED25519 -out "$PANEL_TLS_DIR/server.key"
+openssl req -new -key "$PANEL_TLS_DIR/server.key" -subj '/CN=Panel Agent Control' -out "$PANEL_TLS_DIR/server.csr"
+printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=IP:%s,IP:127.0.0.1\n' "$PANEL_CONTROL_IP" > "$PANEL_TLS_DIR/server.ext"
+openssl x509 -req -in "$PANEL_TLS_DIR/server.csr" -CA "$PANEL_TLS_DIR/agent-ca.crt" \
+  -CAkey "$PANEL_TLS_DIR/agent-ca.key" -CAcreateserial -days 365 \
+  -extfile "$PANEL_TLS_DIR/server.ext" -out "$PANEL_TLS_DIR/server.crt"
+chmod 0600 "$PANEL_TLS_DIR/agent-ca.key" "$PANEL_TLS_DIR/server.key"
+chown -R 65532:65532 "$PANEL_TLS_DIR"
 ```
 
-控制台的“创建节点”表单也会执行同样的校验。
+将 `203.0.113.10` 替换为控制面真实 IP。域名入口在 `subjectAltName` 使用 `DNS:控制面域名`；IPv6 使用对应 IP SAN 与 URL 方括号。不要覆盖已使用的 CA：节点身份和中继证书依赖原 CA。保管 CA 私钥，节点只接收 `agent-ca.crt`。
 
-### 5.1 控制面准备 Agent TLS
+在控制面 **持久 `.env`** 中保存：
 
-控制面需要专用 CA、服务端证书和私钥，并只通过 HTTPS/mTLS 入口暴露 Agent 路径。服务端证书 SAN 必须覆盖节点实际使用的域名或 IP；浏览器管理入口仍由 Nginx/Caddy 反代到 `127.0.0.1:18080`。控制面示例：
-
-```sh
-CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
-  docker compose -f compose.yaml -f compose.agent-tls.yaml config --quiet
-CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
-  docker compose -f compose.yaml -f compose.agent-tls.yaml up -d --build api
+```dotenv
+CONTROL_AGENT_TLS_DIR=/opt/xinchen-panel/secrets/agent-tls
+CONTROL_AGENT_BIND_IP=0.0.0.0
 ```
 
-独立节点 VPS 需要访问控制面的 18443 端口时，先在 Compose `.env` 中设置 `CONTROL_AGENT_BIND_IP=0.0.0.0`，再执行上面的 `up` 命令，并在服务器防火墙中仅允许已登记节点的来源 IP。保持默认回环绑定时，远程节点无法入网。同机节点继续使用默认的 `127.0.0.1` 绑定。
-
-将 CA 公钥 `agent-ca.crt` 安全复制到节点；CA 私钥和 `server.key` 永远留在控制面。
-
-### 5.2 独立节点 VPS 入网
-
-在节点 VPS 上只上传项目发布包和 `agent-ca.crt`，准备目录并设置 UID 65532 可写：
+源码安装再运行 `sh scripts/deploy-vps.sh`，安装器会保留浏览器模式并加载 Agent TLS overlay；后续更新继续保留。发布包加载所有已启用 overlay：
 
 ```sh
-install -d -m 0700 /opt/network-control-plane/secrets/agent-credentials
-install -d -m 0700 /opt/network-control-plane/state/agent
-chown 65532:65532 /opt/network-control-plane/secrets/agent-credentials /opt/network-control-plane/state/agent
+docker compose -f compose.yaml -f compose.proxy-secrets.yaml -f compose.agent-tls.yaml up -d --build api
 ```
 
-在控制面服务器为已创建的节点签发一次性令牌。先准备仅管理员可读写的临时目录；`agent-token` 只把令牌 JSON 写入该目录，不会打印令牌：
+仅同机 Agent 可保持 `CONTROL_AGENT_BIND_IP=127.0.0.1`；独立节点需能访问控制面 TCP 18443。实际 enroll、renew 和 stream 仅挂载于专用 TLS 入口，管理面仍可签发入网令牌和撤销 Agent。
+
+### 5.2 多跳持久密钥
+
+多跳需一次性创建独立线路密钥，不在升级时重建：
 
 ```sh
-install -d -m 0700 /run/private
-chown 65532:65532 /run/private
-docker compose -f compose.yaml run --rm -T \
-  -e CONTROL_ADMIN_EMAIL='admin@example.com' \
-  -e CONTROL_AGENT_TOKEN_OUTPUT_FILE=/run/private/agent-token.json \
-  -v /run/private:/run/private:rw \
-  api /usr/local/bin/agent-token <node-uuid>
-chmod 0600 /run/private/agent-token.json
+install -d -o 65532 -g 65532 -m 0700 /opt/xinchen-panel/secrets/relay
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' > /opt/xinchen-panel/secrets/relay/relay.key
+chmod 0600 /opt/xinchen-panel/secrets/relay/relay.key
+chown 65532:65532 /opt/xinchen-panel/secrets/relay/relay.key
 ```
 
-这条命令必须在控制面发布目录的 Compose 目录执行；`CONTROL_DATABASE_URL` 由 Compose 根据 `.env` 中的数据库密码注入。令牌文件只通过受控文件传输送到节点 VPS，成功入网后立即删除控制面和节点上的临时副本。
+持久 `.env` 加入 `CONTROL_RELAY_SECRET_DIR=/opt/xinchen-panel/secrets/relay`，源码安装运行 `sh scripts/deploy-vps.sh`；发布包在所有 API 命令中再加 `-f compose.relay-secrets.yaml`。单跳可省略该配置。
 
-管理员在控制面为节点生成一次性令牌后，把令牌 JSON 以 `0600` 临时文件形式放到节点，使用标准输入完成入网：
+### 5.3 节点 VPS 入网
+
+节点可解压预编译发布包；也可克隆源码，选择源码 Agent Dockerfile，不需要主机 Go：
 
 ```sh
-export CONTROL_AGENT_STREAM_URL='wss://control.example.com:18443/api/v1/agent/stream'
-export CONTROL_AGENT_ENROLL_URL='https://control.example.com:18443/api/v1/agent/enroll'
-export CONTROL_AGENT_CREDENTIAL_DIR=/opt/network-control-plane/secrets/agent-credentials
-export CONTROL_AGENT_STATE_DIR=/opt/network-control-plane/state/agent
-export CONTROL_AGENT_NODE_ID='<node-uuid>'
+git clone https://github.com/xinxinxiaochenchen/xinchen-panel.git
+cd xinchen-panel/deployments/compose
+export CONTROL_AGENT_DOCKERFILE=deployments/compose/Dockerfile.agent.source
+```
+
+预编译发布包使用默认 `Dockerfile.agent`，省略上面 export。创建持久凭据和状态目录，将控制面的 CA 公钥复制进去：
+
+```sh
+export CONTROL_AGENT_CREDENTIAL_DIR=/opt/xinchen-panel/secrets/agent-credentials
+export CONTROL_AGENT_STATE_DIR=/opt/xinchen-panel/state/agent
+install -d -o 65532 -g 65532 -m 0700 "$CONTROL_AGENT_CREDENTIAL_DIR" "$CONTROL_AGENT_STATE_DIR"
+cp /你的传入目录/agent-ca.crt "$CONTROL_AGENT_CREDENTIAL_DIR/agent-ca.crt"
+chmod 0644 "$CONTROL_AGENT_CREDENTIAL_DIR/agent-ca.crt"
+chown 65532:65532 "$CONTROL_AGENT_CREDENTIAL_DIR/agent-ca.crt"
+export CONTROL_AGENT_NODE_ID='<节点页UUID>'
+export CONTROL_AGENT_STREAM_URL='wss://203.0.113.10:18443/api/v1/agent/stream'
+export CONTROL_AGENT_ENROLL_URL='https://203.0.113.10:18443/api/v1/agent/enroll'
 export CONTROL_AGENT_VERSION='0.1.0'
-python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' /run/private/agent-token.json | \
-  docker compose -f compose.agent-local.yaml run --rm -T agent enroll
-rm -f /run/private/agent-token.json
-docker compose -f compose.agent-local.yaml up -d --build agent
+docker compose -f compose.agent-local.yaml build agent
 ```
 
-`compose.agent-local.yaml` 使用 host network，因此节点的代理、转发和中继端口直接绑定节点 VPS。需要代理能力时，把 `proxy.crt`/`proxy.key` 放入凭据目录并设置对应环境变量；需要中继能力时设置 `CONTROL_AGENT_RELAY_HOST`、`CONTROL_AGENT_RELAY_PORT`、`CONTROL_AGENT_RELAY_CERT_FILE=/run/agent/relay.crt` 和 `CONTROL_AGENT_RELAY_KEY_FILE=/run/agent/relay.key`。节点必须能验证控制面 CA。18443 是专用 TLS/mTLS 入口，优先直连并限制来源 IP；若经过反代，必须保持端到端 TLS 或正确传递客户端证书，并支持 WebSocket Upgrade。
-
-若节点凭据泄露或需要替换 Agent，管理员在 HTTPS WebUI 的节点页执行“撤销 Agent”，再重新签发入网令牌。撤销会立即使现有证书无法通过新的认证检查；已有控制流在下一次身份复核或心跳时断开，节点本地数据监听随之关闭。撤销操作和重新入网记录保留在审计日志中。
-
-### 5.3 同机节点
-
-如果 Agent 与控制面在同一台 VPS，使用 `wss://127.0.0.1:18443/api/v1/agent/stream` 和 `https://127.0.0.1:18443/api/v1/agent/enroll`，并确保服务端证书包含 `127.0.0.1` SAN。独立节点示例中的公网控制面地址不能直接套用到同机回环场景。
+在节点管理页输入当前密码签发令牌，复制到节点终端的静默输入（以下为 Bash）：
 
 ```sh
-docker compose -f compose.yaml -f compose.proxy-secrets.yaml ps
-docker compose -f compose.yaml -f compose.proxy-secrets.yaml logs --tail=100 api
+read -r -s -p '一次性入网令牌: ' PANEL_ENROLL_TOKEN
+printf '\n'
+printf '%s\n' "$PANEL_ENROLL_TOKEN" | docker compose -f compose.agent-local.yaml run --rm -T agent enroll
+unset PANEL_ENROLL_TOKEN
+docker compose -f compose.agent-local.yaml up -d agent
 ```
 
-升级前先备份 PostgreSQL，再替换发布目录并执行迁移；Compose 不会自动执行 down migration。
+令牌 10 分钟有效且仅可使用一次。Agent 在本机生成私钥，收到 24 小时客户端证书后主动连接控制面，自动续签；私钥不离开节点。
+
+需要代理能力时，将代理客户端信任的 `proxy.crt` 和 `proxy.key` 放入凭据目录，私钥权限 `0600`、所有者 UID 65532，并设置：
+
+```dotenv
+CONTROL_AGENT_PROXY_CERT_FILE=/run/agent/proxy.crt
+CONTROL_AGENT_PROXY_KEY_FILE=/run/agent/proxy.key
+```
+
+需要中继能力时设置登记的节点地址/端口及可写证书路径，Agent 自动申请中继证书：
+
+```dotenv
+CONTROL_AGENT_RELAY_HOST=节点登记的IP或域名
+CONTROL_AGENT_RELAY_PORT=24443
+CONTROL_AGENT_RELAY_CERT_FILE=/run/agent/relay.crt
+CONTROL_AGENT_RELAY_KEY_FILE=/run/agent/relay.key
+```
+
+把节点的上述配置持久保存到节点 Compose `.env`，使重启和更新不依赖终端 export。凭据/状态目录放在发布目录之外。Agent 使用 host network，代理、转发和中继端口直接使用节点 VPS 端口，需与节点配置及防火墙一致。
+
+同机 Agent 使用 `wss://127.0.0.1:18443/api/v1/agent/stream` 和 `https://127.0.0.1:18443/api/v1/agent/enroll`，服务端证书需有 `127.0.0.1` SAN。
+
+### 5.4 撤销与重新入网
+
+管理页撤销旧 Agent，然后在节点停止进程，保留状态目录并移走旧活动证书/私钥，再签发新令牌入网：
+
+```sh
+docker compose -f compose.agent-local.yaml stop agent
+PANEL_OLD_IDENTITY_DIR=$(mktemp -d /root/panel-old-identity-XXXXXX)
+mv "$CONTROL_AGENT_CREDENTIAL_DIR/agent.crt" "$CONTROL_AGENT_CREDENTIAL_DIR/agent.key" "$PANEL_OLD_IDENTITY_DIR/"
+```
+
+旧密钥按你的凭据保管策略处理。保留 `CONTROL_AGENT_STATE_DIR` 中的额度租约、用量 outbox 和状态，不清空它们；CA 公钥和代理证书保留。再执行 5.3 的新令牌入网和启动命令。入网程序拒绝覆盖已有活动身份，所以必须先停止并移走旧身份文件。
+
+## 6. 更新与备份
+
+源码安装再次运行安装命令，无参数保留 HTTP/HTTPS/预览模式。安装器只快进更新同仓库、干净 `main` 分支，遇到本地源码改动会停止；`.env`、`.local` 和数据卷不进入 Git。已有数据库先备份至 `.local/backups` 并检查归档索引，备份或迁移失败不重启 API。丢失 `.env` 或已有加密密钥时先恢复原文件，安装器不为已有数据库生成新密码/新密钥。
+
+预编译版本手动升级需备份 PostgreSQL、保存原 `.env` 和密钥目录，替换发布目录后执行 migration，再加载同一组 overlay 更新 API。不要删除 `network-control-plane_postgres_data` 数据卷；不会自动执行 down migration。
+
+管理 HTTPS、Agent CA 和多跳密钥均独立。升级时保留 `.env` 中的 `CONTROL_AGENT_TLS_DIR`、`CONTROL_RELAY_SECRET_DIR` 及其原始文件，避免意外停掉节点连接或更换已有密钥。

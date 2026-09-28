@@ -19,6 +19,8 @@ class ReleasePackageTest(unittest.TestCase):
             image[5] = 1
             image[18:20] = (62).to_bytes(2, 'little')
             target.write_bytes(image)
+        self.put('README.md', 'deployment overview')
+        self.put('docs/deployment/vps-webui.md', 'formal HTTP and HTTPS steps')
         self.put('apps/web/dist/index.html', '<html></html>')
         self.put('apps/web/dist/assets/app.js', 'console.log(1)')
         self.put('migrations/000001_init.up.sql', 'SELECT 1;')
@@ -44,6 +46,8 @@ class ReleasePackageTest(unittest.TestCase):
         with tarfile.open(output) as archive:
             names = archive.getnames()
             self.assertIn('bin/control-plane', names)
+            self.assertIn('README.md', names)
+            self.assertIn('docs/deployment/vps-webui.md', names)
             self.assertIn('apps/web/dist/assets/app.js', names)
             self.assertIn('migrations/000001_init.up.sql', names)
             self.assertNotIn('deployments/compose/.env', names)

@@ -17,7 +17,7 @@ func TestLoadFromDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HTTPAddr != "127.0.0.1:8080" || cfg.LogLevel != slog.LevelInfo || cfg.DatabaseURL == "" || cfg.BrowserAuthEnabled {
+	if cfg.HTTPAddr != "127.0.0.1:8080" || cfg.LogLevel != slog.LevelInfo || cfg.DatabaseURL == "" || cfg.BrowserAuthEnabled || !cfg.BrowserCookieSecure {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 }
@@ -44,6 +44,42 @@ func TestLoadFromBrowserAuthExplicitFlag(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected invalid boolean error")
+	}
+}
+
+func TestLoadFromRejectsInvalidBrowserCookieSecure(t *testing.T) {
+	for _, value := range []string{"", "sometimes"} {
+		_, err := LoadFrom(func(key string) (string, bool) {
+			values := map[string]string{
+				"CONTROL_DATABASE_URL":          "postgres://localhost/control",
+				"CONTROL_BROWSER_COOKIE_SECURE": value,
+			}
+			value, ok := values[key]
+			return value, ok
+		})
+		if err == nil {
+			t.Fatalf("accepted invalid browser Cookie security value %q", value)
+		}
+	}
+}
+
+func TestLoadFromBrowserCookieSecureExplicitFlag(t *testing.T) {
+	for _, secure := range []bool{false, true} {
+		value := "false"
+		if secure {
+			value = "true"
+		}
+		cfg, err := LoadFrom(func(key string) (string, bool) {
+			values := map[string]string{
+				"CONTROL_DATABASE_URL":          "postgres://localhost/control",
+				"CONTROL_BROWSER_COOKIE_SECURE": value,
+			}
+			value, ok := values[key]
+			return value, ok
+		})
+		if err != nil || cfg.BrowserCookieSecure != secure {
+			t.Fatalf("browser Cookie security %q = %t, %v", value, cfg.BrowserCookieSecure, err)
+		}
 	}
 }
 

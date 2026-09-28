@@ -1,0 +1,14 @@
+# Build a node Agent directly from the GitHub checkout without host Go.
+FROM golang:1.27.1-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/agent ./cmd/agent
+COPY internal ./internal
+RUN CGO_ENABLED=0 go build -trimpath -o /out/agent ./cmd/agent
+
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
+COPY --from=build /out/agent /usr/local/bin/agent
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/agent"]

@@ -1,20 +1,28 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，按[架构设计](docs/superpowers/specs/2026-09-25-network-control-plane-design.md)分阶段实现。当前代码包含控制面基础、PostgreSQL 迁移、浏览器登录与 RBAC、用户和套餐管理、节点与多跳线路、转发、代理连接、订阅与分流、用量账本，以及登录后的 Web UI。`us bwg` 纯 IP 预览继续关闭浏览器认证；已部署服务状态以[部署记录](docs/deployment/us-bwg-preview.md)为准。独立 PostgreSQL 16.10 测试库已验证直达及线路绑定 TCP/UDP 转发、Trojan TLS 代理和计费入账。
+独立设计的代理网络控制平面，提供浏览器登录、RBAC、用户和套餐管理、节点与多跳线路、TCP/UDP 转发、Trojan 代理连接、订阅与分流、用量账本和审计。React 前端由 Go 控制面提供静态资源，PostgreSQL 保存数据，节点服务器运行独立 Go Agent。项目不包含原生 App、订单、充值或支付模块。
 
-交付形态是部署在 VPS 上、通过浏览器访问的 Web 项目：React 前端由 Go 控制面提供静态资源，PostgreSQL 保存主数据，节点服务器运行独立 Go Agent。项目不包含原生手机或桌面 App，也不包含付费系统。当前纯 IP HTTP 地址用于只读预览；可操作的管理登录需要受信任的 HTTPS 入口，后续可由 Nginx 反代到回环绑定的控制面。
+## 正式部署
 
-## VPS 部署
+管理面支持 **纯 IP HTTP** 和 **HTTPS 反代**，使用者自行选择。HTTP 模式提供真实登录和全部获授权管理功能；只读预览通过单独开关选择。Agent mTLS 与 Trojan TLS 是节点协议，与浏览器管理入口是否使用 HTTPS 分别配置。完整步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
 
-在已安装 Git、Docker Engine 和 Compose 插件的 VPS 上，以 root 运行一条命令即可下载安装并启动纯 IP 只读预览：
+VPS 安装 curl、Git、Docker Engine 和 Compose 插件后，以 root 执行：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-preview
+curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-http
 ```
 
-完成后访问 `http://服务器IP:18080/`，服务器防火墙需允许该端口。安装目录默认为 `/opt/xinchen-panel`，重复执行同一命令会安全更新 `main` 分支并在数据库迁移前备份。脚本检查依赖，不自动安装或升级系统 Docker；无需在 VPS 安装 Go 或 Node.js。下载失败时不会执行脚本。
+首次安装生成数据库密码和代理凭据密钥，提示输入管理员邮箱和密码，构建、迁移并启动面板。访问 `http://服务器IP:18080/` 即可登录管理；需在防火墙允许 TCP 18080。安装目录默认 `/opt/xinchen-panel`。安装器不要求 VPS 安装 Go 或 Node.js。
 
-用于 HTTPS 反代时省略 `--public-preview`，默认仅绑定 `127.0.0.1:18080`。可通过 `XINCHEN_PANEL_DIR=/absolute/path sh xinchen-panel-install.sh` 选择安装目录。已有源码也可直接运行 `sh scripts/deploy-vps.sh`。浏览器登录、HTTPS 反代、管理员初始化和 Agent 配置步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
+| 模式 | 参数 | 浏览器功能 |
+| --- | --- | --- |
+| IP HTTP | `--public-http` | 登录、个人功能、管理功能；非 Secure 的 host-only Cookie |
+| HTTPS 反代 | `--https` | 同一组功能；回环绑定和 Secure Cookie，自行配置反代 |
+| 只读预览 | `--public-preview` | 页面结构与健康状态，关闭登录和写操作 |
+
+无参数首次安装默认正式 HTTP；无参数重复安装保留原访问模式、密码、密钥和数据卷，迁移前自动备份。显式参数可切换模式。已有源码运行 `sh scripts/deploy-vps.sh --public-http`；后续运行 `sh scripts/deploy-vps.sh` 更新。非交互安装使用 `CONTROL_ADMIN_EMAIL` 和权限 `0600` 的绝对路径 `CONTROL_ADMIN_PASSWORD_FILE`；管理员密码不写入 `.env` 或命令参数。
+
+登录后可管理资源与账户。执行真实代理和转发前，需按部署文档接入节点 Agent，并配置节点、线路、套餐和转发目标策略。多跳还需持久化线路密钥。开发测试与生产构建在本地完成，服务器现场验收另行安排；本轮开发不改既有线上实例。`us bwg` 仍为历史只读预览，其状态以 [部署记录](docs/deployment/us-bwg-preview.md) 为准。
 
 ## 本地运行
 
@@ -36,7 +44,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 `/live` 只检查进程；`/ready` 在数据库不可用时返回 503。响应带 `X-Request-ID`，错误使用统一 JSON envelope。接口契约位于 `api/openapi/control-plane.yaml`。
 
-前端位于 `apps/web`。运行 `npm --prefix apps/web ci` 与 `npm --prefix apps/web run build` 后，可设置绝对路径 `CONTROL_WEB_DIR=/path/to/apps/web/dist`，由 Go 服务在 `/` 提供静态页面，`/api/*` 仍由原 API 处理。开发时可在 `apps/web` 运行 `npm run dev`，Vite 会把 `/api` 代理到本机 8080。纯 HTTP 预览仅显示真实就绪状态和模块结构，不展示账户数据或开放登录。
+前端位于 `apps/web`。运行 `npm --prefix apps/web ci` 与 `npm --prefix apps/web run build` 后，可设置绝对路径 `CONTROL_WEB_DIR=/path/to/apps/web/dist`，由 Go 服务在 `/` 提供静态页面，`/api/*` 仍由原 API 处理。开发时可在 `apps/web` 运行 `npm run dev`，Vite 会把 `/api` 代理到本机 8080。前端根据 `/api/v1/me` 的响应显示登录、真实功能或只读预览，HTTP 与 HTTPS 均可使用。直接本地运行需启用 `CONTROL_BROWSER_AUTH_ENABLED=true`、设置代理凭据密钥，并在 HTTP 下设置 `CONTROL_BROWSER_COOKIE_SECURE=false`。
 
 ## 数据库
 
@@ -89,27 +97,27 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 用户生命周期开发状态
 
-管理员可通过 `POST /api/v1/admin/users` 创建普通用户，通过 `GET /api/v1/admin/users` 分页查看用户，并通过 `PATCH /api/v1/admin/users/{id}` 停用或恢复普通用户。停用事务撤销现有浏览器会话、记录审计并触发 Agent 配置收敛；恢复不会复活旧会话。创建请求的初始密码仅用于生成 bcrypt 哈希，不进入响应或审计记录。用户通过 `POST /api/v1/me/password` 提交旧密码和新密码，成功后所有浏览器会话在同一数据库事务中撤销，当前 Cookie 也会清除。登录会话创建与密码轮换使用用户行锁避免旧密码并发登录；改密尝试每账户限 5 次/5 分钟。创建与改密接口需要 HTTPS、有效会话与 CSRF 令牌；当前公网纯 HTTP 预览保持关闭。
+管理员可通过 `POST /api/v1/admin/users` 创建普通用户，通过 `GET /api/v1/admin/users` 分页查看用户，并通过 `PATCH /api/v1/admin/users/{id}` 停用或恢复普通用户。停用事务撤销现有浏览器会话、记录审计并触发 Agent 配置收敛；恢复不会复活旧会话。创建请求的初始密码仅用于生成 bcrypt 哈希，不进入响应或审计记录。用户通过 `POST /api/v1/me/password` 提交旧密码和新密码，成功后所有浏览器会话在同一数据库事务中撤销，当前 Cookie 也会清除。登录会话创建与密码轮换使用用户行锁避免旧密码并发登录；改密尝试每账户限 5 次/5 分钟。创建与改密接口在正式 HTTP 或 HTTPS 模式下需要有效会话与 CSRF 令牌；只读预览关闭这些路由。
 
-## 身份认证开发状态
+## 身份认证与首次管理员
 
-代码提供 `POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`GET /api/v1/me` 和 `GET /api/v1/me/permissions`。会话使用 12 小时有效的随机令牌，数据库只存哈希；浏览器 Cookie 带 `Secure`、`HttpOnly`（会话）和 `SameSite=Lax`，写请求使用 CSRF 令牌。登录在单进程内限制为每账户 5 次/5 分钟、全局 60 次/分钟；过期会话每小时分批清理。首次管理员由 `cmd/admin-bootstrap` 创建，邮箱通过 `CONTROL_ADMIN_EMAIL` 提供，密码从非交互标准输入读取且不得少于 12 字节。完整契约见 [OpenAPI](api/openapi/control-plane.yaml)。
+代码提供 `POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`GET /api/v1/me` 和 `GET /api/v1/me/permissions`。会话使用 12 小时有效的随机令牌，数据库只存哈希；Cookie 为 host-only，带 `HttpOnly`（会话）和 `SameSite=Lax`。HTTPS 模式使用 Secure `__Host-` Cookie，HTTP 模式使用 `control_session`/`control_csrf`；写请求使用 CSRF 令牌并校验浏览器来源。登录在单进程内限制为每账户 5 次/5 分钟、全局 60 次/分钟；过期会话每小时分批清理。首次管理员由 `cmd/admin-bootstrap` 创建，邮箱通过 `CONTROL_ADMIN_EMAIL` 提供，密码从非交互标准输入读取且不得少于 12 字节。完整契约见 [OpenAPI](api/openapi/control-plane.yaml)。
 
-浏览器身份路由默认关闭，需显式设置 `CONTROL_BROWSER_AUTH_ENABLED=true`。当前公网纯 HTTP 预览已部署身份数据表，但浏览器身份路由关闭，登录请求返回 404。成功登录和退出会在创建或撤销浏览器会话的同一数据库事务中写入不含凭据的审计事件；正式启用前仍需准备 HTTPS 反代并将主机绑定恢复为回环地址。多实例部署前应把进程内登录限流改为 Redis 共享限流。
+服务配置通过 `CONTROL_BROWSER_AUTH_ENABLED=true` 启用身份路由；正式安装器自动设置。`CONTROL_BROWSER_COOKIE_SECURE` 控制 Cookie 策略，HTTP 为 false，HTTPS 为 true，服务代码缺省为 true。成功登录和退出会在数据库事务中写不含凭据的审计。`cmd/admin-bootstrap --status` 查询管理员状态，`--if-needed` 只初始化第一个管理员，重复安装保留原密码。只读预览下身份路由关闭并返回 404。
 
 ## 当前交付边界
 
 控制面代码已经覆盖节点、资源域、线路、转发、代理连接、订阅、分流、套餐、账期计费、RBAC、审计、Agent mTLS、配置收敛和多跳 TCP/UDP 数据面。迁移 1–26、REST/OpenAPI、React WebUI、Linux amd64 发布归档和 Docker Compose 文件均在仓库中；项目不包含用户付费、订单、充值或支付模块。
 
-真实公网多 Agent 通流、首个正式管理员、可信 HTTPS 反代和正式节点入网属于部署现场验收，不会改变代码交付形态。纯 IP HTTP 入口继续保持只读，浏览器登录、写操作和订阅 Token 只有在 HTTPS 反代与密钥准备完成后才启用。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+正式部署支持 IP HTTP、可选 HTTPS 和只读预览。HTTP 与 HTTPS 模式均开放登录、写操作及订阅 Token，权限与 CSRF 检查一致。现场真实节点通流验收另做，不作为代码开发前置条件。节点 Agent 使用独立的 mTLS 入口，Trojan 代理使用节点 TLS 证书。用户确认的 MVP 为单跳线路、Trojan over TLS 和上传加下载计费。
 
 当前 `us bwg` 的纯 IP 只读预览见[部署说明](docs/deployment/us-bwg-preview.md)；旧 `us dmit` 的历史部署见[历史记录](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 
-## 订阅（已纳入只读预览镜像，公网入口关闭）
+## 订阅
 
 用户通过 `/api/v1/subscriptions` 创建绑定已有代理连接的订阅；支持多订阅、名称模板、启停、删除及 Token 重置。套餐 `max_subscriptions` 包含停用订阅。Token 使用随机 256 位值，数据库只保存 SHA-256 哈希与带订阅/所有者上下文的 AES-GCM 密文；元数据和审计不包含 Token。
 
-`GET /api/v1/subscriptions/{id}/url?format=clash|mihomo|sing-box|surge` 返回 origin-relative `path`，前端用当前配置的 HTTPS 地址组合显示。`preview` 输出相同配置。`GET /sub/{token}/{format}` 每次检查有效套餐、资源授权、启停、45 秒 Agent 在线窗口和已 ACK 的凭据摘要；没有可用连接返回 503，不生成直连兜底。控制面日志会脱敏订阅路径，后续 Nginx 的访问日志也需配置相同脱敏规则。公开订阅按 Token 和全局限流；部署 HTTPS 反代时，应在可信 Nginx 层设置按真实客户端 IP 的限流，控制面不信任外部 Forwarded 头。
+`GET /api/v1/subscriptions/{id}/url?format=clash|mihomo|sing-box|surge` 返回 origin-relative `path`，前端用当前 HTTP 或 HTTPS origin 组合显示和复制。`preview` 输出相同配置。`GET /sub/{token}/{format}` 每次检查有效套餐、资源授权、启停、45 秒 Agent 在线窗口和已 ACK 的凭据摘要；没有可用连接返回 503，不生成直连兜底。控制面日志会脱敏订阅路径，后续 Nginx 的访问日志也需配置相同脱敏规则。公开订阅按 Token 和全局限流；部署 HTTPS 反代时，应在可信 Nginx 层设置按真实客户端 IP 的限流，控制面不信任外部 Forwarded 头。
 
 当前提供 Clash/Mihomo YAML、sing-box 1.12+ JSON 与 Surge 文本配置，均只生成 Trojan TCP、证书校验及代理选择组。Clash 使用本地 HTTP 7890 与 SOCKS5 7891 入口，Mihomo/sing-box 使用 127.0.0.1:7890 混合入口，Surge 使用本地 HTTP 6152 与 SOCKS5 6153 入口。名称模板支持 `{name}`、`{line}`、`{region}`、`{index}`；重复名称自动区分。订阅页提供格式切换、地址复制、Token 重置、启停及预览。生成的 Clash/Mihomo YAML 已用 Mihomo Meta v1.19.31 原生检查验证，sing-box JSON 已用官方 v1.12.0 原生检查验证；Surge 尚无原生客户端验收。管理员可上传带来源、版本和 SHA-256 的 GeoSite/GeoIP 规则集，启用版本在导出时按同一数据库快照展开为可移植域名/CIDR 规则；IPv6 在 Clash/Mihomo/Surge 中使用 `IP-CIDR6`。GeoSite 无活跃版本时拒绝导出。纯 IP 预览保持订阅和浏览器认证入口关闭。
 

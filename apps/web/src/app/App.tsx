@@ -22,6 +22,7 @@ import { RoutingDirectory } from "../features/catalog/RoutingDirectory";
 import { AdminDirectory } from "../features/admin/AdminDirectory";
 import { hasAdminAccess } from "../lib/admin";
 import { useViewer } from "../lib/useViewer";
+import { readCSRFToken, sessionTransportLabel } from "../lib/browserSession";
 
 function readTheme(): "light" | "dark" {
   return window.localStorage.getItem("control-theme") === "dark"
@@ -63,10 +64,7 @@ export function App() {
   }, [selected.label, viewer.kind]);
 
   async function signOut() {
-    const csrf = document.cookie
-      .split("; ")
-      .find((part) => part.startsWith("__Host-control_csrf="))
-      ?.split("=")[1];
+    const csrf = readCSRFToken(document.cookie, window.location.protocol);
     if (!csrf) {
       setSignOutError("退出凭据不可用，请刷新页面后重试。");
       return;
@@ -188,7 +186,7 @@ export function App() {
           )
         ) : viewer.kind === "checking" ? (
           <div className="page-state" role="status">
-            正在检查安全会话…
+            正在检查账户会话…
           </div>
         ) : viewer.kind === "error" ? (
           <div className="page-state" role="alert">
@@ -234,8 +232,8 @@ export function App() {
         <span className="footer-security">
           <LockKeyhole size={14} />
           {viewer.kind === "preview"
-            ? "管理登录将在安全接入后开放"
-            : "安全会话连接"}
+            ? "此部署已关闭账户登录"
+            : sessionTransportLabel(window.location.protocol)}
         </span>
         <a href="/api/v1/health/ready" target="_blank" rel="noreferrer">
           查看健康接口 <ArrowUpRight size={14} />

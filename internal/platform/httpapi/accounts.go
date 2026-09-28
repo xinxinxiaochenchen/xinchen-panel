@@ -117,8 +117,7 @@ func registerAccountRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 			writeAccountError(w, r, err)
 			return
 		}
-		clearIdentityCookie(w, sessionCookieName, true)
-		clearIdentityCookie(w, csrfCookieName, false)
+		browserCookies(r).clear(w)
 		w.WriteHeader(http.StatusNoContent)
 	})
 }

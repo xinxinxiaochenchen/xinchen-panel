@@ -17,6 +17,7 @@ type Config struct {
 	LogLevel              slog.Level
 	DatabaseURL           string
 	BrowserAuthEnabled    bool
+	BrowserCookieSecure   bool
 	ProxyCredentialKey    []byte
 	RelaySecretKey        []byte
 	WebDir                string
@@ -29,7 +30,7 @@ type Config struct {
 }
 
 func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
-	cfg := Config{HTTPAddr: "127.0.0.1:8080", LogLevel: slog.LevelInfo}
+	cfg := Config{HTTPAddr: "127.0.0.1:8080", LogLevel: slog.LevelInfo, BrowserCookieSecure: true}
 	if value, ok := lookup("CONTROL_HTTP_ADDR"); ok {
 		cfg.HTTPAddr = value
 	}
@@ -62,6 +63,13 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 			return Config{}, fmt.Errorf("CONTROL_BROWSER_AUTH_ENABLED: expected true or false")
 		}
 		cfg.BrowserAuthEnabled = enabled
+	}
+	if value, ok := lookup("CONTROL_BROWSER_COOKIE_SECURE"); ok {
+		secure, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("CONTROL_BROWSER_COOKIE_SECURE: expected true or false")
+		}
+		cfg.BrowserCookieSecure = secure
 	}
 	if cfg.BrowserAuthEnabled {
 		path, ok := lookup("CONTROL_PROXY_CREDENTIAL_KEY_FILE")

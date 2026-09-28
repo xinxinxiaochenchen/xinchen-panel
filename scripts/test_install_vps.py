@@ -60,7 +60,7 @@ esac
         self.assertTrue(any('clone --branch main --single-branch' in command for command in commands), commands)
         self.assertEqual(commands[-1], 'deploy --public-preview')
 
-    def test_existing_checkout_only_fast_forwards_and_keeps_loopback_default(self):
+    def test_existing_checkout_only_fast_forwards_and_passes_no_mode_for_update(self):
         (self.install_dir / '.git').mkdir(parents=True)
         (self.install_dir / 'scripts').mkdir()
         (self.install_dir / 'scripts/deploy-vps.sh').write_text('#!/bin/sh\nprintf "deploy %s\\n" "$*" >> "$COMMAND_LOG"\n')
@@ -69,6 +69,14 @@ esac
         commands = self.commands()
         self.assertTrue(any('pull --ff-only origin main' in command for command in commands), commands)
         self.assertEqual(commands[-1], 'deploy ')
+
+    def test_formal_http_and_https_flags_are_forwarded(self):
+        result = self.run_script('--public-http')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.commands()[-1], 'deploy --public-http')
+        result = self.run_script('--https')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.commands()[-1], 'deploy --https')
 
     def test_existing_directory_without_checkout_is_not_overwritten(self):
         self.install_dir.mkdir()

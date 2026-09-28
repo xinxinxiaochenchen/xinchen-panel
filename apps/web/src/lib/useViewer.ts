@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { isSecureLocation, loadViewer, type Viewer } from './dashboard'
+import { loadViewer, type Viewer } from './dashboard'
 
 export type ViewerState = Viewer | { kind: 'checking' } | { kind: 'error'; message: string }
 
 export function useViewer() {
   const [generation, setGeneration] = useState(0)
-  const [viewer, setViewer] = useState<ViewerState>(() =>
-    isSecureLocation(window.location.protocol, window.location.hostname) ? { kind: 'checking' } : { kind: 'preview' },
-  )
+  const [viewer, setViewer] = useState<ViewerState>({ kind: 'checking' })
 
   useEffect(() => {
     let active = true
-    if (!isSecureLocation(window.location.protocol, window.location.hostname)) return
     void loadViewer(window.location.protocol, window.location.hostname)
       .then((result) => { if (active) setViewer(result) })
       .catch(() => { if (active) setViewer({ kind: 'error', message: '账户服务暂不可用，请稍后重试。' }) })

@@ -90,11 +90,9 @@ func main() {
 		}
 		proxyAccessStore = proxyaccess.NewPostgresRepository(pool, credentialCipher)
 		subscriptionStore = subscription.NewPostgresRepository(pool, credentialCipher)
-		if cfg.AgentTLSAddr != "" {
-			agentTokenStore = agentidentity.NewEnrollmentService(pool, nil)
-		}
+		agentTokenStore = agentidentity.NewEnrollmentService(pool, nil)
 	}
-	handler := httpapi.NewHandlerWithStores(logger, db.HealthCheck{Database: pool}, sessions, httpapi.RouteStores{
+	handler := httpapi.NewHandlerWithStoresOptions(logger, db.HealthCheck{Database: pool}, sessions, httpapi.RouteStores{
 		Catalog: catalogStore, Entitlements: entitlementStore, Accounts: accountStore, Lines: lineStore,
 		Forward: forwardStore, Policies: forwardPolicyStore, AgentTokens: agentTokenStore, ProxyAccess: proxyAccessStore, Subscriptions: subscriptionStore,
 		Usage:       usageStore,
@@ -102,7 +100,7 @@ func main() {
 		GeoRuleSets: geoRuleSetStore,
 		Roles:       roleStore,
 		Audit:       auditStore,
-	})
+	}, httpapi.HandlerOptions{BrowserCookieSecure: cfg.BrowserCookieSecure})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {
 			logger.Error("web bundle unavailable", "error", err)

@@ -80,6 +80,16 @@ func NewHandlerWithProxyAccess(logger *slog.Logger, checker ReadyChecker, sessio
 }
 
 func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, stores RouteStores) http.Handler {
+	return NewHandlerWithStoresOptions(logger, checker, sessions, stores, HandlerOptions{BrowserCookieSecure: true})
+}
+
+// HandlerOptions controls browser session transport. BrowserCookieSecure must
+// be true for HTTPS, and can be explicitly disabled for HTTP administration.
+type HandlerOptions struct {
+	BrowserCookieSecure bool
+}
+
+func NewHandlerWithStoresOptions(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, stores RouteStores, options HandlerOptions) http.Handler {
 	catalog, entitlements, accounts, lines := stores.Catalog, stores.Entitlements, stores.Accounts, stores.Lines
 	forward, policies, agentTokens := stores.Forward, stores.Policies, stores.AgentTokens
 	mux := http.NewServeMux()
@@ -156,7 +166,12 @@ func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions Id
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
 	})
-	return withMiddleware(logger, mux)
+	originProtection := http.NewCrossOriginProtection()
+	originProtection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "cross-origin request denied")
+	}))
+	handler := withBrowserCookiePolicy(newBrowserCookiePolicy(options.BrowserCookieSecure), originProtection.Handler(mux))
+	return withMiddleware(logger, handler)
 }
 
 type statusWriter struct {

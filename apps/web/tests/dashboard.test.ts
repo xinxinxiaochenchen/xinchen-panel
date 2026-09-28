@@ -1,13 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { billingCycleLabel, dailyRange, formatBytes, formatMultiplier, isSecureLocation, loadResource, loadViewer, planScopeLabels } from '../src/lib/dashboard.ts'
+import { billingCycleLabel, dailyRange, formatBytes, formatMultiplier, loadResource, loadViewer, planScopeLabels } from '../src/lib/dashboard.ts'
 
-test('public HTTP never requests a session', async () => {
-  const viewer = await loadViewer('http:', '203.0.113.7', () => { throw new Error('network was used') })
-  assert.deepEqual(viewer, { kind: 'preview' })
-  assert.equal(isSecureLocation('http:', 'localhost'), true)
-  assert.equal(isSecureLocation('https:', 'example.test'), true)
-  assert.equal(isSecureLocation('http:', 'example.test'), false)
+test('public IP HTTP uses the server session response instead of forcing preview', async () => {
+  let requests = 0
+  const request = async (path: string | URL | Request, options?: RequestInit) => {
+    requests++
+    assert.equal(path, '/api/v1/me')
+    assert.equal(options?.credentials, 'same-origin')
+    assert.equal(options?.cache, 'no-store')
+    return new Response(null, { status: 401 })
+  }
+  assert.deepEqual(await loadViewer('http:', '203.0.113.7', request), { kind: 'guest' })
+  assert.equal(requests, 1)
+  assert.deepEqual(await loadViewer('http:', '203.0.113.7', async () => new Response(null, { status: 404 })), { kind: 'preview' })
+  const viewer = await loadViewer('http:', '203.0.113.7', async () => Response.json({ id: 'http-user', email: 'a@example.test' }))
+  assert.equal(viewer.kind, 'signed-in')
 })
 
 test('safe origin distinguishes disabled auth, guest and signed-in user', async () => {

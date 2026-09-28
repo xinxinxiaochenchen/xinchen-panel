@@ -3,14 +3,19 @@ set -eu
 
 usage() {
   cat <<'EOF'
-Usage: sh install-vps.sh [--public-preview]
+Usage: sh install-vps.sh [--public-http | --https | --public-preview]
 
 Download or update xinchen-panel and deploy its WebUI with Docker Compose.
 Requires Git, Docker Engine, and the Docker Compose plugin. Go and Node.js
 are built inside Docker and do not need to be installed on the host.
 
-Default: bind HTTP to 127.0.0.1:18080 for your HTTPS reverse proxy.
---public-preview: expose a read-only HTTP preview on 0.0.0.0:18080.
+First install: functional IP HTTP panel on 0.0.0.0:18080.
+Updates: preserve the existing access mode unless a flag is specified.
+--public-http: enable HTTP login and management.
+--https: use Secure cookies and loopback HTTP for your HTTPS reverse proxy.
+--public-preview: expose a read-only HTTP preview.
+First formal install prompts for administrator credentials; for unattended
+installation set CONTROL_ADMIN_EMAIL and CONTROL_ADMIN_PASSWORD_FILE.
 
 Installation directory: /opt/xinchen-panel
 Override with XINCHEN_PANEL_DIR=/absolute/path (must be writable).
@@ -19,7 +24,7 @@ EOF
 }
 
 case "${1:-}" in
-  ''|--public-preview) ;;
+  ''|--public-http|--https|--public-preview) ;;
   --help|-h) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac

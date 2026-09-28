@@ -1,5 +1,10 @@
 # 架构设计发现
 
+- 2026-09-28：业务 API 与登录后 WebUI 已实现；原 HTTP 限制来自前端 `isSecureLocation`、固定 `__Host-` Secure Cookie 及只安装预览的脚本。本轮已统一 Cookie 策略并完成正式安装和更新。
+- 2026-09-28：公网 HTTP 缺少 Clipboard API，已补 Agent 令牌及订阅复制回退。原安装器拒绝已启用认证的实例，现已支持正式实例更新并保留原密钥。
+- 2026-09-28：部署失败重试必须再次修复密钥 UID，不能仅在新建文件时 chown；切换预览也必须保留正式密钥历史，已有数据库丢失密钥时拒绝重建。两项均有先失败后通过的回归。
+- 2026-09-28：Cookie 策略由服务配置决定，不能从 HTTPS 反代协议推断。登录和 `/api/v1/me` 成功时清理另一模式 Cookie，避免旧 CSRF 在模式切换后抢先被前端读取；真实 TLS cookie jar 覆盖登录和会话恢复两条路径。
+
 - 2026-09-27：现有分流数据库与 UI 可保存 GeoSite，但订阅导出一律拒绝；Clash/Mihomo/Surge 原生支持 GeoIP，sing-box 1.12 需要 CIDR 展开。受控规则集可按版本存于 PostgreSQL，以同一只读事务加载并将 GeoSite/GeoIP 展开成客户端原生域名/CIDR 条目；缺失活跃集时继续拒绝 GeoSite 与 sing-box GeoIP。
 - 2026-09-27：现有 RBAC 已有可扩展的 `roles`、`permissions`、`user_roles` 和 `role_permissions` 表，系统角色为 `admin`/`user`。自定义角色无需新表，但必须禁止修改系统角色、限制权限代码来自 `permissions`，并在用户角色替换时保留 `user` 基础角色；会话查询每次聚合权限，因此变更可即时生效。
 

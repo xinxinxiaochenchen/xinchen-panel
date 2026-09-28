@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Network Control Plane API
   version: 0.1.0
-  description: Health, browser identity, user lifecycle, resource directory, entitlement, multi-hop TCP lines, proxy access, direct forwarding and Agent enrollment contracts for the independently designed network control plane. Browser identity and Agent enrollment require HTTPS.
+  description: Health, browser identity, user lifecycle, resource directory, entitlement, multi-hop TCP lines, proxy access, direct forwarding and Agent enrollment contracts for the independently designed network control plane. Browser identity supports configured HTTP or HTTPS deployment. Agent enrollment uses the dedicated TLS listener.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -10,8 +10,8 @@ paths:
     post:
       operationId: createAgentEnrollmentToken
       summary: Issue a ten-minute one-time enrollment token for a node
-      description: Requires an administrator browser session with agents.write, CSRF and current password reauthentication. Available only when Agent TLS is configured; the public HTTP preview keeps browser authentication disabled. Issuing another token for the same node revokes its previous unused token. The action is audited without storing the token; the token appears only in this response.
-      security: [{browserSession: []}]
+      description: Requires an administrator browser session with agents.write, CSRF and current password reauthentication. Available whenever browser authentication is enabled. Actual Agent enrollment and streams require the separately configured Agent TLS listener; read-only preview keeps browser authentication disabled. Issuing another token for the same node revokes its previous unused token. The action is audited without storing the token; the token appears only in this response.
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -50,7 +50,7 @@ paths:
       operationId: revokeAgent
       summary: Revoke the current Agent identity for a node
       description: Invalidates the current certificate, renewal and relay grants, clears unused enrollment tokens, and queues configuration convergence. Re-enrollment can create a fresh identity later.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -232,7 +232,7 @@ paths:
     post:
       operationId: login
       summary: Create a browser session
-      description: Requires HTTPS. Sets a Secure HttpOnly session cookie and a readable CSRF cookie. A successful login writes a credential-free audit record in the same transaction as the browser session.
+      description: Sets a host-only HttpOnly session cookie and a readable CSRF cookie. HTTPS mode uses Secure __Host-control_session/__Host-control_csrf; explicit HTTP mode uses control_session/control_csrf. Both modes enforce SameSite=Lax and reject cross-origin browser mutations. A successful login writes a credential-free audit record in the same transaction as the browser session.
       requestBody:
         required: true
         content:
@@ -266,9 +266,10 @@ paths:
     post:
       operationId: logout
       summary: Revoke the current browser session
-      description: Requires HTTPS and CSRF. Session deletion and the credential-free logout audit record are committed atomically.
+      description: Requires a valid configured browser session and CSRF. Session deletion and the credential-free logout audit record are committed atomically.
       security:
         - browserSession: []
+        - browserSessionHTTP: []
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -290,6 +291,7 @@ paths:
       summary: Get the current account
       security:
         - browserSession: []
+        - browserSessionHTTP: []
       responses:
         '200':
           description: Current account and effective permissions
@@ -305,6 +307,7 @@ paths:
       summary: Get effective role and permission codes
       security:
         - browserSession: []
+        - browserSessionHTTP: []
       responses:
         '200':
           description: Effective roles and permissions
@@ -318,7 +321,7 @@ paths:
     post:
       operationId: changeMyPassword
       summary: Change the authenticated user's password and revoke all sessions
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -341,7 +344,7 @@ paths:
     get:
       operationId: listUsers
       summary: List users (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -357,8 +360,8 @@ paths:
     post:
       operationId: createUser
       summary: Create an active normal user (administrator)
-      description: Set an initial password over HTTPS and share it with the user through an approved channel. The response and audit log omit the password.
-      security: [{browserSession: []}]
+      description: Set an initial password using the configured HTTP or HTTPS management entry point and share it with the user through an approved channel. The response and audit log omit the password.
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -385,7 +388,7 @@ paths:
       operationId: setUserStatus
       summary: Disable or restore a normal user (administrator)
       description: Disabling revokes browser sessions and schedules Agent configuration convergence. Administrator accounts cannot be changed here.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -421,7 +424,7 @@ paths:
       operationId: replaceUserCustomRoles
       summary: Replace a normal user's custom roles while preserving the system user role
       description: Requires the system administrator role, roles.write and CSRF. Administrator accounts and the acting user's own account cannot be changed. Existing sessions observe the new permission union on their next request.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -454,7 +457,7 @@ paths:
       operationId: listRolesAndPermissions
       summary: List system and custom roles and the permission catalog
       description: Requires roles.read.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Role directory
@@ -467,7 +470,7 @@ paths:
       operationId: createCustomRole
       summary: Create a custom role
       description: Requires the system administrator role, roles.write and CSRF. A custom role cannot contain roles.write.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -491,7 +494,7 @@ paths:
       operationId: updateCustomRole
       summary: Replace a custom role's permission set or description
       description: Requires the system administrator role, roles.write and CSRF. System roles cannot be changed and custom roles cannot contain roles.write.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: code, required: true, schema: {type: string}}
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -515,7 +518,7 @@ paths:
       operationId: deleteCustomRole
       summary: Delete an unassigned custom role
       description: Requires the system administrator role, roles.write and CSRF. System roles and assigned custom roles cannot be deleted.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: code, required: true, schema: {type: string}}
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -530,7 +533,7 @@ paths:
     get:
       operationId: listPlans
       summary: List plans (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -546,7 +549,7 @@ paths:
     post:
       operationId: createPlan
       summary: Create an active plan with explicit grants (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -574,7 +577,7 @@ paths:
       operationId: setPlanStatus
       summary: Archive or restore a plan (administrator)
       description: Changes availability for new memberships while preserving immutable snapshots already assigned to users.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -603,7 +606,7 @@ paths:
     get:
       operationId: listMemberships
       summary: List membership records and frozen grants (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -620,7 +623,7 @@ paths:
       operationId: createMembership
       summary: Assign an immediately active membership (administrator)
       description: Copies current plan grants and limits to an immutable membership snapshot.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -648,7 +651,7 @@ paths:
       operationId: cancelMembership
       summary: Cancel an active or scheduled membership (administrator)
       description: Stops new quota admissions, queues Agent configuration convergence, and preserves billing history. Repeating cancellation is idempotent.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -678,7 +681,7 @@ paths:
     get:
       operationId: getMyMembership
       summary: Get the authenticated user's current membership
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Current membership
@@ -692,7 +695,7 @@ paths:
     get:
       operationId: getMyEntitlements
       summary: Get the authenticated user's frozen current plan entitlements
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Current membership snapshot
@@ -707,7 +710,7 @@ paths:
       operationId: getMyCurrentUsage
       summary: Get the authenticated user's current billing period and quota
       description: Requires dashboard.read. Remaining bytes exclude charged usage; available bytes additionally exclude active lease reservations that may contain unreported traffic. Usage percentage is capped at 100.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Current frozen billing period overview
@@ -723,7 +726,7 @@ paths:
       operationId: listMyDailyUsage
       summary: List the authenticated user's UTC daily usage
       description: Requires usage.read. Both date parameters are inclusive. Maximum span is 90 UTC days. Missing days have no row.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: query
           name: from
@@ -754,7 +757,7 @@ paths:
       operationId: listAdminDailyUsage
       summary: List daily usage grouped by date, user, ingress node or line
       description: Requires usage.admin. Dates use UTC and are inclusive. Maximum span is 90 days. Optional IDs narrow the event set before grouping. Empty dimension_id represents usage without a line. Results use a stable date and dimension cursor.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: query
           name: from
@@ -801,7 +804,7 @@ paths:
       operationId: listResourceGroups
       summary: List all resource groups (administrator)
       description: Requires nodes.write or forward_policies.write. The latter can list group identifiers for node destination policies but cannot create groups.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -817,7 +820,7 @@ paths:
     post:
       operationId: createResourceGroup
       summary: Create a resource group (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -844,7 +847,7 @@ paths:
       operationId: setResourceGroupEnabled
       summary: Enable or disable a resource group
       description: Requires nodes.write and CSRF. A state change writes an audit entry and queues configuration convergence for all enrolled Agents. Repeating the current state is a no-op.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -877,7 +880,7 @@ paths:
       operationId: listAllNodes
       summary: List all nodes (administrator)
       description: Requires nodes.write or agents.write. The latter grants node visibility for Agent enrollment but not node creation.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -892,7 +895,7 @@ paths:
     post:
       operationId: createNode
       summary: Create a node (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -920,7 +923,7 @@ paths:
       operationId: setAdminNodeEnabled
       summary: Enable or disable a node
       description: Requires nodes.write and CSRF. A state change writes an audit entry and queues node configuration convergence. Repeating the current state is a no-op.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -953,7 +956,7 @@ paths:
       operationId: updateAdminNodeConfig
       summary: Replace a node's connection metadata
       description: Requires nodes.write and CSRF. Replaces group, name, region, host, public IP, proxy and relay ports, capabilities, bandwidth, multiplier and tags. Enablement stays unchanged. A change writes audit and queues global configuration convergence; endpoint conflicts are rejected. Changing host or relay details invalidates relay certificate grants.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -982,7 +985,7 @@ paths:
       operationId: getAdminNodeMetrics
       summary: Read the latest Agent telemetry for a node
       description: Requires nodes.write or agents.write. Heartbeat metrics are fresh only when both the Agent and telemetry were observed within 45 seconds and the telemetry is from the latest connection. Latency is a separate control-plane WebSocket Ping/Pong round trip, returned only for a recent online Agent. RX and TX are cumulative network interface counters, separate from billed user traffic.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -1001,7 +1004,7 @@ paths:
     get:
       operationId: listAllowedNodes
       summary: List nodes allowed by the active membership snapshot
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -1017,7 +1020,7 @@ paths:
     get:
       operationId: getAllowedNode
       summary: Get an authorized node
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - in: path
           name: id
@@ -1036,7 +1039,7 @@ paths:
     get:
       operationId: listAllLines
       summary: List single-hop and multi-hop lines (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -1052,7 +1055,7 @@ paths:
     post:
       operationId: createSharedLine
       summary: Create a shared single-hop or multi-hop line (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1078,7 +1081,7 @@ paths:
     get:
       operationId: getLineAsAdmin
       summary: Get a line (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Line
@@ -1091,7 +1094,7 @@ paths:
     patch:
       operationId: updateSharedLine
       summary: Update shared line metadata (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1117,7 +1120,7 @@ paths:
     get:
       operationId: getAdminLineHealth
       summary: Get current line health and Agent convergence (administrator)
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Line health
@@ -1131,7 +1134,7 @@ paths:
     get:
       operationId: listAllowedLines
       summary: List shared lines granted by the current membership and owned lines
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -1147,7 +1150,7 @@ paths:
     post:
       operationId: createOwnLine
       summary: Create an authorized owned single-hop or multi-hop line
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1173,7 +1176,7 @@ paths:
     get:
       operationId: getAllowedLine
       summary: Get an allowed shared or owned line
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Line
@@ -1186,7 +1189,7 @@ paths:
     patch:
       operationId: updateOwnLine
       summary: Update metadata of an owned line
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1209,7 +1212,7 @@ paths:
     delete:
       operationId: deleteOwnLine
       summary: Delete an unreferenced owned line
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       responses:
@@ -1224,7 +1227,7 @@ paths:
     get:
       operationId: getAllowedLineHealth
       summary: Get current health of an allowed line
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Line health
@@ -1238,7 +1241,7 @@ paths:
     get:
       operationId: listOwnProxyAccesses
       summary: List the current user's proxy accesses without credentials
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -1254,7 +1257,7 @@ paths:
       operationId: createProxyAccess
       summary: Create a Trojan proxy access with authorized candidate lines
       description: Requires an active membership and enabled, authorized proxy lines. line_ids selects one or more candidate lines subject to the plan max_proxy_lines limit; line_options carries priority and weight. The generated credential is shown only in this response and the owner's dedicated credential endpoint. The current pure IP preview does not expose this route.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody:
         required: true
@@ -1278,7 +1281,7 @@ paths:
     get:
       operationId: getOwnProxyAccess
       summary: Read one's proxy access without the credential
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Owned proxy access.
@@ -1290,7 +1293,7 @@ paths:
     patch:
       operationId: updateOwnProxyAccess
       summary: Rename or enable/disable one's proxy access
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody:
         required: true
@@ -1311,7 +1314,7 @@ paths:
     delete:
       operationId: deleteOwnProxyAccess
       summary: Delete one's proxy access
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       responses:
         '204': {description: Proxy access deleted.}
@@ -1322,7 +1325,7 @@ paths:
     get:
       operationId: revealOwnProxyCredential
       summary: Read the current proxy credential for an owned, authorized access
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/ProxyAccessID'}]
       responses:
         '200':
@@ -1336,7 +1339,7 @@ paths:
     post:
       operationId: rotateOwnProxyCredential
       summary: Replace the proxy credential and revoke the old credential after Agent convergence
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/ProxyAccessID'}
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -1353,7 +1356,7 @@ paths:
     get:
       operationId: listOwnForwardRules
       summary: List the current user's forwarding rules
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -1370,7 +1373,7 @@ paths:
       operationId: createForwardRule
       summary: Reserve a TCP, UDP or BOTH forwarding port
       description: The target kind, physical protocol and destination port must match enabled administrator policies; absent policies deny by default. An optional line_id binds a public-host target to an authorized enabled multi-hop line whose first hop is the ingress node. The rule remains pending until the ingress Agent applies it. A disabled rule still reserves its port.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1396,7 +1399,7 @@ paths:
     get:
       operationId: getOwnForwardRule
       summary: Get an owned forwarding rule
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Forward rule
@@ -1410,7 +1413,7 @@ paths:
       operationId: updateOwnForwardRule
       summary: Rename or enable/disable an owned forwarding rule
       description: Endpoint, port, protocol and target are immutable; delete and recreate the rule to change them.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1433,7 +1436,7 @@ paths:
     delete:
       operationId: deleteOwnForwardRule
       summary: Delete an owned rule and release its port reservations
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       responses:
@@ -1445,7 +1448,7 @@ paths:
     get:
       operationId: listForwardTargetPolicies
       summary: List administrator-approved forwarding destinations
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/PageLimit'}
         - {$ref: '#/components/parameters/PageCursor'}
@@ -1461,7 +1464,7 @@ paths:
     post:
       operationId: createForwardTargetPolicy
       summary: Approve a destination kind, protocol and port range
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1487,7 +1490,7 @@ paths:
     get:
       operationId: getForwardTargetPolicy
       summary: Get a forwarding destination policy
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Destination policy
@@ -1500,7 +1503,7 @@ paths:
     patch:
       operationId: updateForwardTargetPolicy
       summary: Enable or disable a forwarding destination policy
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       requestBody:
@@ -1522,7 +1525,7 @@ paths:
     delete:
       operationId: deleteForwardTargetPolicy
       summary: Revoke a forwarding destination policy
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {$ref: '#/components/parameters/CSRFToken'}
       responses:
@@ -1534,7 +1537,7 @@ paths:
     get:
       operationId: listOwnSubscriptions
       summary: List subscriptions owned by the authenticated user
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
         - {in: query, name: cursor, schema: {type: string}}
@@ -1555,7 +1558,7 @@ paths:
       operationId: createSubscription
       summary: Create a subscription over existing owned proxy accesses
       description: Requires subscriptions.write, CSRF and active frozen membership grants. Disabled subscriptions count toward max_subscriptions. The response is no-store.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody:
         required: true
@@ -1583,7 +1586,7 @@ paths:
     parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
     get:
       operationId: getOwnSubscription
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200':
           description: Owner-scoped subscription metadata.
@@ -1592,7 +1595,7 @@ paths:
     patch:
       operationId: updateOwnSubscription
       description: Re-enabling or changing targets requires current membership grants. Metadata edits and disabling remain available after expiry. Targets can disappear when their proxy access is deleted.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody:
         required: true
@@ -1609,7 +1612,7 @@ paths:
         '422': {description: Validation error.}
     delete:
       operationId: deleteOwnSubscription
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       responses:
         '204': {description: Subscription and its token revoked.}
@@ -1619,7 +1622,7 @@ paths:
     post:
       operationId: rotateSubscriptionToken
       description: Atomically replaces token hash and encrypted token. Old token requests after commit return 404. Response is no-store.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
         - {$ref: '#/components/parameters/CSRFToken'}
@@ -1635,7 +1638,7 @@ paths:
     get:
       operationId: revealSubscriptionURL
       description: Owner-only no-store token reveal. Returns an origin-relative path, never trusts Host or Forwarded headers to build an absolute URL.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
         - {in: query, name: format, required: true, schema: {type: string, enum: [clash, mihomo, sing-box, surge]}}
@@ -1648,7 +1651,7 @@ paths:
     get:
       operationId: previewSubscription
       description: Requires subscriptions.read. Exports only currently authorized targets with online Agents and matching applied credentials. A bound routing profile must be enabled and every line action must have an available exported target. GeoSite and managed GeoIP rule-sets are expanded to portable domain and CIDR rules from the active version in the same database snapshot. Clash, Mihomo and Surge retain native GeoIP when no managed version is active; sing-box requires a managed GeoIP version. No-store response.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
         - {in: query, name: format, required: true, schema: {type: string, enum: [clash, mihomo, sing-box, surge]}}
@@ -1677,12 +1680,12 @@ paths:
   /api/v1/routing-profiles:
     get:
       operationId: listRoutingProfiles
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses:
         '200': {description: Own routing profiles, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingProfilePage'}}}}
     post:
       operationId: createRoutingProfile
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/NewRoutingProfile'}}}}
       responses:
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingProfile'}}}}
@@ -1691,26 +1694,26 @@ paths:
     parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
     get:
       operationId: getRoutingProfile
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses: {'200': {description: Profile, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingProfile'}}}}}
     patch:
       operationId: updateRoutingProfile
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingProfilePatch'}}}}
       responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingProfile'}}}}}
     delete:
       operationId: deleteRoutingProfile
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses: {'204': {description: Deleted}}
   /api/v1/routing-profiles/{id}/rules:
     parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
     get:
       operationId: listRoutingRules
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses: {'200': {description: Rules, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRulePage'}}}}}
     post:
       operationId: createRoutingRule
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/NewRoutingRule'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRule'}}}}}
   /api/v1/routing-profiles/{id}/rules/{rule_id}:
@@ -1719,24 +1722,24 @@ paths:
       - {in: path, name: rule_id, required: true, schema: {type: string, format: uuid}}
     patch:
       operationId: updateRoutingRule
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRulePatch'}}}}
       responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRule'}}}}}
     delete:
       operationId: deleteRoutingRule
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses: {'204': {description: Deleted}}
   /api/v1/routing-profiles/{id}/validate:
     post:
       operationId: validateRoutingProfile
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       responses: {'200': {description: Validation result, content: {application/json: {schema: {type: object, required: [valid], properties: {valid: {type: boolean}}}}}}}
   /api/v1/admin/audit:
     get:
       operationId: listAuditLogs
       summary: List recent administrator audit records
       description: Requires audit.read. Results are ordered by creation time and ID descending. The response contains metadata only; before_json and after_json snapshots are never returned.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
         - {in: query, name: cursor, schema: {type: string, description: Opaque pagination cursor}}
@@ -1750,7 +1753,7 @@ paths:
       operationId: listManagedRuleSets
       summary: List versioned GeoSite and GeoIP rule-set metadata
       description: Requires routing_rulesets.read. Entries are not included in list responses.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters:
         - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
         - {in: query, name: cursor, schema: {type: string, description: Opaque pagination cursor}}
@@ -1761,7 +1764,7 @@ paths:
       operationId: uploadManagedRuleSet
       summary: Upload an immutable rule-set version
       description: Requires routing_rulesets.write and CSRF. Request is limited to 8 MiB. Normalized entries are sorted, deduplicated and SHA-256 checked. An enabled upload atomically deactivates the prior version for the same kind and code.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/NewManagedRuleSet'}}}}
       responses:
@@ -1774,7 +1777,7 @@ paths:
       operationId: setManagedRuleSetEnabled
       summary: Activate or deactivate a version
       description: Requires routing_rulesets.write and CSRF. Activation atomically deactivates the previous active version for this kind and code.
-      security: [{browserSession: []}]
+      security: [{browserSession: []}, {browserSessionHTTP: []}]
       parameters: [{$ref: '#/components/parameters/CSRFToken'}]
       requestBody:
         required: true
@@ -1829,6 +1832,12 @@ components:
       type: apiKey
       in: cookie
       name: __Host-control_session
+      description: HTTPS browser mode (CONTROL_BROWSER_COOKIE_SECURE=true).
+    browserSessionHTTP:
+      type: apiKey
+      in: cookie
+      name: control_session
+      description: Explicit HTTP browser mode (CONTROL_BROWSER_COOKIE_SECURE=false); the same RBAC and CSRF checks apply.
   headers:
     RequestID:
       description: Server generated request identifier for support and logs.

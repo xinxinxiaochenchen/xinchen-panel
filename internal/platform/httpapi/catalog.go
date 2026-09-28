@@ -271,7 +271,7 @@ func registerCatalogRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 
 func catalogPrincipal(w http.ResponseWriter, r *http.Request, sessions IdentitySessions, permission string, csrf bool) (identity.PublicUser, bool) {
 	w.Header().Set("Cache-Control", "no-store")
-	cookie, err := r.Cookie(sessionCookieName)
+	cookie, err := identitySessionCookie(r)
 	if err != nil {
 		WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication required")
 		return identity.PublicUser{}, false

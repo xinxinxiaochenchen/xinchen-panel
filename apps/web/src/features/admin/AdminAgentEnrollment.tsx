@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { KeyRound } from 'lucide-react'
+import { copyText } from '../../lib/clipboard'
 import { csrfToken } from '../catalog/CreateLine'
 import { issueAgentEnrollmentToken, type AgentEnrollmentToken } from './agentEnrollment'
 
@@ -38,8 +39,10 @@ export function AdminAgentEnrollment({ nodeID, nodeName }: { nodeID: string; nod
   async function copy() {
     if (!issued) return
     try {
-      await navigator.clipboard.writeText(issued.token)
-      setCopied(true)
+      const result = await copyText(issued.token)
+      setCopied(result)
+      if (!result) setError('复制失败，请手动复制令牌。')
+      else setError('')
     } catch {
       setError('复制失败，请手动复制令牌。')
     }

@@ -58,8 +58,7 @@ func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
 			WriteError(w, r, http.StatusInternalServerError, "INTERNAL", "internal server error")
 			return
 		}
-		setIdentityCookie(w, sessionCookieName, result.Token, true, result.ExpiresAt)
-		setIdentityCookie(w, csrfCookieName, result.CSRFToken, false, result.ExpiresAt)
+		browserCookies(r).set(w, result.Token, result.CSRFToken, result.ExpiresAt)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(struct {
 			User      identity.PublicUser `json:"user"`
@@ -73,7 +72,7 @@ func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		cookie, err := r.Cookie(sessionCookieName)
+		cookie, err := identitySessionCookie(r)
 		if err != nil {
 			WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication required")
 			return
@@ -82,8 +81,7 @@ func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
 			writeIdentityError(w, r, err)
 			return
 		}
-		clearIdentityCookie(w, sessionCookieName, true)
-		clearIdentityCookie(w, csrfCookieName, false)
+		browserCookies(r).clear(w)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/api/v1/me", func(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +94,9 @@ func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
 		if !ok {
 			return
 		}
+		// An existing session can be resumed through HTTPS after an HTTP login.
+		// Remove the previous mode's CSRF cookie before the WebUI reads it.
+		browserCookies(r).clearOtherMode(w)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(user)
 	})
@@ -118,7 +119,7 @@ func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
 }
 
 func authenticatedUser(w http.ResponseWriter, r *http.Request, sessions IdentitySessions) (identity.PublicUser, bool) {
-	cookie, err := r.Cookie(sessionCookieName)
+	cookie, err := identitySessionCookie(r)
 	if err != nil {
 		WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication required")
 		return identity.PublicUser{}, false
@@ -140,14 +141,4 @@ func writeIdentityError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		WriteError(w, r, http.StatusInternalServerError, "INTERNAL", "internal server error")
 	}
-}
-
-func setIdentityCookie(w http.ResponseWriter, name, value string, httpOnly bool, expires time.Time) {
-	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", Secure: true,
-		HttpOnly: httpOnly, SameSite: http.SameSiteLaxMode, Expires: expires})
-}
-
-func clearIdentityCookie(w http.ResponseWriter, name string, httpOnly bool) {
-	http.SetCookie(w, &http.Cookie{Name: name, Path: "/", Secure: true,
-		HttpOnly: httpOnly, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }

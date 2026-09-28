@@ -4,9 +4,10 @@ import { loadCatalogPage, mutateCatalog, type LineRecord, type NodeRecord } from
 import type { User } from '../../lib/dashboard'
 import { draftLinePayload } from './lineDraft'
 import { LineHopFields } from './LineHopFields'
+import { readCSRFToken } from '../../lib/browserSession'
 
 function csrfToken(): string {
-  return document.cookie.split('; ').find((value) => value.startsWith('__Host-control_csrf='))?.split('=')[1] ?? ''
+  return readCSRFToken(document.cookie, window.location.protocol)
 }
 
 export function CreateLine({ user, onSaved }: { user: User; onSaved: () => void }) {
