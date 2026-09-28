@@ -17,7 +17,7 @@
 - [x] 5. 更新 api/openapi/control-plane.yaml、README.md、docs/deployment/vps-webui.md 和历史文档标记。
 - [x] 6. 执行 Go 全量测试/vet、WebUI 测试/构建、部署脚本测试和语法、OpenAPI 引用校验、Linux amd64 构建及 diff 检查。具备 PostgreSQL 时执行迁移回归。
 - [x] 7. 独立复审全部删除范围、SQL、迁移、客户端配置、前端依赖及 OpenAPI；未发现可执行问题，验证限制已记录。
-- [ ] 8. 提交并快进推送 GitHub main，复核远端提交。
+- [x] 8. 功能提交 `1c795d6` 已快进推送 GitHub main，远端提交已复核。
 
 ## 命令
 

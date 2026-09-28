@@ -371,6 +371,7 @@
 - 先运行订阅绑定拒绝、前端普通订阅/套餐 payload、旧快照清理和迁移总数回归，观察旧实现失败后删除功能。
 - 已删除分流页面和规则集管理、后端包/API、订阅绑定/规则加载、套餐限额和权限，四种订阅格式保留默认代理配置；同步 OpenAPI 和当前文档，历史设计及发布记录加说明。
 - 新增 migration 28 及真实 PostgreSQL 升级回归。临时 PGlite PostgreSQL 18.3 验证已有绑定/普通订阅、Token、候选池、套餐与冻结授权保留，分流表/列/权限清理，以及新装、事务回滚和 up/down/up 均通过。
-- 当前 Go 全量测试、vet、WebUI 52 项测试/生产构建、37 项部署脚本回归、shell 语法、OpenAPI 引用/六个 Compose YAML 解析和 diff 检查通过。真实 PostgreSQL 集成因无 DSN 跳过；未部署 VPS。独立复核和 GitHub 同步进行中。
+- Go 全量测试、vet、WebUI 52 项测试/生产构建、37 项部署脚本回归、shell 语法、OpenAPI 引用/六个 Compose YAML 解析和 diff 检查通过。真实 PostgreSQL 集成因无 DSN 跳过；未部署 VPS。
 - 追加验证：六个 Linux amd64 命令构建通过；54 个历史迁移文件与基线提交 SHA-256 相同。HTTP 套餐旧限额拒绝及更新后的 OpenAPI 检查通过；PGlite 执行改动后的订阅/套餐 SELECT、INSERT 和 UPDATE SQL 通过。
 - 独立复审确认 UI/API/业务字段删除完整，SQL 和 Scan 对齐，迁移与四格式默认导出正确；复审独立重跑相关回归、PGlite 及 OpenAPI 检查通过，未发现可执行问题，可发布。
+- 2026-09-29：功能提交 `1c795d6` 已快进推送 GitHub main，`git ls-remote` 核对远端为 `1c795d6a706a12d0194fba58e82f60bf74349251`。当前仅发布源码，VPS 未更新。
