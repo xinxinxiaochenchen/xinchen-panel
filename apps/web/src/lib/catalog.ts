@@ -107,8 +107,7 @@ export type ForwardRecord = {
 }
 
 export type ProxyAccessRecord = { id: string; user_id: string; line_id: string; line_ids?: string[]; line_options?: { line_id: string; priority: number; weight: number }[]; name: string; enabled: boolean; apply_status: string; created_at: string; updated_at: string }
-export type RoutingProfileRecord = { id: string; user_id: string; name: string; fallback_kind: string; fallback_line_id: string | null; enabled: boolean; revision: number; created_at: string; updated_at: string }
-export type SubscriptionRecord = { id: string; user_id: string; name: string; name_template: string; proxy_access_ids: string[]; routing_profile_id?: string | null; enabled: boolean; created_at: string; updated_at: string }
+export type SubscriptionRecord = { id: string; user_id: string; name: string; name_template: string; proxy_access_ids: string[]; enabled: boolean; created_at: string; updated_at: string }
 export type SubscriptionCreateResult = { subscription: SubscriptionRecord; token: string; path: string }
 
 export type CatalogPage<T> = { items: T[]; next_cursor: string | null }

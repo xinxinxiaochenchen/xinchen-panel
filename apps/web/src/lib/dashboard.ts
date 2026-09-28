@@ -10,7 +10,6 @@ export type User = {
 export type PlanLimits = {
   max_forward_rules_per_node: number
   max_subscriptions: number
-  max_routing_rules: number
   allow_custom_lines: boolean
   max_custom_lines: number
   max_hops: number

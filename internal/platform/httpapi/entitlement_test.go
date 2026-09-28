@@ -75,6 +75,17 @@ func (s *entitlementStub) GetCurrentMembership(_ context.Context, userID string)
 		Status: "active", Snapshot: entitlement.Snapshot{PlanName: "Member Plan", QuotaBytes: 123}}, nil
 }
 
+func TestPlanCreationRejectsRemovedRoutingLimit(t *testing.T) {
+	store := &entitlementStub{}
+	handler := NewHandlerWithEntitlements(testLogger(), nil, entitlementSessions{}, nil, store)
+	body := `{"name":"Standard","quota_bytes":1000,"limits":{"max_routing_rules":20}}`
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, catalogRequest(http.MethodPost, "/api/v1/admin/plans", "admin-token", "valid-csrf", body))
+	if response.Code != http.StatusBadRequest || store.createdBy != "" {
+		t.Fatalf("removed plan field reached persistence: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestPlanAndMembershipWritesRequireAdminSessionAndCSRF(t *testing.T) {
 	store := &entitlementStub{}
 	handler := NewHandlerWithEntitlements(testLogger(), nil, entitlementSessions{}, nil, store)

@@ -21,7 +21,6 @@ func (e ValidationError) Error() string { return fmt.Sprintf("%s: %s", e.Field, 
 type PlanLimits struct {
 	MaxForwardRulesPerNode int  `json:"max_forward_rules_per_node"`
 	MaxSubscriptions       int  `json:"max_subscriptions"`
-	MaxRoutingRules        int  `json:"max_routing_rules"`
 	AllowCustomLines       bool `json:"allow_custom_lines"`
 	MaxCustomLines         int  `json:"max_custom_lines"`
 	MaxHops                int  `json:"max_hops"`
@@ -106,7 +105,7 @@ func NormalizePlan(input NewPlan) (PlanInput, error) {
 	if limits.MaxProxyLines < 1 || limits.MaxProxyLines > 32 {
 		return PlanInput{}, ValidationError{"limits.max_proxy_lines", "expected 1 to 32"}
 	}
-	if limits.MaxForwardRulesPerNode < 0 || limits.MaxSubscriptions < 0 || limits.MaxRoutingRules < 0 || limits.MaxCustomLines < 0 {
+	if limits.MaxForwardRulesPerNode < 0 || limits.MaxSubscriptions < 0 || limits.MaxCustomLines < 0 {
 		return PlanInput{}, ValidationError{"limits", "limits must be non-negative"}
 	}
 	if !limits.AllowCustomLines && limits.MaxCustomLines != 0 {

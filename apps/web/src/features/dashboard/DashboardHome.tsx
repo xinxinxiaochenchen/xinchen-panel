@@ -48,7 +48,6 @@ function PlanScopeCard({ state, scope }: { state: Resource<Membership>; scope: R
         <div><span>每节点转发规则</span><strong>{limits.max_forward_rules_per_node ?? 0}</strong></div>
         <div><span>代理候选线路</span><strong>{limits.max_proxy_lines ?? 1}</strong></div>
         <div><span>订阅数量</span><strong>{limits.max_subscriptions ?? 0}</strong></div>
-        <div><span>分流规则</span><strong>{limits.max_routing_rules ?? 0}</strong></div>
         <div><span>自有线路</span><strong>{limits.allow_custom_lines ? `${limits.max_custom_lines ?? 0} 条` : '不允许'}</strong></div>
       </div>
     </> : <DataStatus state={state} empty="当前没有可用的套餐授权。" />}

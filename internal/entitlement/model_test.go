@@ -1,10 +1,24 @@
 package entitlement
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestLegacySnapshotKeepsBusinessLimitsWithoutRemovedRoutingLimit(t *testing.T) {
+	var snapshot Snapshot
+	err := json.Unmarshal([]byte(`{"plan_name":"Existing plan","quota_bytes":1000000,"resource_group_ids":["group"],"line_ids":["line"],"limits":{"max_subscriptions":3,"max_hops":2,"max_proxy_lines":4,"max_routing_rules":20}}`), &snapshot)
+	if err != nil || snapshot.QuotaBytes != 1000000 || snapshot.Limits.MaxSubscriptions != 3 || snapshot.Limits.MaxHops != 2 || snapshot.Limits.MaxProxyLines != 4 || !reflect.DeepEqual(snapshot.LineIDs, []string{"line"}) || !reflect.DeepEqual(snapshot.ResourceGroupIDs, []string{"group"}) {
+		t.Fatalf("legacy snapshot lost business grants: %+v %v", snapshot, err)
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil || strings.Contains(string(encoded), "max_routing_rules") {
+		t.Fatalf("removed limit still exposed: %s %v", encoded, err)
+	}
+}
 
 const (
 	testGroupID = "11111111-1111-7111-8111-111111111111"

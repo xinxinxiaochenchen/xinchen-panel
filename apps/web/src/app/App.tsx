@@ -19,7 +19,6 @@ import { InitialSetup } from "../features/dashboard/InitialSetup";
 import { CatalogDirectory } from "../features/catalog/CatalogDirectory";
 import { ForwardDirectory } from "../features/catalog/ForwardDirectory";
 import { SubscriptionDirectory } from "../features/catalog/SubscriptionDirectory";
-import { RoutingDirectory } from "../features/catalog/RoutingDirectory";
 import { AdminDirectory } from "../features/admin/AdminDirectory";
 import { hasAdminAccess } from "../lib/admin";
 import { useViewer } from "../lib/useViewer";
@@ -210,8 +209,6 @@ export function App() {
           <ForwardDirectory section={selected} user={viewer.user} />
         ) : sectionId === "subscriptions" ? (
           <SubscriptionDirectory section={selected} user={viewer.user} />
-        ) : sectionId === "routing" ? (
-          <RoutingDirectory section={selected} user={viewer.user} />
         ) : sectionId === "admin" ? (
           hasAdminAccess(viewer.user.permissions) ? (
             <AdminDirectory user={viewer.user} />

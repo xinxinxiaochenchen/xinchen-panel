@@ -342,15 +342,6 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .admin-role-assignment { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
 .admin-role-assignment h3 { margin: 0; font-size: 15px; }
 .admin-role-assignment select { min-height: 42px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--surface); }
-.routing-list { display: grid; grid-template-columns: 1fr; gap: 13px; }
-.routing-card .catalog-card-name { margin-bottom: 5px; }
-.routing-card .catalog-card-foot { align-items: center; justify-content: flex-start; gap: 16px; }
-.routing-card .catalog-card-foot > span { margin-right: auto; }
-.routing-rules { display: flex; flex-direction: column; gap: 5px; margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--border); }
-.routing-rule { display: grid; grid-template-columns: 40px 115px minmax(0,1fr) 65px; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--surface-soft); font-size: 11px; }
-.routing-rule span { color: var(--accent); font-weight: 800; }
-.routing-rule code { min-width: 0; overflow-wrap: anywhere; }
-.routing-rule em { justify-self: end; color: var(--muted); font-style: normal; }
 .proxy-panel { margin-bottom: 19px; padding: 23px 25px; border: 1px solid var(--border); border-radius: 17px; background: var(--surface); box-shadow: var(--shadow); }
 .proxy-panel-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
 .proxy-panel-head h2 { margin: 9px 0 6px; font-size: 20px; letter-spacing: -.035em; }
@@ -398,12 +389,6 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .admin-membership-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; }
 .admin-membership-form > div { display: flex; flex-direction: column; gap: 7px; }
 .admin-membership-form label { color: var(--muted); font-size: 11px; font-weight: 700; }
-.admin-geo-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin-bottom: 20px; }
-.admin-geo-form > div { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-.admin-geo-form label { color: var(--muted); font-size: 11px; font-weight: 700; }
-.admin-geo-form input, .admin-geo-form select { min-height: 42px; border: 1px solid var(--border); border-radius: 9px; padding: 0 10px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; min-width: 0; }
-.admin-geo-form small { color: var(--muted); font-size: 10px; }
-.admin-geo-form button { align-self: end; justify-content: center; min-height: 42px; }
 .admin-usage-filters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 11px; margin-bottom: 20px; }
 .admin-usage-filters label { display: flex; flex-direction: column; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .admin-usage-filters input, .admin-usage-filters select { width: 100%; min-height: 40px; border: 1px solid var(--border); border-radius: 9px; padding: 0 9px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 11px; min-width: 0; }
@@ -475,15 +460,12 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
   .admin-section { padding: 19px; }
   .admin-section-head { align-items: flex-start; flex-direction: column; }
   .admin-card-grid, .admin-membership-form { grid-template-columns: 1fr; }
-  .admin-geo-form { grid-template-columns: 1fr; }
   .admin-row { align-items: flex-start; flex-direction: column; gap: 7px; }
   .admin-row span:not(.catalog-icon) { margin-left: 0; }
   .proxy-panel-head { align-items: flex-start; flex-direction: column; }
   .proxy-access-row { align-items: flex-start; flex-wrap: wrap; }
   .proxy-access-row .status-chip { margin-left: auto; }
   .proxy-access-actions { width: 100%; justify-content: flex-start; padding-left: 46px; }
-  .routing-rule { grid-template-columns: 30px 80px minmax(0,1fr); }
-  .routing-rule em { grid-column: 3; justify-self: start; }
   .catalog-page { padding: 47px 0 70px; }
   .catalog-title { align-items: flex-start; flex-direction: column; }
   .catalog-card { padding: 21px; }

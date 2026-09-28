@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/netip"
 	"strconv"
 	"strings"
 	"unicode"
@@ -75,10 +74,6 @@ func ValidateTemplate(template string) error {
 }
 
 func Render(format, template string, targets []Target) ([]byte, string, error) {
-	return RenderWithRouting(format, template, targets, nil)
-}
-
-func RenderWithRouting(format, template string, targets []Target, policy *RoutingPolicy) ([]byte, string, error) {
 	if format != "clash" && format != "mihomo" && format != "sing-box" && format != "surge" {
 		return nil, "", fmt.Errorf("unsupported subscription format %q", format)
 	}
@@ -93,13 +88,6 @@ func RenderWithRouting(format, template string, targets []Target, policy *Routin
 	}
 	names := make([]string, len(targets))
 	used := map[string]bool{"PROXY": true, "DIRECT": true, "REJECT": true}
-	if policy != nil {
-		for _, target := range targets {
-			if target.LineID != "" {
-				used[strings.ToUpper(lineTag(target.LineID))] = true
-			}
-		}
-	}
 	for i, target := range targets {
 		if err := validateTarget(target); err != nil {
 			return nil, "", fmt.Errorf("target %d: %w", i+1, err)
@@ -126,34 +114,24 @@ func RenderWithRouting(format, template string, targets []Target, policy *Routin
 		used[strings.ToUpper(name)] = true
 		names[i] = name
 	}
-	if policy != nil {
-		var err error
-		policy, err = expandManagedGeoRules(format, policy)
-		if err != nil {
-			return nil, "", err
-		}
-	}
-	if err := validateRouting(format, targets, policy); err != nil {
-		return nil, "", err
-	}
 	if format == "mihomo" {
-		return renderMihomo(targets, names, policy), "application/yaml", nil
+		return renderMihomo(targets, names), "application/yaml", nil
 	}
 	if format == "clash" {
-		data, err := renderClash(targets, names, policy)
+		data, err := renderClash(targets, names)
 		if err != nil {
 			return nil, "", err
 		}
 		return data, "application/yaml", nil
 	}
 	if format == "surge" {
-		data, err := renderSurge(targets, names, policy)
+		data, err := renderSurge(targets, names)
 		if err != nil {
 			return nil, "", err
 		}
 		return data, "text/plain; charset=utf-8", nil
 	}
-	data, err := renderSingBox(targets, names, policy)
+	data, err := renderSingBox(targets, names)
 	if err != nil {
 		return nil, "", err
 	}
@@ -218,7 +196,7 @@ func yamlString(value string) string {
 	return string(b)
 }
 
-func renderMihomo(targets []Target, names []string, policy *RoutingPolicy) []byte {
+func renderMihomo(targets []Target, names []string) []byte {
 	var b bytes.Buffer
 	b.WriteString("mixed-port: 7890\nallow-lan: false\nbind-address: \"127.0.0.1\"\nmode: rule\nproxies:\n")
 	for i, target := range targets {
@@ -230,29 +208,11 @@ func renderMihomo(targets []Target, names []string, policy *RoutingPolicy) []byt
 	for _, name := range names {
 		fmt.Fprintf(&b, "      - %s\n", yamlString(name))
 	}
-	if policy != nil {
-		for _, line := range policyLines(targets, policy) {
-			fmt.Fprintf(&b, "  - name: %s\n    type: select\n    proxies:\n", yamlString(lineTag(line)))
-			for i, target := range targets {
-				if target.LineID == line {
-					fmt.Fprintf(&b, "      - %s\n", yamlString(names[i]))
-				}
-			}
-		}
-	}
-	b.WriteString("rules:\n")
-	if policy != nil {
-		for _, rule := range policy.Rules {
-			fmt.Fprintf(&b, "  - %s\n", yamlString(mihomoRule(rule)))
-		}
-		fmt.Fprintf(&b, "  - %s\n", yamlString("MATCH,"+mihomoAction(policy.Fallback)))
-	} else {
-		b.WriteString("  - \"MATCH,PROXY\"\n")
-	}
+	b.WriteString("rules:\n  - \"MATCH,PROXY\"\n")
 	return b.Bytes()
 }
 
-func renderSingBox(targets []Target, names []string, policy *RoutingPolicy) ([]byte, error) {
+func renderSingBox(targets []Target, names []string) ([]byte, error) {
 	type tlsConfig struct {
 		Enabled    bool   `json:"enabled"`
 		ServerName string `json:"server_name"`
@@ -285,9 +245,8 @@ func renderSingBox(targets []Target, names []string, policy *RoutingPolicy) ([]b
 		} `json:"inbounds"`
 		Outbounds []outbound `json:"outbounds"`
 		Route     struct {
-			Final                 string           `json:"final"`
-			DefaultDomainResolver string           `json:"default_domain_resolver"`
-			Rules                 []map[string]any `json:"rules,omitempty"`
+			Final                 string `json:"final"`
+			DefaultDomainResolver string `json:"default_domain_resolver"`
 		} `json:"route"`
 	}{}
 	cfg.DNS.Servers = []dnsServer{{Type: "local", Tag: "local-dns"}}
@@ -307,221 +266,6 @@ func renderSingBox(targets []Target, names []string, policy *RoutingPolicy) ([]b
 		})
 	}
 	cfg.Route.Final = "PROXY"
-	if policy != nil {
-		cfg.Outbounds = append(cfg.Outbounds, outbound{Type: "direct", Tag: "DIRECT"})
-		for _, line := range policyLines(targets, policy) {
-			members := []string{}
-			for i, target := range targets {
-				if target.LineID == line {
-					members = append(members, names[i])
-				}
-			}
-			cfg.Outbounds = append(cfg.Outbounds, outbound{Type: "selector", Tag: lineTag(line), Outbounds: members})
-		}
-		for _, rule := range policy.Rules {
-			cfg.Route.Rules = append(cfg.Route.Rules, singBoxRule(rule))
-		}
-		switch policy.Fallback.Kind {
-		case "direct":
-			cfg.Route.Final = "DIRECT"
-		case "line":
-			cfg.Route.Final = lineTag(policy.Fallback.LineID)
-		case "block":
-			cfg.Route.Rules = append(cfg.Route.Rules, map[string]any{"action": "reject"})
-		}
-	}
 	cfg.Route.DefaultDomainResolver = "local-dns"
 	return json.MarshalIndent(cfg, "", "  ")
-}
-
-type Action struct{ Kind, LineID string }
-type Rule struct {
-	MatchType, MatchValue string
-	Action                Action
-}
-type RuleSet struct {
-	Kind    string
-	Code    string
-	Version string
-	SHA256  string
-	Entries []string
-}
-type RoutingPolicy struct {
-	Fallback Action
-	Rules    []Rule
-	RuleSets map[string]RuleSet
-}
-
-func expandManagedGeoRules(format string, policy *RoutingPolicy) (*RoutingPolicy, error) {
-	out := &RoutingPolicy{Fallback: policy.Fallback, RuleSets: policy.RuleSets}
-	out.Rules = make([]Rule, 0, len(policy.Rules))
-	for _, rule := range policy.Rules {
-		if rule.MatchType != "geosite" && rule.MatchType != "geoip" {
-			out.Rules = append(out.Rules, rule)
-			continue
-		}
-		set, ok := policy.RuleSets[rule.MatchType+":"+rule.MatchValue]
-		if !ok && rule.MatchType == "geoip" && format != "sing-box" {
-			out.Rules = append(out.Rules, rule)
-			continue
-		}
-		if !ok || set.Kind != rule.MatchType || set.Code != rule.MatchValue || len(set.Entries) == 0 {
-			return nil, fmt.Errorf("%s requires a managed rule-set", rule.MatchType)
-		}
-		for _, entry := range set.Entries {
-			expanded, err := managedEntryRule(rule.MatchType, entry, rule.Action)
-			if err != nil {
-				return nil, err
-			}
-			out.Rules = append(out.Rules, expanded)
-		}
-	}
-	return out, nil
-}
-
-func managedEntryRule(kind, raw string, action Action) (Rule, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return Rule{}, fmt.Errorf("%s rule-set contains an empty entry", kind)
-	}
-	if kind == "geoip" {
-		prefix, err := netip.ParsePrefix(value)
-		if err != nil || !prefix.IsValid() {
-			return Rule{}, fmt.Errorf("geoip rule-set contains invalid CIDR %q", value)
-		}
-		return Rule{MatchType: "cidr", MatchValue: prefix.Masked().String(), Action: action}, nil
-	}
-	matchType := "domain_suffix"
-	if strings.HasPrefix(value, "domain:") {
-		matchType, value = "domain", strings.TrimPrefix(value, "domain:")
-	} else if strings.HasPrefix(value, "suffix:") {
-		value = strings.TrimPrefix(value, "suffix:")
-	}
-	value = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
-	if !validManagedDomain(value) {
-		return Rule{}, fmt.Errorf("geosite rule-set contains invalid domain %q", value)
-	}
-	return Rule{MatchType: matchType, MatchValue: value, Action: action}, nil
-}
-
-func validManagedDomain(value string) bool {
-	if len(value) == 0 || len(value) > 253 || strings.ContainsAny(value, "/\\,\r\n\t ") {
-		return false
-	}
-	for _, label := range strings.Split(value, ".") {
-		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-		for _, char := range label {
-			if !(char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-') {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func lineTag(line string) string { return "LINE:" + line }
-func policyLines(targets []Target, policy *RoutingPolicy) []string {
-	seen := map[string]bool{}
-	for _, target := range targets {
-		if target.LineID != "" {
-			seen[target.LineID] = true
-		}
-	}
-	for _, rule := range policy.Rules {
-		if rule.Action.Kind == "line" {
-			seen[rule.Action.LineID] = true
-		}
-	}
-	if policy.Fallback.Kind == "line" {
-		seen[policy.Fallback.LineID] = true
-	}
-	out := make([]string, 0, len(seen))
-	for _, target := range targets {
-		if target.LineID != "" && seen[target.LineID] {
-			out = append(out, target.LineID)
-			delete(seen, target.LineID)
-		}
-	}
-	return out
-}
-func validateRouting(format string, targets []Target, policy *RoutingPolicy) error {
-	if policy == nil {
-		return nil
-	}
-	lines := map[string]bool{}
-	for _, target := range targets {
-		if target.LineID != "" {
-			lines[target.LineID] = true
-		}
-	}
-	check := func(a Action) error {
-		if a.Kind != "direct" && a.Kind != "block" && a.Kind != "line" {
-			return fmt.Errorf("unsupported routing action %q", a.Kind)
-		}
-		if a.Kind == "line" && (a.LineID == "" || !lines[a.LineID]) {
-			return fmt.Errorf("routing line %q is not exported", a.LineID)
-		}
-		return nil
-	}
-	if err := check(policy.Fallback); err != nil {
-		return err
-	}
-	for _, rule := range policy.Rules {
-		if rule.MatchType == "geosite" {
-			return errors.New("geosite requires a managed rule-set")
-		}
-		if format == "sing-box" && rule.MatchType == "geoip" {
-			return errors.New("sing-box geoip requires a managed rule-set")
-		}
-		if _, ok := map[string]bool{"domain": true, "domain_suffix": true, "ip": true, "cidr": true, "geoip": true}[rule.MatchType]; !ok {
-			return fmt.Errorf("unsupported routing match type %q", rule.MatchType)
-		}
-		if err := check(rule.Action); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func mihomoAction(a Action) string {
-	switch a.Kind {
-	case "direct":
-		return "DIRECT"
-	case "block":
-		return "REJECT"
-	default:
-		return lineTag(a.LineID)
-	}
-}
-func matchValue(r Rule) string {
-	if r.MatchType != "ip" {
-		return r.MatchValue
-	}
-	addr, err := netip.ParseAddr(r.MatchValue)
-	if err != nil {
-		return r.MatchValue
-	}
-	return netip.PrefixFrom(addr, addr.BitLen()).String()
-}
-func mihomoRule(r Rule) string {
-	kind := map[string]string{"domain": "DOMAIN", "domain_suffix": "DOMAIN-SUFFIX", "ip": "IP-CIDR", "cidr": "IP-CIDR", "geoip": "GEOIP"}[r.MatchType]
-	value := matchValue(r)
-	if r.MatchType == "ip" || r.MatchType == "cidr" {
-		if prefix, err := netip.ParsePrefix(value); err == nil && prefix.Addr().Is6() {
-			kind = "IP-CIDR6"
-		}
-	}
-	return kind + "," + value + "," + mihomoAction(r.Action)
-}
-func singBoxRule(r Rule) map[string]any {
-	key := map[string]string{"domain": "domain", "domain_suffix": "domain_suffix", "ip": "ip_cidr", "cidr": "ip_cidr"}[r.MatchType]
-	v := map[string]any{key: []string{matchValue(r)}}
-	if r.Action.Kind == "block" {
-		v["action"] = "reject"
-	} else {
-		v["action"] = "route"
-		v["outbound"] = mihomoAction(r.Action)
-	}
-	return v
 }

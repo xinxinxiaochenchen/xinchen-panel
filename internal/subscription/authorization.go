@@ -3,7 +3,6 @@ package subscription
 import (
 	"context"
 	"controlplane/internal/entitlement"
-	"errors"
 	"github.com/jackc/pgx/v5"
 	"slices"
 )
@@ -49,17 +48,6 @@ ORDER BY a.id,pal.position FOR SHARE OF a,l,n,g`, owner, ids)
 	return nil
 }
 
-func authorizeProfile(ctx context.Context, tx pgx.Tx, owner string, profileID *string) error {
-	if profileID == nil {
-		return nil
-	}
-	var exists bool
-	err := tx.QueryRow(ctx, `SELECT true FROM routing_profiles WHERE id=$1 AND user_id=$2 AND enabled FOR SHARE`, *profileID, owner).Scan(&exists)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	}
-	return err
-}
 func lineAllowedHops(owner, line, lineOwner string, groups []string, grant entitlement.Snapshot) bool {
 	if len(groups) == 0 || (len(groups) > 1 && len(groups) > grant.Limits.MaxHops) {
 		return false

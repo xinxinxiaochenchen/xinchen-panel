@@ -25,7 +25,6 @@ export function PlanPanel({
   const [quota, setQuota] = useState(100);
   const [maxForward, setMaxForward] = useState(5);
   const [maxSubscriptions, setMaxSubscriptions] = useState(3);
-  const [maxRouting, setMaxRouting] = useState(20);
   const [maxCustom, setMaxCustom] = useState(0);
   const [maxHops, setMaxHops] = useState(1);
   const [maxProxyLines, setMaxProxyLines] = useState(1);
@@ -46,7 +45,6 @@ export function PlanPanel({
         multiplier,
         maxForward,
         maxSubscriptions,
-        maxRouting,
         maxCustomLines: maxCustom,
         maxHops,
         maxProxyLines,
@@ -206,14 +204,6 @@ export function PlanPanel({
               step={0.001}
               value={multiplier}
               onChange={(event) => setMultiplier(Number(event.target.value))}
-            />
-            <label htmlFor="admin-plan-routing">分流规则数</label>
-            <input
-              id="admin-plan-routing"
-              type="number"
-              min={0}
-              value={maxRouting}
-              onChange={(event) => setMaxRouting(Number(event.target.value))}
             />
             <label htmlFor="admin-plan-proxy-lines">每个代理连接的候选线路数</label>
             <input id="admin-plan-proxy-lines" type="number" min={1} max={32} step={1} value={maxProxyLines} onChange={(event) => setMaxProxyLines(Number(event.target.value))} />

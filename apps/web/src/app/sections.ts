@@ -5,7 +5,6 @@ import {
   Globe2,
   Home,
   Layers3,
-  ListFilter,
   Route,
   Shield,
 } from "lucide-react";
@@ -16,7 +15,6 @@ export type SectionId =
   | "lines"
   | "forward"
   | "subscriptions"
-  | "routing"
   | "account"
   | "admin";
 
@@ -75,15 +73,6 @@ export const sections: Section[] = [
     description: "按套餐许可选择节点和线路，生成独立的客户端配置。",
     details: ["多订阅与绑定", "Token 重置", "客户端名称模板"],
     icon: Layers3,
-  },
-  {
-    id: "routing",
-    label: "分流",
-    eyebrow: "TRAFFIC POLICY",
-    title: "分流策略",
-    description: "让域名和地址规则选择合适的线路，并为未命中流量设置默认路径。",
-    details: ["域名与 CIDR 规则", "规则优先级", "默认线路"],
-    icon: ListFilter,
   },
   {
     id: "account",

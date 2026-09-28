@@ -84,8 +84,8 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 27 {
-		t.Fatalf("expected browser setup migration 27; found %d migrations", len(migrations))
+	if len(migrations) != 28 {
+		t.Fatalf("expected routing removal migration 28; found %d migrations", len(migrations))
 	}
 	for i, migration := range migrations {
 		if migration.Version != int64(i+1) {

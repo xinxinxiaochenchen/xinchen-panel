@@ -18,13 +18,9 @@ func TestNativeMihomoAcceptsRenderedProfiles(t *testing.T) {
 	}
 	target := target("Japan")
 	target.LineID = "line-jp"
-	policy := &RoutingPolicy{
-		Fallback: Action{Kind: "direct"},
-		Rules:    []Rule{{MatchType: "domain_suffix", MatchValue: "example.com", Action: Action{Kind: "line", LineID: target.LineID}}},
-	}
 	for _, format := range []string{"clash", "mihomo"} {
 		t.Run(format, func(t *testing.T) {
-			body, _, err := RenderWithRouting(format, "{name}", []Target{target}, policy)
+			body, _, err := Render(format, "{name}", []Target{target})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -53,20 +49,13 @@ func TestNativeSingBoxAcceptsRenderedProfiles(t *testing.T) {
 	}
 	target := target("Japan")
 	target.LineID = "line-jp"
-	cases := []struct {
-		name   string
-		policy *RoutingPolicy
-	}{
-		{name: "default"},
-		{name: "routed", policy: &RoutingPolicy{
-			Fallback: Action{Kind: "direct"},
-			Rules:    []Rule{{MatchType: "domain_suffix", MatchValue: "example.com", Action: Action{Kind: "line", LineID: target.LineID}}},
-		}},
-		{name: "block-fallback", policy: &RoutingPolicy{Fallback: Action{Kind: "block"}}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			body, _, err := RenderWithRouting("sing-box", "{name}", []Target{target}, tc.policy)
+	for _, name := range []string{"default", "automatic"} {
+		t.Run(name, func(t *testing.T) {
+			if name == "automatic" {
+				target.LineID = ""
+				target.LineName = "自动线路"
+			}
+			body, _, err := Render("sing-box", "{name}", []Target{target})
 			if err != nil {
 				t.Fatal(err)
 			}

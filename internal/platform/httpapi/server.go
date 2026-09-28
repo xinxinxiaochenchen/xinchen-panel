@@ -70,8 +70,6 @@ type RouteStores struct {
 	ProxyAccess   ProxyAccessStore
 	Subscriptions SubscriptionStore
 	Usage         UsageStore
-	Routing       RoutingStore
-	GeoRuleSets   GeoRuleSetStore
 	Roles         RoleStore
 	Audit         AuditStore
 }
@@ -154,12 +152,6 @@ func NewHandlerWithStoresOptions(logger *slog.Logger, checker ReadyChecker, sess
 		}
 		if stores.Usage != nil {
 			registerUsageRoutes(mux, sessions, stores.Usage)
-		}
-		if stores.Routing != nil {
-			registerRoutingRoutes(mux, sessions, stores.Routing)
-		}
-		if stores.GeoRuleSets != nil {
-			registerGeoRuleSetRoutes(mux, sessions, stores.GeoRuleSets)
 		}
 		if stores.Roles != nil {
 			registerRoleRoutes(mux, sessions, stores.Roles)

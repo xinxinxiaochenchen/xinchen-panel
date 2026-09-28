@@ -365,3 +365,12 @@
 - 发布包：`release-20260928-production-linux-amd64.tar.gz`，45,647,466 字节，71 个文件，6 个可执行 ELF、26 对迁移与最新 WebUI。归档内容已检查，未包含 `.env`、`.local`、私钥或证书凭据。
 - SHA-256：`32e41d1ffcff2ad748c7eb5d3a62db03f080a658bd7e07dd0d694cb2e96e2e20`。
 - 独立复审确认三模式、管理员初始化、密钥保存、可重复升级及 Cookie 清理符合要求；定向 TLS Cookie 回归和 33 项脚本测试独立重跑通过，未发现剩余可执行的正确性问题。
+# 2026-09-28 删除分流功能
+
+- 用户要求删除分流功能，范围已确定；使用 `codex/remove-routing` 分支，保留原工作区和历史迁移。
+- 先运行订阅绑定拒绝、前端普通订阅/套餐 payload、旧快照清理和迁移总数回归，观察旧实现失败后删除功能。
+- 已删除分流页面和规则集管理、后端包/API、订阅绑定/规则加载、套餐限额和权限，四种订阅格式保留默认代理配置；同步 OpenAPI 和当前文档，历史设计及发布记录加说明。
+- 新增 migration 28 及真实 PostgreSQL 升级回归。临时 PGlite PostgreSQL 18.3 验证已有绑定/普通订阅、Token、候选池、套餐与冻结授权保留，分流表/列/权限清理，以及新装、事务回滚和 up/down/up 均通过。
+- 当前 Go 全量测试、vet、WebUI 52 项测试/生产构建、37 项部署脚本回归、shell 语法、OpenAPI 引用/六个 Compose YAML 解析和 diff 检查通过。真实 PostgreSQL 集成因无 DSN 跳过；未部署 VPS。独立复核和 GitHub 同步进行中。
+- 追加验证：六个 Linux amd64 命令构建通过；54 个历史迁移文件与基线提交 SHA-256 相同。HTTP 套餐旧限额拒绝及更新后的 OpenAPI 检查通过；PGlite 执行改动后的订阅/套餐 SELECT、INSERT 和 UPDATE SQL 通过。
+- 独立复审确认 UI/API/业务字段删除完整，SQL 和 Scan 对齐，迁移与四格式默认导出正确；复审独立重跑相关回归、PGlite 及 OpenAPI 检查通过，未发现可执行问题，可发布。

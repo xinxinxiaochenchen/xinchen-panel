@@ -63,7 +63,7 @@ function LineCard({ line, user, onChanged }: { line: LineRecord; user: User; onC
   }
   async function remove() {
     if (line.owner_user_id !== user.id || !user.permissions.includes('lines.write.self')) return
-    if (!window.confirm(`删除自有线路「${line.name}」？仍被代理连接或分流引用时服务器会拒绝删除。`)) return
+    if (!window.confirm(`删除自有线路「${line.name}」？仍被代理连接或转发规则引用时服务器会拒绝删除。`)) return
     setBusy(true); setError('')
     const result = await mutateCatalog<void>(`/api/v1/lines/${line.id}`, 'DELETE', null, csrfToken())
     setBusy(false)

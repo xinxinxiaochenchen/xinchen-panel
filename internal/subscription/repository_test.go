@@ -138,47 +138,10 @@ func TestPostgresSubscriptionLifecycle(t *testing.T) {
 	if body, _, err := repo.ExportOwn(ctx, owner, sub.ID, "sing-box"); err != nil || !strings.Contains(string(body), password) {
 		t.Fatalf("owner preview: %v", err)
 	}
-	profile := add(`INSERT INTO routing_profiles(id,user_id,name,fallback_kind,fallback_line_id) VALUES(gen_random_uuid(),$1,'Subscription policy','line',$2) RETURNING id::text`, owner, line)
-	foreignProfile := add(`INSERT INTO routing_profiles(id,user_id,name,fallback_kind) VALUES(gen_random_uuid(),$1,'Foreign policy','direct') RETURNING id::text`, other)
-	if _, err := repo.UpdateOwn(ctx, owner, sub.ID, Patch{RoutingProfileID: OptionalID{Set: true, Value: &foreignProfile}}, "test"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("foreign routing profile binding: %v", err)
-	}
-	if _, err := repo.UpdateOwn(ctx, owner, sub.ID, Patch{RoutingProfileID: OptionalID{Set: true, Value: &profile}}, "test"); err != nil {
-		t.Fatalf("bind own routing profile: %v", err)
-	}
-	if _, err := pool.Exec(ctx, `INSERT INTO routing_rules(id,profile_id,priority,match_type,match_value,action,line_id) VALUES(gen_random_uuid(),$1,10,'domain','example.com','line',$2)`, profile, line); err != nil {
-		t.Fatal(err)
-	}
-	if body, _, err := repo.Export(ctx, token, "mihomo"); err != nil || !strings.Contains(string(body), "DOMAIN,example.com,LINE:"+line) {
-		t.Fatalf("routing export: %v %s", err, body)
-	}
-	otherLine := add(`INSERT INTO lines(id,name,created_by) VALUES(gen_random_uuid(),'Not subscribed',$1) RETURNING id::text`, owner)
-	if _, err := pool.Exec(ctx, `INSERT INTO line_hops(line_id,position,node_id,role) VALUES($1,0,$2,'egress')`, otherLine, node); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE routing_rules SET line_id=$2 WHERE profile_id=$1`, profile, otherLine); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := repo.Export(ctx, token, "mihomo"); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("routing line absent from export: %v", err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE routing_rules SET line_id=$2 WHERE profile_id=$1`, profile, line); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE routing_profiles SET enabled=false WHERE id=$1`, profile); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := repo.Export(ctx, token, "mihomo"); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("disabled routing profile: %v", err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE routing_profiles SET enabled=true WHERE id=$1`, profile); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repo.UpdateOwn(ctx, owner, sub.ID, Patch{RoutingProfileID: OptionalID{Set: true}}, "test"); err != nil {
-		t.Fatalf("clear routing profile: %v", err)
-	}
-	if body, _, err := repo.Export(ctx, token, "mihomo"); err != nil || !strings.Contains(string(body), "MATCH,PROXY") {
-		t.Fatalf("default export after clear: %v %s", err, body)
+	for _, format := range []string{"clash", "mihomo", "sing-box", "surge"} {
+		if body, _, err := repo.Export(ctx, token, format); err != nil || !strings.Contains(string(body), password) {
+			t.Fatalf("default %s export: %v %s", format, err, body)
+		}
 	}
 	exec := func(q string, args ...any) {
 		t.Helper()

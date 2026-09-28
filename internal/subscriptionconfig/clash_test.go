@@ -7,18 +7,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestRenderClashTrojanAndRouting(t *testing.T) {
+func TestRenderClashTrojanAndDefaultProxy(t *testing.T) {
 	jp := target("Japan")
 	jp.LineID = "line-jp"
 	jp.Password = "p: # \"quoted\""
 	us := target("US")
 	us.LineID = "line-us"
-	policy := &RoutingPolicy{Fallback: Action{Kind: "line", LineID: "line-jp"}, Rules: []Rule{
-		{MatchType: "domain", MatchValue: "example.com", Action: Action{Kind: "line", LineID: "line-us"}},
-		{MatchType: "cidr", MatchValue: "2001:db8::/32", Action: Action{Kind: "direct"}},
-		{MatchType: "geoip", MatchValue: "cn", Action: Action{Kind: "block"}},
-	}}
-	data, contentType, err := RenderWithRouting("clash", "{name}", []Target{jp, us}, policy)
+	data, contentType, err := Render("clash", "{name}", []Target{jp, us})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,37 +43,10 @@ func TestRenderClashTrojanAndRouting(t *testing.T) {
 	if _, ok := cfg.Proxies[0]["network"]; ok {
 		t.Fatal("Clash profile includes Mihomo-specific network field")
 	}
-	for _, want := range []string{"DOMAIN,example.com,LINE:line-us", "IP-CIDR6,2001:db8::/32,DIRECT", "GEOIP,CN,REJECT", "MATCH,LINE:line-jp"} {
-		found := false
-		for _, rule := range cfg.Rules {
-			if rule == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("missing rule %q in %+v", want, cfg.Rules)
-		}
+	if len(cfg.ProxyGroups) != 1 || cfg.ProxyGroups[0].Name != "PROXY" || len(cfg.ProxyGroups[0].Proxies) != 2 || len(cfg.Rules) != 1 || cfg.Rules[0] != "MATCH,PROXY" {
+		t.Fatalf("invalid default proxy selection: %+v", cfg)
 	}
 	if strings.Contains(string(data), "mixed-port:") {
 		t.Fatal("Clash profile includes Mihomo mixed listener")
-	}
-}
-
-func TestRenderClashRejectsUnmanagedGeoSite(t *testing.T) {
-	a := target("Japan")
-	a.LineID = "line-jp"
-	policy := &RoutingPolicy{Fallback: Action{Kind: "direct"}, Rules: []Rule{{MatchType: "geosite", MatchValue: "cn", Action: Action{Kind: "direct"}}}}
-	if _, _, err := RenderWithRouting("clash", "{name}", []Target{a}, policy); err == nil {
-		t.Fatal("Clash accepted unmanaged GeoSite")
-	}
-}
-
-func TestRenderClashRejectsRuleDelimiterInjection(t *testing.T) {
-	a := target("Japan")
-	a.LineID = "line-jp"
-	policy := &RoutingPolicy{Fallback: Action{Kind: "direct"}, Rules: []Rule{{MatchType: "domain", MatchValue: "example.com,REJECT", Action: Action{Kind: "direct"}}}}
-	if _, _, err := RenderWithRouting("clash", "{name}", []Target{a}, policy); err == nil {
-		t.Fatal("Clash accepted a rule with an injected delimiter")
 	}
 }

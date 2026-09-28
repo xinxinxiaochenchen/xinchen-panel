@@ -124,6 +124,30 @@ func TestSubscriptionManagementAuthAndCSRF(t *testing.T) {
 		t.Fatalf("URL response=%d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestSubscriptionsRejectRemovedRoutingBinding(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodPatch} {
+		for _, value := range []string{`null`, `"` + testProxyID + `"`} {
+			t.Run(method+"/"+value, func(t *testing.T) {
+				store := &subscriptionStub{}
+				h := NewHandlerWithStores(testLogger(), nil, subscriptionSessions{}, RouteStores{Subscriptions: store})
+				path := "/api/v1/subscriptions"
+				if method == http.MethodPatch {
+					path += "/" + testProxyID
+				}
+				body := `{"name":"Laptop","proxy_access_ids":["` + testProxyID + `"],"routing_profile_id":` + value + `}`
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, catalogRequest(method, path, "member-token", "valid-csrf", body))
+				if w.Code != http.StatusBadRequest {
+					t.Fatalf("removed subscription field accepted: %d %s", w.Code, w.Body.String())
+				}
+				if store.owner != "" {
+					t.Fatal("invalid subscription reached persistence")
+				}
+			})
+		}
+	}
+}
 func TestPublicSubscriptionNoCookieRedactsLogsAndHonorsDisabledPreview(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))

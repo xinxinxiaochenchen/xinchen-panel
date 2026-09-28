@@ -3,7 +3,6 @@ package subscription
 import (
 	"controlplane/internal/catalog"
 	"controlplane/internal/subscriptionconfig"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,55 +23,32 @@ type ValidationError struct{ Field, Reason string }
 func (e ValidationError) Error() string { return fmt.Sprintf("%s: %s", e.Field, e.Reason) }
 
 type NewSubscription struct {
-	Name             string   `json:"name"`
-	NameTemplate     string   `json:"name_template"`
-	ProxyAccessIDs   []string `json:"proxy_access_ids"`
-	RoutingProfileID *string  `json:"routing_profile_id,omitempty"`
-	Enabled          *bool    `json:"enabled,omitempty"`
+	Name           string   `json:"name"`
+	NameTemplate   string   `json:"name_template"`
+	ProxyAccessIDs []string `json:"proxy_access_ids"`
+	Enabled        *bool    `json:"enabled,omitempty"`
 }
 type Input struct {
 	Name, NameTemplate string
 	ProxyAccessIDs     []string
-	RoutingProfileID   *string
 	Enabled            bool
 }
 type Patch struct {
-	Name             *string    `json:"name,omitempty"`
-	NameTemplate     *string    `json:"name_template,omitempty"`
-	ProxyAccessIDs   *[]string  `json:"proxy_access_ids,omitempty"`
-	RoutingProfileID OptionalID `json:"routing_profile_id,omitempty"`
-	Enabled          *bool      `json:"enabled,omitempty"`
-}
-
-type OptionalID struct {
-	Set   bool
-	Value *string
-}
-
-func (v *OptionalID) UnmarshalJSON(data []byte) error {
-	v.Set = true
-	if string(data) == "null" {
-		v.Value = nil
-		return nil
-	}
-	var id string
-	if err := json.Unmarshal(data, &id); err != nil {
-		return err
-	}
-	v.Value = &id
-	return nil
+	Name           *string   `json:"name,omitempty"`
+	NameTemplate   *string   `json:"name_template,omitempty"`
+	ProxyAccessIDs *[]string `json:"proxy_access_ids,omitempty"`
+	Enabled        *bool     `json:"enabled,omitempty"`
 }
 
 type Subscription struct {
-	ID               string    `json:"id"`
-	UserID           string    `json:"user_id"`
-	Name             string    `json:"name"`
-	NameTemplate     string    `json:"name_template"`
-	ProxyAccessIDs   []string  `json:"proxy_access_ids"`
-	RoutingProfileID *string   `json:"routing_profile_id,omitempty"`
-	Enabled          bool      `json:"enabled"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	UserID         string    `json:"user_id"`
+	Name           string    `json:"name"`
+	NameTemplate   string    `json:"name_template"`
+	ProxyAccessIDs []string  `json:"proxy_access_ids"`
+	Enabled        bool      `json:"enabled"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func Normalize(in NewSubscription) (Input, error) { return normalize(in, false) }
@@ -104,17 +80,9 @@ func normalize(in NewSubscription, allowEmpty bool) (Input, error) {
 		seen[v] = true
 		targets[i] = v
 	}
-	var profile *string
-	if in.RoutingProfileID != nil {
-		v := strings.ToLower(strings.TrimSpace(*in.RoutingProfileID))
-		if !catalog.ValidID(v) {
-			return Input{}, ValidationError{"routing_profile_id", "expected UUID"}
-		}
-		profile = &v
-	}
 	enabled := true
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
-	return Input{Name: name, NameTemplate: template, ProxyAccessIDs: targets, RoutingProfileID: profile, Enabled: enabled}, nil
+	return Input{Name: name, NameTemplate: template, ProxyAccessIDs: targets, Enabled: enabled}, nil
 }

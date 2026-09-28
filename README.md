@@ -1,6 +1,6 @@
 # Network Control Plane
 
-独立设计的代理网络控制平面，提供浏览器登录、RBAC、用户和套餐管理、节点与多跳线路、TCP/UDP 转发、Trojan 代理连接、订阅与分流、用量账本和审计。React 前端由 Go 控制面提供静态资源，PostgreSQL 保存数据，节点服务器运行独立 Go Agent。项目不包含原生 App、订单、充值或支付模块。
+独立设计的代理网络控制平面，提供浏览器登录、RBAC、用户和套餐管理、节点与多跳线路、TCP/UDP 转发、Trojan 代理连接、客户端订阅、用量账本和审计。React 前端由 Go 控制面提供静态资源，PostgreSQL 保存数据，节点服务器运行独立 Go Agent。项目不包含原生 App、订单、充值或支付模块。
 
 ## 正式部署
 
@@ -48,7 +48,7 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 ## 数据库
 
-`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费、证书续签及受控 GeoSite/GeoIP 规则集。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。迁移 24/25 分别加入线路绑定转发和代理候选池；已在 `us bwg` 的 PostgreSQL 16.10 独立测试库验证，并应用到正式预览库。
+`migrations/000001_init.up.sql` 定义首批身份、资源组、节点、线路、套餐、Agent 与 outbox 表；后续迁移依次加入身份与审计、转发与配置版本、Agent 入网与指标、代理连接与订阅、账期计费和证书续签。运行 `go run ./cmd/migrate up` 会按版本顺序在事务中应用 up migration，并校验已应用文件的 SHA-256；文件改动或补插旧版本会报错。down SQL 保留供人工回滚评审，命令不会自动执行降级。迁移 24/25 分别加入线路绑定转发和代理候选池；已在 `us bwg` 的 PostgreSQL 16.10 独立测试库验证，并应用到正式预览库。迁移 28 删除分流策略、规则、GeoSite/GeoIP 规则集、订阅绑定和套餐分流限额，保留订阅、Token、代理连接及其它业务数据。升级会清除旧分流数据；安装器在迁移前备份数据库，降级 SQL 只能重建空结构，恢复数据需使用升级前备份。旧迁移文件继续保留，以确保已安装实例的校验和升级兼容。
 
 ## 资源目录开发状态
 
@@ -107,7 +107,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 当前交付边界
 
-控制面代码已经覆盖节点、资源域、线路、转发、代理连接、订阅、分流、套餐、账期计费、RBAC、审计、Agent mTLS、配置收敛和多跳 TCP/UDP 数据面。迁移 1–26、REST/OpenAPI、React WebUI、Linux amd64 发布归档和 Docker Compose 文件均在仓库中；项目不包含用户付费、订单、充值或支付模块。
+控制面代码已经覆盖节点、资源域、线路、转发、代理连接、订阅、套餐、账期计费、RBAC、审计、Agent mTLS、配置收敛和多跳 TCP/UDP 数据面。迁移 1–28、REST/OpenAPI、React WebUI、Linux amd64 发布归档和 Docker Compose 文件均在仓库中；项目不包含用户付费、订单、充值或支付模块。
 
 正式部署支持 IP HTTP、可选 HTTPS 和只读预览。HTTP 与 HTTPS 模式均开放登录、写操作及订阅 Token，权限与 CSRF 检查一致。现场真实节点通流验收另做，不作为代码开发前置条件。节点 Agent 使用独立的 mTLS 入口，Trojan 代理使用节点 TLS 证书。用户确认的 MVP 为单跳线路、Trojan over TLS 和上传加下载计费。
 
@@ -119,6 +119,6 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 `GET /api/v1/subscriptions/{id}/url?format=clash|mihomo|sing-box|surge` 返回 origin-relative `path`，前端用当前 HTTP 或 HTTPS origin 组合显示和复制。`preview` 输出相同配置。`GET /sub/{token}/{format}` 每次检查有效套餐、资源授权、启停、45 秒 Agent 在线窗口和已 ACK 的凭据摘要；没有可用连接返回 503，不生成直连兜底。控制面日志会脱敏订阅路径，后续 Nginx 的访问日志也需配置相同脱敏规则。公开订阅按 Token 和全局限流；部署 HTTPS 反代时，应在可信 Nginx 层设置按真实客户端 IP 的限流，控制面不信任外部 Forwarded 头。
 
-当前提供 Clash/Mihomo YAML、sing-box 1.12+ JSON 与 Surge 文本配置，均只生成 Trojan TCP、证书校验及代理选择组。Clash 使用本地 HTTP 7890 与 SOCKS5 7891 入口，Mihomo/sing-box 使用 127.0.0.1:7890 混合入口，Surge 使用本地 HTTP 6152 与 SOCKS5 6153 入口。名称模板支持 `{name}`、`{line}`、`{region}`、`{index}`；重复名称自动区分。订阅页提供格式切换、地址复制、Token 重置、启停及预览。生成的 Clash/Mihomo YAML 已用 Mihomo Meta v1.19.31 原生检查验证，sing-box JSON 已用官方 v1.12.0 原生检查验证；Surge 尚无原生客户端验收。管理员可上传带来源、版本和 SHA-256 的 GeoSite/GeoIP 规则集，启用版本在导出时按同一数据库快照展开为可移植域名/CIDR 规则；IPv6 在 Clash/Mihomo/Surge 中使用 `IP-CIDR6`。GeoSite 无活跃版本时拒绝导出。纯 IP 预览保持订阅和浏览器认证入口关闭。
+当前提供 Clash/Mihomo YAML、sing-box 1.12+ JSON 与 Surge 文本配置，均只生成 Trojan TCP、证书校验及代理选择组。Clash 使用本地 HTTP 7890 与 SOCKS5 7891 入口，Mihomo/sing-box 使用 127.0.0.1:7890 混合入口，Surge 使用本地 HTTP 6152 与 SOCKS5 6153 入口。名称模板支持 `{name}`、`{line}`、`{region}`、`{index}`；重复名称自动区分。订阅页提供格式切换、地址复制、Token 重置、启停及预览。所有格式均使用默认 `PROXY` 选择组代理全部流量，项目不再管理或注入分流策略及规则集。历史版本的 Clash/Mihomo 与 sing-box 配置曾通过原生客户端检查；当前版本的原生校验可通过 `CONTROL_TEST_MIHOMO_BINARY` 和 `CONTROL_TEST_SING_BOX_BINARY` 启用，Surge 尚无原生客户端验收。纯 IP 只读预览保持订阅和浏览器认证入口关闭。
 
-分流规则的线路授权会逐跳检查多跳线路的角色、节点能力、中继端口、资源域和 `max_hops`。
+订阅和代理连接的线路授权继续逐跳检查多跳线路的角色、节点能力、中继端口、资源域和 `max_hops`。

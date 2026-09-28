@@ -24,19 +24,6 @@ export type ForwardPolicyDraft = {
   portStart: number;
   portEnd: number;
 };
-export type GeoRuleSetRecord = {
-  id: string;
-  kind: "geosite" | "geoip";
-  code: string;
-  name: string;
-  version: string;
-  source: string;
-  sha256: string;
-  entry_count: number;
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-};
 export type RoleRecord = { id: string; code: string; description: string; system: boolean; permissions: string[]; member_count: number };
 export type PermissionRecord = { code: string; description: string };
 export type RoleDirectory = { roles: RoleRecord[]; permissions: PermissionRecord[] };
@@ -164,7 +151,6 @@ export function membershipCanCancel(status: string, endsAt: string, now = new Da
 export type PlanLimits = {
   max_forward_rules_per_node: number;
   max_subscriptions: number;
-  max_routing_rules: number;
   allow_custom_lines: boolean;
   max_custom_lines: number;
   max_hops: number;
@@ -177,7 +163,6 @@ export type PlanDraft = {
   multiplier: number;
   maxForward: number;
   maxSubscriptions: number;
-  maxRouting: number;
   maxCustomLines: number;
   maxHops?: number;
   maxProxyLines?: number;
@@ -196,8 +181,6 @@ const adminPermissions = [
   "lines.write",
   "agents.write",
   "forward_policies.write",
-  "routing_rulesets.read",
-  "routing_rulesets.write",
   "audit.read",
   "usage.admin",
 ];
@@ -240,7 +223,6 @@ export function buildPlanInput(draft: PlanDraft) {
         "转发规则数",
       ),
       max_subscriptions: wholeNonnegative(draft.maxSubscriptions, "订阅数"),
-      max_routing_rules: wholeNonnegative(draft.maxRouting, "分流规则数"),
       allow_custom_lines: maxCustomLines > 0,
       max_custom_lines: maxCustomLines,
       max_hops: maxHops,

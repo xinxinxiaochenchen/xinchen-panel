@@ -16,14 +16,12 @@ import (
 	"controlplane/internal/catalog"
 	"controlplane/internal/entitlement"
 	"controlplane/internal/forward"
-	"controlplane/internal/georules"
 	"controlplane/internal/identity"
 	"controlplane/internal/orchestration"
 	"controlplane/internal/platform/config"
 	"controlplane/internal/platform/db"
 	"controlplane/internal/platform/httpapi"
 	"controlplane/internal/proxyaccess"
-	"controlplane/internal/routing"
 	"controlplane/internal/subscription"
 )
 
@@ -64,8 +62,6 @@ func main() {
 	var proxyAccessStore httpapi.ProxyAccessStore
 	var subscriptionStore httpapi.SubscriptionStore
 	var usageStore httpapi.UsageStore
-	var routingStore httpapi.RoutingStore
-	var geoRuleSetStore httpapi.GeoRuleSetStore
 	var roleStore httpapi.RoleStore
 	var auditStore httpapi.AuditStore
 	if cfg.BrowserAuthEnabled {
@@ -83,8 +79,6 @@ func main() {
 		forwardPolicyStore = forwardRepository
 		entitlementStore = entitlement.NewPostgresRepository(pool)
 		usageStore = billing.NewPostgresRepository(pool)
-		routingStore = routing.NewPostgresRepository(pool)
-		geoRuleSetStore = georules.NewPostgresRepository(pool)
 		credentialCipher, err := proxyaccess.NewCredentialCipher(cfg.ProxyCredentialKey)
 		if err != nil {
 			logger.Error("proxy credential encryption unavailable", "error", err)
@@ -98,11 +92,9 @@ func main() {
 		Setup:   setupStore,
 		Catalog: catalogStore, Entitlements: entitlementStore, Accounts: accountStore, Lines: lineStore,
 		Forward: forwardStore, Policies: forwardPolicyStore, AgentTokens: agentTokenStore, ProxyAccess: proxyAccessStore, Subscriptions: subscriptionStore,
-		Usage:       usageStore,
-		Routing:     routingStore,
-		GeoRuleSets: geoRuleSetStore,
-		Roles:       roleStore,
-		Audit:       auditStore,
+		Usage: usageStore,
+		Roles: roleStore,
+		Audit: auditStore,
 	}, httpapi.HandlerOptions{BrowserCookieSecure: cfg.BrowserCookieSecure, SetupToken: cfg.SetupToken})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {

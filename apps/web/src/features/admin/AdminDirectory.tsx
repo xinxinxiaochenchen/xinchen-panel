@@ -6,13 +6,12 @@ import {
   type LineRecord,
   type NodeRecord,
 } from "../../lib/catalog";
-import type { ForwardTargetPolicy, GeoRuleSetRecord, Membership, Plan, ResourceGroup } from "../../lib/admin";
+import type { ForwardTargetPolicy, Membership, Plan, ResourceGroup } from "../../lib/admin";
 import { UserPanel } from "./AdminUsers";
 import { PlanPanel } from "./AdminPlans";
 import { ResourcePanel } from "./AdminResources";
 import { AdminMembershipForm } from "./AdminMembershipForm";
 import { AdminForwardPolicies } from "./AdminForwardPolicies";
-import { GeoRuleSetPanel } from "./AdminGeoRuleSets";
 import { AdminRoles } from "./AdminRoles";
 import { AdminAudit } from "./AdminAudit";
 import { AdminUsage } from "./AdminUsage";
@@ -25,7 +24,6 @@ type AdminData = {
   nodes: NodeRecord[];
   lines: LineRecord[];
   forwardPolicies: ForwardTargetPolicy[];
-  geoRuleSets: GeoRuleSetRecord[];
 };
 const emptyData: AdminData = {
   users: [],
@@ -35,7 +33,6 @@ const emptyData: AdminData = {
   nodes: [],
   lines: [],
   forwardPolicies: [],
-  geoRuleSets: [],
 };
 
 export function AdminDirectory({ user }: { user: User }) {
@@ -89,11 +86,6 @@ export function AdminDirectory({ user }: { user: User }) {
           path: "/api/v1/admin/forward-target-policies",
           allowed: can("forward_policies.write"),
         },
-        {
-          key: "geoRuleSets",
-          path: "/api/v1/admin/routing-rule-sets",
-          allowed: can("routing_rulesets.read"),
-        },
       ];
     void Promise.all(
       requests
@@ -112,7 +104,6 @@ export function AdminDirectory({ user }: { user: User }) {
         nodes: [],
         lines: [],
         forwardPolicies: [],
-        geoRuleSets: [],
       };
       const failures: string[] = [];
       const failedKeys: string[] = [];
@@ -208,9 +199,6 @@ export function AdminDirectory({ user }: { user: User }) {
         )}
       {!loading && can("forward_policies.write") && !failed.includes("forwardPolicies") && (
         <AdminForwardPolicies policies={data.forwardPolicies} groups={data.groups} onRefresh={refresh} />
-      )}
-      {!loading && can("routing_rulesets.read") && !failed.includes("geoRuleSets") && (
-        <GeoRuleSetPanel sets={data.geoRuleSets} canWrite={can("routing_rulesets.write")} onRefresh={refresh} />
       )}
       {!loading && can("usage.admin") && (
         <AdminUsage users={data.users} nodes={data.nodes} lines={data.lines} />

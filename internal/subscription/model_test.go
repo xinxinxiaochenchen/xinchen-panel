@@ -11,18 +11,13 @@ import (
 
 func TestNormalizeSubscription(t *testing.T) {
 	id := "01900000-0000-7000-8000-000000000001"
-	profileID := "01900000-0000-7000-8000-000000000002"
-	got, err := Normalize(NewSubscription{Name: "  Laptop  ", ProxyAccessIDs: []string{id}, RoutingProfileID: &profileID})
+	got, err := Normalize(NewSubscription{Name: "  Laptop  ", ProxyAccessIDs: []string{id}})
 	if err != nil || got.Name != "Laptop" || !got.Enabled || got.NameTemplate != "{region} · {name}" {
 		t.Fatalf("normalized=%+v err=%v", got, err)
-	}
-	if got.RoutingProfileID == nil || *got.RoutingProfileID != profileID {
-		t.Fatalf("routing profile was not normalized: %+v", got.RoutingProfileID)
 	}
 	for _, in := range []NewSubscription{
 		{Name: "x"}, {Name: "x", ProxyAccessIDs: []string{id, id}},
 		{Name: "x", ProxyAccessIDs: []string{"not-uuid"}},
-		{Name: "x", ProxyAccessIDs: []string{id}, RoutingProfileID: func() *string { v := "not-uuid"; return &v }()},
 		{Name: "x", NameTemplate: "{unknown}", ProxyAccessIDs: []string{id}},
 		{Name: "x\n", ProxyAccessIDs: []string{id}},
 	} {
@@ -83,22 +78,6 @@ func TestStoredSubscriptionMetadataAllowsCascadedEmptyTargets(t *testing.T) {
 	}
 	if _, err := Normalize(input); err == nil {
 		t.Fatal("new empty subscription accepted")
-	}
-}
-
-func TestSubscriptionPatchDistinguishesAbsentAndNullRoutingProfile(t *testing.T) {
-	var absent, clear, set Patch
-	if err := json.Unmarshal([]byte(`{}`), &absent); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal([]byte(`{"routing_profile_id":null}`), &clear); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal([]byte(`{"routing_profile_id":"01900000-0000-7000-8000-000000000002"}`), &set); err != nil {
-		t.Fatal(err)
-	}
-	if absent.RoutingProfileID.Set || !clear.RoutingProfileID.Set || clear.RoutingProfileID.Value != nil || !set.RoutingProfileID.Set || set.RoutingProfileID.Value == nil {
-		t.Fatalf("patch semantics: absent=%+v clear=%+v set=%+v", absent.RoutingProfileID, clear.RoutingProfileID, set.RoutingProfileID)
 	}
 }
 

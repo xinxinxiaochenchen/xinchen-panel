@@ -33,41 +33,13 @@ func surgePassword(value string) error {
 	return nil
 }
 
-func surgeRule(rule Rule) (string, error) {
-	value := matchValue(rule)
-	if value == "" || strings.ContainsAny(value, ",\r\n") {
-		return "", errors.New("surge rule contains a delimiter")
-	}
-	kind := map[string]string{"domain": "DOMAIN", "domain_suffix": "DOMAIN-SUFFIX", "geoip": "GEOIP"}[rule.MatchType]
-	if rule.MatchType == "geoip" {
-		value = strings.ToUpper(value)
-	}
-	if rule.MatchType == "ip" || rule.MatchType == "cidr" {
-		prefix, err := netip.ParsePrefix(value)
-		if err != nil {
-			return "", fmt.Errorf("invalid IP prefix: %w", err)
-		}
-		if prefix.Addr().Is6() {
-			kind = "IP-CIDR6"
-		} else {
-			kind = "IP-CIDR"
-		}
-	}
-	return kind + "," + value + "," + mihomoAction(rule.Action), nil
-}
-
-func renderSurge(targets []Target, names []string, policy *RoutingPolicy) ([]byte, error) {
+func renderSurge(targets []Target, names []string) ([]byte, error) {
 	for i, target := range targets {
 		if err := surgeName(names[i]); err != nil {
 			return nil, fmt.Errorf("target %d: %w", i+1, err)
 		}
 		if err := surgePassword(target.Password); err != nil {
 			return nil, fmt.Errorf("target %d: %w", i+1, err)
-		}
-		if policy != nil {
-			if err := surgeName(lineTag(target.LineID)); err != nil {
-				return nil, fmt.Errorf("target %d line: %w", i+1, err)
-			}
 		}
 	}
 	var b bytes.Buffer
@@ -84,30 +56,6 @@ func renderSurge(targets []Target, names []string, policy *RoutingPolicy) ([]byt
 		fmt.Fprintf(&b, ", %s", name)
 	}
 	b.WriteByte('\n')
-	if policy != nil {
-		for _, line := range policyLines(targets, policy) {
-			fmt.Fprintf(&b, "%s = select", lineTag(line))
-			for i, target := range targets {
-				if target.LineID == line {
-					fmt.Fprintf(&b, ", %s", names[i])
-				}
-			}
-			b.WriteByte('\n')
-		}
-	}
-	b.WriteString("\n[Rule]\n")
-	if policy != nil {
-		for _, rule := range policy.Rules {
-			rendered, err := surgeRule(rule)
-			if err != nil {
-				return nil, err
-			}
-			b.WriteString(rendered)
-			b.WriteByte('\n')
-		}
-		fmt.Fprintf(&b, "FINAL,%s\n", mihomoAction(policy.Fallback))
-	} else {
-		b.WriteString("FINAL,PROXY\n")
-	}
+	b.WriteString("\n[Rule]\nFINAL,PROXY\n")
 	return b.Bytes(), nil
 }
