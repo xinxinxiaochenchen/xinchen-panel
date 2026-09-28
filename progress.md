@@ -1,6 +1,6 @@
 # 进度
 
-- 2026-09-28 网页初始化开发完成：新增永久初始化状态迁移 27、私有一次性凭证、GET/POST 初始化 API、首次设置表单与业务配置引导；安装器自动生成凭证，不读取管理员环境变量或交互输入。审查后补齐错误凭证在数据库查询前限流、长邮箱拒绝与非 root Docker 用户显示凭证的回归。全量 Go 测试、vet、前端 56 项测试/构建、Python 37 项测试、Shell、OpenAPI/Compose 解析和 diff 检查通过。PostgreSQL 两项新集成测试未配置 DSN 而跳过，VPS 未升级本轮代码。最终 Linux amd64 归档 `/private/tmp/network-control-plane-release-20260928-panel-setup.tar.gz`，SHA-256 `1adc2e6790eca890728b93469694ff3f14e449eefc434b833896beb62a65a1d3`；GitHub 更新进行中。
+- 2026-09-28 网页初始化开发完成：新增永久初始化状态迁移 27、私有一次性凭证、GET/POST 初始化 API、首次设置表单与业务配置引导；安装器自动生成凭证，不读取管理员环境变量或交互输入。审查后补齐错误凭证在数据库查询前限流、长邮箱拒绝与非 root Docker 用户显示凭证的回归。全量 Go 测试、vet、前端 56 项测试/构建、Python 37 项测试、Shell、OpenAPI/Compose 解析和 diff 检查通过。PostgreSQL 两项新集成测试未配置 DSN 而跳过，VPS 未升级本轮代码。最终 Linux amd64 归档 `/private/tmp/network-control-plane-release-20260928-panel-setup.tar.gz`，SHA-256 `1adc2e6790eca890728b93469694ff3f14e449eefc434b833896beb62a65a1d3`；已通过快进推送更新 GitHub main，功能提交 `5e079ae`。
 
 - 2026-09-28 网页初始化：分支 `codex/panel-setup` 从 `b149c1e` 开始；设计和实施计划已保存。新增 HTTP/私有凭证配置、前端初始化状态和无需 CLI 管理员参数的回归；已观察预期失败（缺少初始化接口与配置、前端返回 guest、安装器拒绝无管理员环境变量）。用户确认管理员与业务参数在面板配置，沿已授权开发继续完成网页初始化。
 - 2026-09-28 22:54 只读复核：公网 18080 能加载登录页；Termark 当前 CPU 约 6.8–17.5%，没有证明之前长期高 CPU 已被解决。远端仍运行原版本，尚未部署网页初始化。
