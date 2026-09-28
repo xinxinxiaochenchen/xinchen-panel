@@ -6,13 +6,15 @@
 
 ## VPS 部署
 
+在已安装 Git、Docker Engine 和 Compose 插件的 VPS 上，以 root 运行一条命令即可下载安装并启动纯 IP 只读预览：
+
 ```sh
-git clone https://github.com/xinxinxiaochenchen/xinchen-panel.git
-cd xinchen-panel
-sh scripts/deploy-vps.sh
+curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-preview
 ```
 
-装有 Docker Engine、Compose 插件和 Git 的 VPS 可在克隆源码后运行 `sh scripts/deploy-vps.sh`，由 Docker 构建控制面与 WebUI、生成私有数据库密码、迁移并启动服务。默认绑定 `127.0.0.1:18080`；纯 IP 只读预览显式使用 `sh scripts/deploy-vps.sh --public-preview`。浏览器 WebUI 的 Docker Compose 部署、HTTPS 反代、管理员初始化和密钥挂载步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
+完成后访问 `http://服务器IP:18080/`，服务器防火墙需允许该端口。安装目录默认为 `/opt/xinchen-panel`，重复执行同一命令会安全更新 `main` 分支并在数据库迁移前备份。脚本检查依赖，不自动安装或升级系统 Docker；无需在 VPS 安装 Go 或 Node.js。下载失败时不会执行脚本。
+
+用于 HTTPS 反代时省略 `--public-preview`，默认仅绑定 `127.0.0.1:18080`。可通过 `XINCHEN_PANEL_DIR=/absolute/path sh xinchen-panel-install.sh` 选择安装目录。已有源码也可直接运行 `sh scripts/deploy-vps.sh`。浏览器登录、HTTPS 反代、管理员初始化和 Agent 配置步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
 
 ## 本地运行
 

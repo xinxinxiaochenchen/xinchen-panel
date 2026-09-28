@@ -4,17 +4,19 @@
 
 ## 从 GitHub 一键启动只读 WebUI
 
-VPS 先安装 Docker Engine、Compose 插件和 Git，然后克隆项目并运行：
+VPS 先安装 curl、Git、Docker Engine 和 Compose 插件（[Docker 官方安装说明](https://docs.docker.com/engine/install/)）。以 root 运行以下一条命令，下载安装并启动纯 IP 只读预览：
 
 ```sh
-git clone https://github.com/xinxinxiaochenchen/xinchen-panel.git network-control-plane
-cd network-control-plane
-sh scripts/deploy-vps.sh
+curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-preview
 ```
 
-脚本直接在 Docker 中编译 Go 控制面与 React WebUI，不要求 VPS 预装 Go 或 Node.js；首次运行会生成 `deployments/compose/.env`（权限 `0600`、随机数据库密码），执行 migration，并等待 API 健康检查。默认只在 `127.0.0.1:18080` 提供 HTTP，由你自己的 Nginx/Caddy HTTPS 反代。若临时需要通过纯 IP 查看，只读预览可显式运行 `sh scripts/deploy-vps.sh --public-preview`，此时绑定 `0.0.0.0:18080`，浏览器登录和写接口仍关闭。
+完成后访问 `http://服务器IP:18080/`。如公网无法访问，检查服务器与云平台防火墙的 TCP 18080 规则。脚本只检查 Docker 和 Git，不自动安装或升级系统依赖。首次编译需要访问 GitHub、npm、Go 模块和容器镜像仓库，建议为源码构建准备至少 2 GiB 可用内存；低内存 VPS 可采用下文预编译发布包流程。
 
-重复运行脚本会保留已有 `.env` 和 PostgreSQL 数据卷。检测到已有数据库卷时，脚本在迁移前把自定义格式备份保存到 Git 忽略的 `.local/backups/`，并用 `pg_restore --list` 校验；备份失败则停止升级。若数据库卷存在而当前目录没有原 `.env`，脚本会拒绝生成新密码。已有 `.env` 的绑定地址需与本次选择的模式一致；切换为公网预览须先明确修改 `CONTROL_BIND_IP`。启用过浏览器认证的实例应按下文 HTTPS 步骤运维，不使用只读预览脚本覆盖。
+安装目录默认为 `/opt/xinchen-panel`；用 `XINCHEN_PANEL_DIR=/absolute/path sh xinchen-panel-install.sh --public-preview` 可选择其他可写目录。入口脚本首次克隆 `main`，重复运行时只在同仓库、无本地改动的 `main` 分支上执行 `git pull --ff-only`，遇到不同仓库、其他分支、冲突或本地改动会停止，不覆盖文件。下载命令使用 `&&`，下载失败不会执行不完整脚本。已克隆源码的用户仍可运行 `sh scripts/deploy-vps.sh [--public-preview]`。
+
+脚本直接在 Docker 中编译 Go 控制面与 React WebUI，不要求 VPS 预装 Go 或 Node.js；首次运行会生成 `deployments/compose/.env`（权限 `0600`、随机数据库密码），执行 migration，并等待 API 健康检查。省略 `--public-preview` 时只在 `127.0.0.1:18080` 提供 HTTP，由你自己的 Nginx/Caddy HTTPS 反代。纯 IP 模式绑定 `0.0.0.0:18080`，浏览器登录和写接口仍关闭。
+
+重复运行同一命令会保留已有 `.env` 和 PostgreSQL 数据卷。检测到已有数据库卷时，脚本在迁移前把自定义格式备份保存到 Git 忽略的 `.local/backups/`，并用 `pg_restore --list` 校验；备份失败则停止升级。每次部署都显式运行一次新的 migration 容器，成功后才启动或更新 API；迁移失败不会重启 API，也不会自动执行 down migration。若数据库卷存在而当前目录没有原 `.env`，脚本会拒绝生成新密码。已有 `.env` 的绑定地址需与本次选择的模式一致；切换为公网预览须先明确修改 `CONTROL_BIND_IP`。启用过浏览器认证的实例应按下文 HTTPS 步骤运维，不使用只读预览脚本覆盖。
 
 当前工作机没有 Docker，因此源码镜像和真实 Compose 启动必须在装有 Docker 的 Linux VPS 上做最终验证。以下发布包流程仍可用于离线构建与传输。
 
@@ -30,6 +32,8 @@ sh scripts/build-release-archive.sh
 第一个脚本生成 Linux amd64 控制面、迁移、管理员初始化、节点初始化、Agent 和 Agent 入网令牌程序，并构建 WebUI。第二个脚本生成 `release-<UTC 时间>.tar.gz` 并打印 SHA-256。归档只收录这些二进制、`apps/web/dist`、完整迁移对和预编译镜像所需的 Compose 文件；打包前会检查缺失文件与二进制架构。把归档上传 VPS 后解压到独立版本目录，再进入其 `deployments/compose` 目录操作。发布归档不包含 `.env`、私钥、数据库文件和 macOS 的 `._*` 文件。VPS 需要 Docker Engine 与 Compose 插件。
 
 ## 2. 启动控制面和 WebUI
+
+以下命令用于上文的预编译发布包部署。源码一键安装已完成构建与迁移；手动管理源码镜像时，每条 Compose 命令都需添加 `-f compose.source.yaml`（包括登录与 Agent overlay），避免选择发布包专用的 `Dockerfile.prebuilt`。
 
 进入 Compose 目录，创建权限为 `0600` 的 `.env`。数据库密码使用足够长的十六进制随机串，避免连接 URL 中的保留字符：
 

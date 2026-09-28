@@ -22,7 +22,7 @@ class DeployVPSTest(unittest.TestCase):
         bindir = self.root / 'fake-bin'
         bindir.mkdir()
         docker = bindir / 'docker'
-        docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOCKER_LOG"\ncase " $* " in\n  *" volume inspect "*) [ "${EXISTING_VOLUME:-0}" = 1 ] ;;\n  *" exec -T db pg_dump "*) [ "${FAIL_BACKUP:-0}" = 1 ] && exit 1; printf "fixture-backup" ;;\n  *" exec -T db pg_restore "*) printf "fixture-index" ;;\nesac\n')
+        docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOCKER_LOG"\ncase " $* " in\n  *" volume inspect "*) [ "${EXISTING_VOLUME:-0}" = 1 ] ;;\n  *" exec -T db pg_dump "*) [ "${FAIL_BACKUP:-0}" = 1 ] && exit 1; printf "fixture-backup" ;;\n  *" exec -T db pg_restore "*) printf "fixture-index" ;;\n  *" run --rm -T --no-deps migrate "*) [ "${FAIL_MIGRATION:-0}" != 1 ] ;;\nesac\n')
         docker.chmod(0o755)
         self.env = os.environ.copy()
         self.env['PATH'] = str(bindir) + os.pathsep + self.env['PATH']
@@ -46,7 +46,12 @@ class DeployVPSTest(unittest.TestCase):
         password = next(line.split('=', 1)[1] for line in envfile.read_text().splitlines() if line.startswith('POSTGRES_PASSWORD='))
         self.assertRegex(password, r'^[0-9a-f]{64}$')
         calls = self.calls()
-        self.assertTrue(any('compose.source.yaml' in call and 'up -d --build db migrate api' in call for call in calls), calls)
+        self.assertTrue(any('compose.source.yaml' in call and 'build migrate api' in call for call in calls), calls)
+        db = next(index for index, call in enumerate(calls) if 'up -d --wait db' in call)
+        migration = next(index for index, call in enumerate(calls) if 'run --rm -T --no-deps migrate' in call)
+        start = next(index for index, call in enumerate(calls) if 'up -d --no-deps api' in call)
+        self.assertLess(db, migration)
+        self.assertLess(migration, start)
         self.assertTrue(any('exec -T api /usr/local/bin/control-plane --healthcheck' in call for call in calls), calls)
 
     def test_public_preview_requires_explicit_flag(self):
@@ -70,7 +75,7 @@ class DeployVPSTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = self.calls()
         dump = next(index for index, call in enumerate(calls) if 'exec -T db pg_dump' in call)
-        upgrade = next(index for index, call in enumerate(calls) if 'up -d --build db migrate api' in call)
+        upgrade = next(index for index, call in enumerate(calls) if 'run --rm -T --no-deps migrate' in call)
         self.assertLess(dump, upgrade)
         self.assertEqual(len(list((self.root / '.local/backups').glob('*.dump'))), 1)
 
@@ -81,7 +86,14 @@ class DeployVPSTest(unittest.TestCase):
         result = self.run_script()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('backup failed', result.stderr.lower())
-        self.assertFalse(any('up -d --build db migrate api' in call for call in self.calls()))
+        self.assertFalse(any('run --rm' in call or 'up -d --no-deps api' in call for call in self.calls()))
+
+    def test_failed_migration_stops_before_api_restart(self):
+        self.env['FAIL_MIGRATION'] = '1'
+        result = self.run_script()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('migration failed', result.stderr.lower())
+        self.assertFalse(any('up -d --no-deps api' in call for call in self.calls()))
 
     def test_existing_public_or_authenticated_env_requires_explicit_safe_handling(self):
         envfile = self.root / 'deployments/compose/.env'

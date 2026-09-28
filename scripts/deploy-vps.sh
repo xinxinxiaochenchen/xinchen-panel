@@ -97,8 +97,15 @@ if [ "$existing_volume" = true ]; then
   echo "Verified pre-migration backup: $backup"
 fi
 
-echo 'Building and starting PostgreSQL, migration, and WebUI...'
-compose up -d --build db migrate api
+echo 'Building the control plane and WebUI...'
+compose build migrate api
+compose up -d --wait db
+echo 'Applying database migrations...'
+if ! compose run --rm -T --no-deps migrate; then
+  echo 'Database migration failed; the API was not restarted.' >&2
+  exit 1
+fi
+compose up -d --no-deps api
 
 attempt=0
 while [ "$attempt" -lt 30 ]; do
