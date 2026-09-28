@@ -53,6 +53,7 @@ func main() {
 		os.Exit(2)
 	}
 	var sessions httpapi.IdentitySessions
+	var setupStore httpapi.SetupStore
 	var catalogStore httpapi.CatalogStore
 	var entitlementStore httpapi.EntitlementStore
 	var accountStore httpapi.AccountStore
@@ -68,6 +69,7 @@ func main() {
 	var roleStore httpapi.RoleStore
 	var auditStore httpapi.AuditStore
 	if cfg.BrowserAuthEnabled {
+		setupStore = identity.NewSetupRepository(pool)
 		identityRepository := identity.NewPostgresRepository(pool)
 		sessions = identity.NewService(identityRepository)
 		accountStore = identityRepository
@@ -93,6 +95,7 @@ func main() {
 		agentTokenStore = agentidentity.NewEnrollmentService(pool, nil)
 	}
 	handler := httpapi.NewHandlerWithStoresOptions(logger, db.HealthCheck{Database: pool}, sessions, httpapi.RouteStores{
+		Setup:   setupStore,
 		Catalog: catalogStore, Entitlements: entitlementStore, Accounts: accountStore, Lines: lineStore,
 		Forward: forwardStore, Policies: forwardPolicyStore, AgentTokens: agentTokenStore, ProxyAccess: proxyAccessStore, Subscriptions: subscriptionStore,
 		Usage:       usageStore,
@@ -100,7 +103,7 @@ func main() {
 		GeoRuleSets: geoRuleSetStore,
 		Roles:       roleStore,
 		Audit:       auditStore,
-	}, httpapi.HandlerOptions{BrowserCookieSecure: cfg.BrowserCookieSecure})
+	}, httpapi.HandlerOptions{BrowserCookieSecure: cfg.BrowserCookieSecure, SetupToken: cfg.SetupToken})
 	if cfg.WebDir != "" {
 		if _, err := os.Stat(cfg.WebDir + "/index.html"); err != nil {
 			logger.Error("web bundle unavailable", "error", err)

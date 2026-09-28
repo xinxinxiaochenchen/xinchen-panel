@@ -12,7 +12,7 @@ VPS 安装 curl、Git、Docker Engine 和 Compose 插件后，以 root 执行：
 curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-http
 ```
 
-首次安装生成数据库密码和代理凭据密钥，提示输入管理员邮箱和密码，构建、迁移并启动面板。访问 `http://服务器IP:18080/` 即可登录管理；需在防火墙允许 TCP 18080。安装目录默认 `/opt/xinchen-panel`。安装器不要求 VPS 安装 Go 或 Node.js。
+首次安装自动生成数据库密码、代理凭据密钥和一次性初始化凭证，构建、迁移并启动面板。访问 `http://服务器IP:18080/`，在网页输入安装完成时显示的初始化凭证，设置管理员邮箱和密码；登录后在管理页配置业务参数。需在防火墙允许 TCP 18080。安装目录默认 `/opt/xinchen-panel`。安装器不要求 VPS 安装 Go 或 Node.js。
 
 | 模式 | 参数 | 浏览器功能 |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/ma
 | HTTPS 反代 | `--https` | 同一组功能；回环绑定和 Secure Cookie，自行配置反代 |
 | 只读预览 | `--public-preview` | 页面结构与健康状态，关闭登录和写操作 |
 
-无参数首次安装默认正式 HTTP；无参数重复安装保留原访问模式、密码、密钥和数据卷，迁移前自动备份。显式参数可切换模式。已有源码运行 `sh scripts/deploy-vps.sh --public-http`；后续运行 `sh scripts/deploy-vps.sh` 更新。非交互安装使用 `CONTROL_ADMIN_EMAIL` 和权限 `0600` 的绝对路径 `CONTROL_ADMIN_PASSWORD_FILE`；管理员密码不写入 `.env` 或命令参数。
+无参数首次安装默认正式 HTTP；无参数重复安装保留原访问模式、密码、密钥和数据卷，迁移前自动备份。显式参数可切换模式。已有源码运行 `sh scripts/deploy-vps.sh --public-http`；后续运行 `sh scripts/deploy-vps.sh` 更新。交互和无人值守安装均不读取管理员邮箱、密码或业务参数；它们统一在面板配置。一次性凭证仅用于首次管理员创建，初始化完成后入口永久关闭；已有管理员升级不会重新初始化或改密码。
 
 登录后可管理资源与账户。执行真实代理和转发前，需按部署文档接入节点 Agent，并配置节点、线路、套餐和转发目标策略。多跳还需持久化线路密钥。开发测试与生产构建在本地完成，服务器现场验收另行安排；本轮开发不改既有线上实例。`us bwg` 仍为历史只读预览，其状态以 [部署记录](docs/deployment/us-bwg-preview.md) 为准。
 
@@ -101,7 +101,7 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 ## 身份认证与首次管理员
 
-代码提供 `POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`GET /api/v1/me` 和 `GET /api/v1/me/permissions`。会话使用 12 小时有效的随机令牌，数据库只存哈希；Cookie 为 host-only，带 `HttpOnly`（会话）和 `SameSite=Lax`。HTTPS 模式使用 Secure `__Host-` Cookie，HTTP 模式使用 `control_session`/`control_csrf`；写请求使用 CSRF 令牌并校验浏览器来源。登录在单进程内限制为每账户 5 次/5 分钟、全局 60 次/分钟；过期会话每小时分批清理。首次管理员由 `cmd/admin-bootstrap` 创建，邮箱通过 `CONTROL_ADMIN_EMAIL` 提供，密码从非交互标准输入读取且不得少于 12 字节。完整契约见 [OpenAPI](api/openapi/control-plane.yaml)。
+代码提供 `GET/POST /api/v1/setup`、`POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`GET /api/v1/me` 和 `GET /api/v1/me/permissions`。首次管理员在网页创建，要求独立的 256 位初始化凭证和 12–72 字节密码；凭证来自 `CONTROL_SETUP_TOKEN_FILE` 指定的私有文件。数据库事务锁与永久完成标记阻止重复或并发初始化，成功创建与审计在同一事务保存。会话使用 12 小时有效的随机令牌，数据库只存哈希；Cookie 为 host-only，带 `HttpOnly`（会话）和 `SameSite=Lax`。HTTPS 模式使用 Secure `__Host-` Cookie，HTTP 模式使用 `control_session`/`control_csrf`；写请求使用 CSRF 令牌并校验浏览器来源。登录在单进程内限制为每账户 5 次/5 分钟、全局 60 次/分钟；过期会话每小时分批清理。完整契约见 [OpenAPI](api/openapi/control-plane.yaml)。
 
 服务配置通过 `CONTROL_BROWSER_AUTH_ENABLED=true` 启用身份路由；正式安装器自动设置。`CONTROL_BROWSER_COOKIE_SECURE` 控制 Cookie 策略，HTTP 为 false，HTTPS 为 true，服务代码缺省为 true。成功登录和退出会在数据库事务中写不含凭据的审计。`cmd/admin-bootstrap --status` 查询管理员状态，`--if-needed` 只初始化第一个管理员，重复安装保留原密码。只读预览下身份路由关闭并返回 404。
 

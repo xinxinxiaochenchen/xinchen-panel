@@ -45,7 +45,7 @@ export type Usage = {
   snapshot: Snapshot
 }
 export type DailyUsage = { date: string; uploaded_bytes: number; downloaded_bytes: number; charged_bytes: number }
-export type Viewer = { kind: 'preview' } | { kind: 'guest' } | { kind: 'signed-in'; user: User }
+export type Viewer = { kind: 'preview' } | { kind: 'guest' } | { kind: 'setup'; enabled: boolean } | { kind: 'signed-in'; user: User }
 export type Resource<T> = { kind: 'loading' } | { kind: 'empty' } | { kind: 'ready'; data: T } | { kind: 'error'; message: string }
 
 export function planScopeLabels(snapshot: Pick<Snapshot, 'resource_group_ids' | 'line_ids'>, nodes: ScopeNode[], lines: ScopeLine[]): PlanScopeLabels {
@@ -63,7 +63,14 @@ export function planScopeLabels(snapshot: Pick<Snapshot, 'resource_group_ids' | 
 export async function loadViewer(_protocol: string, _hostname: string, request: typeof fetch = fetch): Promise<Viewer> {
   const response = await request('/api/v1/me', { credentials: 'same-origin', cache: 'no-store' })
   if (response.status === 404) return { kind: 'preview' }
-  if (response.status === 401) return { kind: 'guest' }
+  if (response.status === 401) {
+    const setup = await request('/api/v1/setup', { credentials: 'same-origin', cache: 'no-store' })
+    if (setup.status === 404) return { kind: 'guest' }
+    if (!setup.ok) throw new Error(`初始化状态暂不可用（${setup.status}）`)
+    const status = await setup.json() as { required?: unknown; enabled?: unknown }
+    if (typeof status.required !== 'boolean' || typeof status.enabled !== 'boolean') throw new Error('初始化状态无效')
+    return status.required ? { kind: 'setup', enabled: status.enabled } : { kind: 'guest' }
+  }
   if (!response.ok) throw new Error(`账户状态暂不可用（${response.status}）`)
   return { kind: 'signed-in', user: await response.json() as User }
 }

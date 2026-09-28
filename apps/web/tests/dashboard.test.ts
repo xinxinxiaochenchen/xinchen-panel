@@ -6,13 +6,13 @@ test('public IP HTTP uses the server session response instead of forcing preview
   let requests = 0
   const request = async (path: string | URL | Request, options?: RequestInit) => {
     requests++
-    assert.equal(path, '/api/v1/me')
+    assert.ok(path === '/api/v1/me' || path === '/api/v1/setup')
     assert.equal(options?.credentials, 'same-origin')
     assert.equal(options?.cache, 'no-store')
-    return new Response(null, { status: 401 })
+    return new Response(null, { status: path === '/api/v1/me' ? 401 : 404 })
   }
   assert.deepEqual(await loadViewer('http:', '203.0.113.7', request), { kind: 'guest' })
-  assert.equal(requests, 1)
+  assert.equal(requests, 2)
   assert.deepEqual(await loadViewer('http:', '203.0.113.7', async () => new Response(null, { status: 404 })), { kind: 'preview' })
   const viewer = await loadViewer('http:', '203.0.113.7', async () => Response.json({ id: 'http-user', email: 'a@example.test' }))
   assert.equal(viewer.kind, 'signed-in')
@@ -20,10 +20,21 @@ test('public IP HTTP uses the server session response instead of forcing preview
 
 test('safe origin distinguishes disabled auth, guest and signed-in user', async () => {
   assert.deepEqual(await loadViewer('https:', 'example.test', async () => new Response(null, { status: 404 })), { kind: 'preview' })
-  assert.deepEqual(await loadViewer('https:', 'example.test', async () => new Response(null, { status: 401 })), { kind: 'guest' })
+  assert.deepEqual(await loadViewer('https:', 'example.test', async (path) => new Response(null, { status: path === '/api/v1/me' ? 401 : 404 })), { kind: 'guest' })
   const viewer = await loadViewer('https:', 'example.test', async () => Response.json({ id: 'u1', email: 'a@example.test', status: 'active', timezone: 'UTC', roles: ['user'], permissions: ['dashboard.read'] }))
   assert.equal(viewer.kind, 'signed-in')
   if (viewer.kind === 'signed-in') assert.equal(viewer.user.email, 'a@example.test')
+})
+
+test('fresh installation shows setup and never mistakes a setup service failure for login', async () => {
+  const paths: string[] = []
+  const request = async (path: string | URL | Request) => {
+    paths.push(String(path))
+    return path === '/api/v1/me' ? new Response(null, { status: 401 }) : Response.json({ required: true, enabled: true })
+  }
+  assert.deepEqual(await loadViewer('http:', '203.0.113.7', request), { kind: 'setup', enabled: true })
+  assert.deepEqual(paths, ['/api/v1/me', '/api/v1/setup'])
+  await assert.rejects(loadViewer('http:', '203.0.113.7', async (path) => new Response(null, { status: path === '/api/v1/me' ? 401 : 503 })))
 })
 
 test('daily range uses inclusive UTC dates and stays within API limit', () => {

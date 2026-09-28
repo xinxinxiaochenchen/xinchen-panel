@@ -19,6 +19,7 @@ type Config struct {
 	BrowserAuthEnabled    bool
 	BrowserCookieSecure   bool
 	ProxyCredentialKey    []byte
+	SetupToken            string
 	RelaySecretKey        []byte
 	WebDir                string
 	AgentTLSAddr          string
@@ -90,6 +91,25 @@ func LoadFrom(lookup func(string) (string, bool)) (Config, error) {
 			return Config{}, fmt.Errorf("CONTROL_PROXY_CREDENTIAL_KEY_FILE: expected 32 base64url-encoded bytes")
 		}
 		cfg.ProxyCredentialKey = decoded
+	}
+	if path, ok := lookup("CONTROL_SETUP_TOKEN_FILE"); ok && path != "" {
+		if !filepath.IsAbs(path) {
+			return Config{}, fmt.Errorf("CONTROL_SETUP_TOKEN_FILE: absolute file path required")
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+			return Config{}, fmt.Errorf("CONTROL_SETUP_TOKEN_FILE: private regular file required")
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return Config{}, fmt.Errorf("CONTROL_SETUP_TOKEN_FILE: unreadable")
+		}
+		token := strings.TrimSpace(string(contents))
+		decoded, err := base64.RawURLEncoding.DecodeString(token)
+		if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != token {
+			return Config{}, fmt.Errorf("CONTROL_SETUP_TOKEN_FILE: expected 32 base64url-encoded bytes")
+		}
+		cfg.SetupToken = token
 	}
 	if path, ok := lookup("CONTROL_RELAY_SECRET_KEY_FILE"); ok {
 		if !filepath.IsAbs(path) {

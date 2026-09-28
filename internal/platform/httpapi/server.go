@@ -59,6 +59,7 @@ func NewHandlerWithAgentTokens(logger *slog.Logger, checker ReadyChecker, sessio
 }
 
 type RouteStores struct {
+	Setup         SetupStore
 	Catalog       CatalogStore
 	Entitlements  EntitlementStore
 	Accounts      AccountStore
@@ -87,6 +88,7 @@ func NewHandlerWithStores(logger *slog.Logger, checker ReadyChecker, sessions Id
 // be true for HTTPS, and can be explicitly disabled for HTTP administration.
 type HandlerOptions struct {
 	BrowserCookieSecure bool
+	SetupToken          string
 }
 
 func NewHandlerWithStoresOptions(logger *slog.Logger, checker ReadyChecker, sessions IdentitySessions, stores RouteStores, options HandlerOptions) http.Handler {
@@ -120,6 +122,9 @@ func NewHandlerWithStoresOptions(logger *slog.Logger, checker ReadyChecker, sess
 	})
 	if sessions != nil {
 		registerIdentityRoutes(mux, sessions)
+		if stores.Setup != nil {
+			registerSetupRoutes(mux, stores.Setup, options.SetupToken)
+		}
 		if catalog != nil {
 			registerCatalogRoutes(mux, sessions, catalog)
 		}

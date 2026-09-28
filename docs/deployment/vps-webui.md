@@ -10,7 +10,7 @@
 curl -fsSL https://raw.githubusercontent.com/xinxinxiaochenchen/xinchen-panel/main/scripts/install-vps.sh -o xinchen-panel-install.sh && sh xinchen-panel-install.sh --public-http
 ```
 
-首次输入管理员邮箱和 12–72 字节密码，密码不会回显。安装器生成随机数据库密码和代理凭据密钥、构建前后端、应用迁移、初始化管理员并启动服务。访问 `http://服务器IP:18080/` 登录；服务器及云平台防火墙需允许 TCP 18080。安装目录默认 `/opt/xinchen-panel`，可用 `XINCHEN_PANEL_DIR=/absolute/path` 指定。
+安装器自动生成随机数据库密码、代理凭据密钥和一次性初始化凭证，构建前后端、应用迁移并启动服务；终端无需填写管理员或业务参数。访问 `http://服务器IP:18080/`，在初始化页面填写安装完成时显示的凭证、管理员邮箱和 12–72 字节密码，然后登录管理页配置业务。服务器及云平台防火墙需允许 TCP 18080。安装目录默认 `/opt/xinchen-panel`，可用 `XINCHEN_PANEL_DIR=/absolute/path` 指定。
 
 | 参数 | 用途 |
 | --- | --- |
@@ -25,15 +25,13 @@ HTTP 使用 `control_session`/`control_csrf` host-only Cookie，HTTPS 使用 Sec
 
 ### 无人值守安装
 
-准备仅当前管理员可读的绝对路径密码文件，权限 `0600` 或 `0400`。文件只放一行密码，不将密码写入命令参数、`.env` 或 Git：
+无人值守安装使用同一命令，无需管理员环境变量或密码文件：
 
 ```sh
-CONTROL_ADMIN_EMAIL='owner@example.com' \
-CONTROL_ADMIN_PASSWORD_FILE=/root/private/panel-admin-password \
-  sh xinchen-panel-install.sh --public-http
+sh xinchen-panel-install.sh --public-http
 ```
 
-安装后自行保管或移除初始密码文件。后续更新根据数据库中的管理员状态跳过初始化，不读取密码文件、不修改现有管理员密码。初始化失败时 API 不启动；修正输入后再次执行即可。
+保存安装完成时显示的一次性初始化凭证，稍后在浏览器完成账号设置。凭证保存在持久密钥目录的 `setup.token`（权限 `0600`），不写入 URL、访问日志或 Git。首次初始化成功后入口永久关闭，管理员停用也不会重新开放；后续更新保留管理员密码和业务数据。初始化页面遇到输入错误可直接修正后重试，无需重新部署。
 
 ## 2. 预编译发布包
 
@@ -51,8 +49,9 @@ sh scripts/build-release-archive.sh
 ```sh
 install -d -o 65532 -g 65532 -m 0700 /opt/xinchen-panel/secrets/proxy
 openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' > /opt/xinchen-panel/secrets/proxy/proxy.key
-chmod 0600 /opt/xinchen-panel/secrets/proxy/proxy.key
-chown 65532:65532 /opt/xinchen-panel/secrets/proxy/proxy.key
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' > /opt/xinchen-panel/secrets/proxy/setup.token
+chmod 0600 /opt/xinchen-panel/secrets/proxy/proxy.key /opt/xinchen-panel/secrets/proxy/setup.token
+chown 65532:65532 /opt/xinchen-panel/secrets/proxy/proxy.key /opt/xinchen-panel/secrets/proxy/setup.token
 ```
 
 复制 `.env.example` 为 `.env`，权限 `0600`，写入真实配置：
@@ -64,24 +63,19 @@ CONTROL_BIND_IP=0.0.0.0
 CONTROL_BROWSER_AUTH_ENABLED=true
 CONTROL_BROWSER_COOKIE_SECURE=false
 CONTROL_PROXY_CREDENTIAL_SECRET_DIR=/opt/xinchen-panel/secrets/proxy
+CONTROL_SETUP_TOKEN_FILE=/run/proxy-secrets/setup.token
 ```
 
-启动数据库并迁移，初始化管理员，最后启动 API：
+启动数据库并迁移，再启动 API；管理员在浏览器初始化：
 
 ```sh
 docker compose -f compose.yaml -f compose.proxy-secrets.yaml build migrate api
 docker compose -f compose.yaml -f compose.proxy-secrets.yaml up -d --wait db
 docker compose -f compose.yaml -f compose.proxy-secrets.yaml run --rm -T --no-deps migrate
-read -r -s -p '管理员初始密码: ' PANEL_INITIAL_PASSWORD
-printf '\n'
-printf '%s\n' "$PANEL_INITIAL_PASSWORD" | docker compose -f compose.yaml -f compose.proxy-secrets.yaml \
-  run --rm -T --no-deps -e CONTROL_ADMIN_EMAIL='owner@example.com' \
-  api /usr/local/bin/admin-bootstrap --if-needed
-unset PANEL_INITIAL_PASSWORD
 docker compose -f compose.yaml -f compose.proxy-secrets.yaml up -d --no-deps api
 ```
 
-以上 `read -s -p` 示例使用 Bash。`admin-bootstrap --status` 输出 `configured` 或 `empty`；`--if-needed` 保留已有管理员。普通 `admin-bootstrap` 可显式创建额外管理员。
+服务器管理员从私有 `setup.token` 文件取得初始化凭证，在网页填写凭证、邮箱和密码。这里的命令只准备服务基础机密，不配置管理员或业务数据。已有管理员的手动升级可不设置 `CONTROL_SETUP_TOKEN_FILE`；正常升级保留密钥和数据库。`admin-bootstrap --status` 是安装器内部的初始化状态检查。
 
 ## 3. 登录后的配置顺序
 

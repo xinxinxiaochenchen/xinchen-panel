@@ -12,9 +12,9 @@ Updates without a flag preserve the existing access mode and configuration.
 --https: enable login with Secure cookies on 127.0.0.1:18080 for your HTTPS proxy.
 --public-preview: expose only the read-only HTTP preview.
 
-First formal install prompts for an administrator email and password.
-For noninteractive installs set CONTROL_ADMIN_EMAIL and
-CONTROL_ADMIN_PASSWORD_FILE (an absolute, private password file).
+First formal install generates a private one-time setup credential.
+Create the administrator and configure business parameters in the browser.
+No administrator email, password or business configuration is read by this script.
 EOF
 }
 
@@ -121,8 +121,8 @@ if [ "$mode" != preview ]; then
   secret_dir=$(read_env CONTROL_PROXY_CREDENTIAL_SECRET_DIR)
   if [ -z "$secret_dir" ]; then secret_dir=$root/.local/secrets/proxy; fi
   case "$secret_dir" in /*) ;; *) echo 'CONTROL_PROXY_CREDENTIAL_SECRET_DIR must be absolute.' >&2; exit 1 ;; esac
-  if [ -L "$secret_dir" ] || [ -L "$secret_dir/proxy.key" ]; then
-    echo 'Proxy key paths must not be symbolic links.' >&2; exit 1
+  if [ -L "$secret_dir" ] || [ -L "$secret_dir/proxy.key" ] || [ -L "$secret_dir/setup.token" ]; then
+    echo 'Secret paths must not be symbolic links.' >&2; exit 1
   fi
   if [ ! -f "$secret_dir/proxy.key" ]; then
     # A temporary preview keeps the formal database and its key path. Losing
@@ -141,6 +141,19 @@ if [ "$mode" != preview ]; then
   fi
   if [ "$(read_env CONTROL_PROXY_CREDENTIAL_SECRET_DIR)" != "$secret_dir" ]; then
     write_env CONTROL_PROXY_CREDENTIAL_SECRET_DIR "$secret_dir"
+  fi
+  if [ -e "$secret_dir/setup.token" ] && [ ! -f "$secret_dir/setup.token" ]; then
+    echo 'The setup credential must be a regular file.' >&2; exit 1
+  fi
+  if [ ! -f "$secret_dir/setup.token" ]; then
+    setup_token=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
+    if [ "${#setup_token}" -ne 43 ]; then echo 'Failed to generate the setup credential.' >&2; exit 1; fi
+    printf '%s\n' "$setup_token" > "$secret_dir/setup.token"
+    chmod 600 "$secret_dir/setup.token"
+    unset setup_token
+  fi
+  if [ "$(read_env CONTROL_SETUP_TOKEN_FILE)" != /run/proxy-secrets/setup.token ]; then
+    write_env CONTROL_SETUP_TOKEN_FILE /run/proxy-secrets/setup.token
   fi
 fi
 
@@ -175,58 +188,26 @@ compose up -d --wait db
 if [ "$mode" != preview ]; then
   # The application runs as UID 65532. Reuse the DB image to fix ownership,
   # including retries after a failed build and non-root Docker group installs.
+  docker run --rm --network none --user 0 --entrypoint chmod \
+    -v "$secret_dir:/run/proxy-secrets" postgres:16.10-bookworm \
+    600 /run/proxy-secrets/proxy.key /run/proxy-secrets/setup.token
   docker run --rm --network none --user 0 --entrypoint chown \
     -v "$secret_dir:/run/proxy-secrets" postgres:16.10-bookworm \
-    65532:65532 /run/proxy-secrets/proxy.key
+    65532:65532 /run/proxy-secrets/proxy.key /run/proxy-secrets/setup.token
 fi
 echo 'Applying database migrations...'
 if ! compose run --rm -T --no-deps migrate; then
   echo 'Database migration failed; the API was not restarted.' >&2; exit 1
 fi
 
+admin_state=configured
 if [ "$mode" != preview ]; then
   if ! admin_state=$(compose run --rm -T --no-deps api /usr/local/bin/admin-bootstrap --status); then
     echo 'Unable to read administrator state; the API was not restarted.' >&2; exit 1
   fi
   case "$admin_state" in
     configured) ;;
-    empty)
-      admin_email=${CONTROL_ADMIN_EMAIL:-}
-      if [ -z "$admin_email" ]; then
-        if [ ! -t 0 ]; then
-          echo 'Set CONTROL_ADMIN_EMAIL and CONTROL_ADMIN_PASSWORD_FILE for the first administrator.' >&2; exit 1
-        fi
-        printf 'Administrator email: '
-        IFS= read -r admin_email
-      fi
-      admin_password=
-      if [ -n "${CONTROL_ADMIN_PASSWORD_FILE:-}" ]; then
-        case "$CONTROL_ADMIN_PASSWORD_FILE" in /*) ;; *) echo 'CONTROL_ADMIN_PASSWORD_FILE must be absolute.' >&2; exit 1 ;; esac
-        if [ ! -f "$CONTROL_ADMIN_PASSWORD_FILE" ] || [ -L "$CONTROL_ADMIN_PASSWORD_FILE" ]; then
-          echo 'Administrator password file must be a private regular file.' >&2; exit 1
-        fi
-        password_mode=$(stat -c '%a' "$CONTROL_ADMIN_PASSWORD_FILE" 2>/dev/null || stat -f '%Lp' "$CONTROL_ADMIN_PASSWORD_FILE")
-        case "$password_mode" in 400|600) ;; *) echo 'Administrator password file must have permissions 0600 or 0400.' >&2; exit 1 ;; esac
-        admin_password=$(cat "$CONTROL_ADMIN_PASSWORD_FILE")
-      elif [ -t 0 ]; then
-        task_tty_state=$(stty -g)
-        trap 'stty "$task_tty_state"; unset admin_password' EXIT HUP INT TERM
-        printf 'Administrator password (12–72 bytes): '
-        stty -echo
-        IFS= read -r admin_password
-        stty "$task_tty_state"
-        trap - EXIT HUP INT TERM
-        printf '\n'
-      else
-        echo 'Set CONTROL_ADMIN_PASSWORD_FILE for the first administrator.' >&2; exit 1
-      fi
-      if ! printf '%s\n' "$admin_password" | compose run --rm -T --no-deps \
-        -e "CONTROL_ADMIN_EMAIL=$admin_email" api /usr/local/bin/admin-bootstrap --if-needed; then
-        unset admin_password
-        echo 'Administrator initialization failed; the API was not restarted. Correct the input and run the installer again.' >&2; exit 1
-      fi
-      unset admin_password
-      ;;
+    empty) ;;
     *) echo 'Invalid administrator state; the API was not restarted.' >&2; exit 1 ;;
   esac
 fi
@@ -240,6 +221,14 @@ while [ "$attempt" -lt 30 ]; do
       https) echo 'Panel ready on 127.0.0.1:18080. Access it through your HTTPS reverse proxy.' ;;
       preview) echo 'Read-only HTTP preview ready on port 18080.' ;;
     esac
+    if [ "$admin_state" = empty ]; then
+      echo 'Open the panel in your browser to create the administrator and configure business parameters.'
+      printf 'One-time setup credential: '
+      docker run --rm --network none --user 0 --entrypoint cat \
+        -v "$secret_dir:/run/proxy-secrets:ro" postgres:16.10-bookworm \
+        /run/proxy-secrets/setup.token
+      echo 'Keep this credential private. The setup entry closes after administrator creation.'
+    fi
     exit 0
   fi
   attempt=$((attempt + 1))

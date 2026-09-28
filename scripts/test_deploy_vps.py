@@ -25,16 +25,18 @@ class DeployVPSTest(unittest.TestCase):
         docker = bindir / 'docker'
         docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOCKER_LOG"\ncase " $* " in\n  *" volume inspect "*) [ "${EXISTING_VOLUME:-0}" = 1 ] ;;\n  *" exec -T db pg_dump "*) [ "${FAIL_BACKUP:-0}" = 1 ] && exit 1; printf "fixture-backup" ;;\n  *" exec -T db pg_restore "*) printf "fixture-index" ;;\n  *" build migrate api "*) [ "${FAIL_BUILD:-0}" != 1 ] ;;\n  *" run --rm -T --no-deps migrate "*) [ "${FAIL_MIGRATION:-0}" != 1 ] ;;\n  *"admin-bootstrap --status "*) printf \'%s\\n\' "${ADMIN_STATE:-empty}" ;;\n  *"admin-bootstrap --if-needed "*) [ "${FAIL_BOOTSTRAP:-0}" = 1 ] && exit 1; cat > "$BOOTSTRAP_INPUT" ;;\nesac\n')
         docker.chmod(0o755)
+        docker.write_text(docker.read_text().replace('case " $* " in\n', '''case " $* " in
+  *" --entrypoint chown "*) if [ "${SIMULATE_CONTAINER_OWNER:-0}" = 1 ]; then chmod 000 "$NCP_DEPLOY_ROOT/.local/secrets/proxy/setup.token"; fi ;;
+  *" --entrypoint cat "*)
+    token_path="$NCP_DEPLOY_ROOT/.local/secrets/proxy/setup.token"
+    if [ "${SIMULATE_CONTAINER_OWNER:-0}" = 1 ]; then chmod 600 "$token_path"; fi
+    cat "$token_path"
+    if [ "${SIMULATE_CONTAINER_OWNER:-0}" = 1 ]; then chmod 000 "$token_path"; fi ;;
+'''))
         self.env = os.environ.copy()
         self.env['PATH'] = str(bindir) + os.pathsep + self.env['PATH']
         self.env['DOCKER_LOG'] = str(self.root / 'docker.log')
         self.env['NCP_DEPLOY_ROOT'] = str(self.root)
-        password_file = self.root / 'admin-password'
-        password_file.write_text('long-initial-password\n')
-        password_file.chmod(0o600)
-        self.env['CONTROL_ADMIN_EMAIL'] = 'owner@example.test'
-        self.env['CONTROL_ADMIN_PASSWORD_FILE'] = str(password_file)
-        self.env['BOOTSTRAP_INPUT'] = str(self.root / 'bootstrap-input')
 
     def run_script(self, *args):
         return subprocess.run(['sh', str(self.root / 'scripts/deploy-vps.sh'), *args], cwd=self.root, env=self.env, text=True, capture_output=True)
@@ -111,19 +113,17 @@ class DeployVPSTest(unittest.TestCase):
         self.assertIn('CONTROL_BROWSER_AUTH_ENABLED=true', config)
         self.assertIn('CONTROL_BROWSER_COOKIE_SECURE=true', config)
 
-    def test_formal_install_creates_private_key_and_bootstraps_before_start(self):
+    def test_formal_install_creates_private_key_and_enables_web_setup(self):
         result = self.run_script('--public-http')
         self.assertEqual(result.returncode, 0, result.stderr)
         key = self.root / '.local/secrets/proxy/proxy.key'
         self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o600)
         import base64
         self.assertEqual(len(base64.urlsafe_b64decode(key.read_text().strip() + '=')), 32)
-        self.assertEqual((self.root / 'bootstrap-input').read_text(), 'long-initial-password\n')
-        self.assertNotIn('long-initial-password', result.stdout + result.stderr + '\n'.join(self.calls()))
+        self.assertFalse((self.root / 'bootstrap-input').exists())
         self.assertTrue(any('compose.proxy-secrets.yaml' in call for call in self.calls()))
-        bootstrap = next(i for i, call in enumerate(self.calls()) if 'admin-bootstrap --if-needed' in call)
-        start = next(i for i, call in enumerate(self.calls()) if 'up -d --no-deps api' in call)
-        self.assertLess(bootstrap, start)
+        self.assertFalse(any('admin-bootstrap --if-needed' in call for call in self.calls()))
+        self.assertIn('CONTROL_SETUP_TOKEN_FILE=/run/proxy-secrets/setup.token', (self.root / 'deployments/compose/.env').read_text())
 
     def test_repeated_formal_update_keeps_key_password_and_does_not_bootstrap_again(self):
         first = self.run_script('--public-http')
@@ -156,16 +156,18 @@ class DeployVPSTest(unittest.TestCase):
         self.assertIn('POSTGRES_PASSWORD=existing-password', envfile.read_text())
         self.assertIn('CONTROL_BROWSER_AUTH_ENABLED=true', envfile.read_text())
 
-    def test_failed_bootstrap_stops_api_start_and_can_be_retried(self):
-        self.env['FAIL_BOOTSTRAP'] = '1'
+    def test_invalid_setup_state_stops_api_start_and_can_be_retried(self):
+        self.env['ADMIN_STATE'] = 'invalid'
         result = self.run_script('--public-http')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any('up -d --no-deps api' in call for call in self.calls()))
         key = (self.root / '.local/secrets/proxy/proxy.key').read_bytes()
-        self.env['FAIL_BOOTSTRAP'] = '0'
+        token = (self.root / '.local/secrets/proxy/setup.token').read_bytes()
+        self.env['ADMIN_STATE'] = 'empty'
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.root / '.local/secrets/proxy/proxy.key').read_bytes(), key)
+        self.assertEqual((self.root / '.local/secrets/proxy/setup.token').read_bytes(), token)
 
     def test_existing_authenticated_database_missing_key_is_not_rekeyed(self):
         self.env['EXISTING_VOLUME'] = '1'
@@ -219,12 +221,54 @@ class DeployVPSTest(unittest.TestCase):
         self.assertIn('compose.proxy-secrets.yaml', start)
         self.assertIn('compose.source.yaml', start)
 
-    def test_world_readable_initial_password_file_stops_bootstrap(self):
-        Path(self.env['CONTROL_ADMIN_PASSWORD_FILE']).chmod(0o644)
+    def test_legacy_admin_variables_are_not_read(self):
+        self.env['CONTROL_ADMIN_EMAIL'] = 'ignored@example.test'
+        self.env['CONTROL_ADMIN_PASSWORD_FILE'] = '/does/not/exist'
+        result = self.run_script('--public-http')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('ignored@example.test', result.stdout + result.stderr + '\n'.join(self.calls()))
+        self.assertFalse(any('admin-bootstrap --if-needed' in call for call in self.calls()))
+
+    def test_setup_credential_symlink_is_rejected_without_overwriting_target(self):
+        secret_dir = self.root / '.local/secrets/proxy'
+        secret_dir.mkdir(parents=True)
+        target = self.root / 'original-token'
+        target.write_text('keep-private')
+        (secret_dir / 'setup.token').symlink_to(target)
         result = self.run_script('--public-http')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('permissions', result.stderr)
-        self.assertFalse(any('admin-bootstrap --if-needed' in call or 'up -d --no-deps api' in call for call in self.calls()))
+        self.assertIn('symbolic', result.stderr)
+        self.assertEqual(target.read_text(), 'keep-private')
+
+    def test_web_setup_install_starts_without_cli_administrator(self):
+        self.env.pop('CONTROL_ADMIN_EMAIL', None)
+        self.env.pop('CONTROL_ADMIN_PASSWORD_FILE', None)
+        result = self.run_script('--public-http')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any('admin-bootstrap --if-needed' in call for call in self.calls()))
+        self.assertIn('browser', result.stdout.lower())
+
+    def test_web_setup_credential_can_be_shown_when_host_user_cannot_read_container_file(self):
+        self.env['SIMULATE_CONTAINER_OWNER'] = '1'
+        result = self.run_script('--public-http')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('One-time setup credential:', result.stdout)
+
+    def test_web_setup_token_is_private_and_preserved_on_retry(self):
+        self.env.pop('CONTROL_ADMIN_EMAIL', None)
+        self.env.pop('CONTROL_ADMIN_PASSWORD_FILE', None)
+        result = self.run_script('--public-http')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        token_file = self.root / '.local/secrets/proxy/setup.token'
+        self.assertEqual(stat.S_IMODE(token_file.stat().st_mode), 0o600)
+        self.assertRegex(token_file.read_text().strip(), r'^[A-Za-z0-9_-]{43}$')
+        token = token_file.read_bytes()
+        self.assertNotIn(token_file.read_text().strip(), '\n'.join(self.calls()))
+        self.env['ADMIN_STATE'] = 'configured'
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(token_file.read_bytes(), token)
+        self.assertNotIn(token_file.read_text().strip(), result.stdout + result.stderr)
 
     def test_key_ownership_is_repaired_after_a_failed_first_build(self):
         self.env['FAIL_BUILD'] = '1'

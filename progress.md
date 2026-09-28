@@ -1,5 +1,10 @@
 # 进度
 
+- 2026-09-28 网页初始化开发完成：新增永久初始化状态迁移 27、私有一次性凭证、GET/POST 初始化 API、首次设置表单与业务配置引导；安装器自动生成凭证，不读取管理员环境变量或交互输入。审查后补齐错误凭证在数据库查询前限流、长邮箱拒绝与非 root Docker 用户显示凭证的回归。全量 Go 测试、vet、前端 56 项测试/构建、Python 37 项测试、Shell、OpenAPI/Compose 解析和 diff 检查通过。PostgreSQL 两项新集成测试未配置 DSN 而跳过，VPS 未升级本轮代码。最终 Linux amd64 归档 `/private/tmp/network-control-plane-release-20260928-panel-setup.tar.gz`，SHA-256 `1adc2e6790eca890728b93469694ff3f14e449eefc434b833896beb62a65a1d3`；GitHub 更新进行中。
+
+- 2026-09-28 网页初始化：分支 `codex/panel-setup` 从 `b149c1e` 开始；设计和实施计划已保存。新增 HTTP/私有凭证配置、前端初始化状态和无需 CLI 管理员参数的回归；已观察预期失败（缺少初始化接口与配置、前端返回 guest、安装器拒绝无管理员环境变量）。用户确认管理员与业务参数在面板配置，沿已授权开发继续完成网页初始化。
+- 2026-09-28 22:54 只读复核：公网 18080 能加载登录页；Termark 当前 CPU 约 6.8–17.5%，没有证明之前长期高 CPU 已被解决。远端仍运行原版本，尚未部署网页初始化。
+
 - 2026-09-28：新增 GitHub 源码检出后的 Docker Compose 一键部署脚本 `scripts/deploy-vps.sh` 与源码构建覆盖文件。脚本首次生成 0600 的随机数据库密码，默认只绑定回环；纯 IP 只读预览需要显式 `--public-preview`。已有数据卷升级前先完成并校验 PostgreSQL 自定义格式备份，缺失原 `.env` 或备份失败时拒绝迁移。源码 Dockerfile 补齐节点初始化与 Agent 令牌工具。9 项 Python 部署/打包测试、Shell 语法、Compose YAML 解析和 diff 检查通过；本机没有 Docker，真实容器启动待 VPS 验证。当前 Git 仓库没有远端且本机没有 GitHub CLI，已向用户索取目标 GitHub 仓库地址。
 
 - 2026-09-28：完成当前源码的最终 Linux amd64/WebUI 发布构建。`go test ./... -count=1`（允许回环监听）、`go vet ./...`、WebUI 49 项测试、TypeScript 检查、Vite 生产构建、发布脚本测试和 `git diff --check` 均通过。最终归档为 `/private/tmp/network-control-plane-release-20260928-final.tar.gz`，SHA-256 `7897f13c912c8dc168927dd2d68e06ec9b1e140fffbef05d5abb3fd742843c66`；归档包含 migration 1–26、WebUI 和全部 VPS Compose 文件，不包含 `.env`、私钥或数据库数据。

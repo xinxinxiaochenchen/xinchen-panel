@@ -25,6 +25,9 @@ func TestBootstrapAdminPersistsRoleAndRejectsDuplicate(t *testing.T) {
 	adminID := ""
 	t.Cleanup(func() {
 		if adminID != "" {
+			if _, err := pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE actor_user_id=$1`, adminID); err != nil {
+				t.Error(err)
+			}
 			if _, err := pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, adminID); err != nil {
 				t.Error(err)
 			}

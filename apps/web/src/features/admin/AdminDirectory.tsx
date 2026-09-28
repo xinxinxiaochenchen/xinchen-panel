@@ -147,6 +147,9 @@ export function AdminDirectory({ user }: { user: User }) {
           刷新数据
         </button>
       </div>
+      <section className="admin-section" aria-labelledby="business-setup-title">
+        <div className="admin-section-head"><div><span className="section-overline">GET STARTED</span><h2 id="business-setup-title">业务参数在此配置</h2><p>先配置资源域、节点和线路，再创建套餐及用户授权。节点和线路倍率、套餐流量额度与资源限制、转发目标策略均在下方表单维护。</p><p>新安装没有示例业务数据；保存后按节点状态接入 Agent。</p></div></div>
+      </section>
       {loading && (
         <div className="catalog-state" role="status">
           正在加载管理数据…

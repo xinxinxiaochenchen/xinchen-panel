@@ -15,6 +15,7 @@ import { ModulePreview } from "../features/preview/ModulePreview";
 import { DashboardHome } from "../features/dashboard/DashboardHome";
 import { AccountPage } from "../features/dashboard/AccountPage";
 import { SignIn } from "../features/dashboard/SignIn";
+import { InitialSetup } from "../features/dashboard/InitialSetup";
 import { CatalogDirectory } from "../features/catalog/CatalogDirectory";
 import { ForwardDirectory } from "../features/catalog/ForwardDirectory";
 import { SubscriptionDirectory } from "../features/catalog/SubscriptionDirectory";
@@ -195,6 +196,8 @@ export function App() {
               重试
             </button>
           </div>
+        ) : viewer.kind === "setup" ? (
+          <InitialSetup enabled={viewer.enabled} onInitialized={refresh} />
         ) : viewer.kind === "guest" ? (
           <SignIn onSignedIn={refresh} />
         ) : sectionId === "home" ? (
