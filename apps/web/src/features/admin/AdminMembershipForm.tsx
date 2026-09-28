@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Plus } from "lucide-react";
 import type { User } from "../../lib/dashboard";
-import type { Plan } from "../../lib/admin";
-import { buildMembershipInput } from "../../lib/admin";
+import { buildMembershipInput, membershipCanCancel, membershipStatusLabel, type Membership, type Plan } from "../../lib/admin";
 import { mutateCatalog } from "../../lib/catalog";
 import { csrfToken } from "../catalog/CreateLine";
 import { AdminSection } from "./AdminSection";
@@ -15,10 +14,14 @@ const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
 export function AdminMembershipForm({
   users,
   plans,
+  memberships,
+  canWrite,
   onSaved,
 }: {
   users: User[];
   plans: Plan[];
+  memberships: Membership[];
+  canWrite: boolean;
   onSaved: () => void;
 }) {
   const [userID, setUserID] = useState("");
@@ -27,6 +30,7 @@ export function AdminMembershipForm({
   const [ends, setEnds] = useState(nextYear);
   const [anchorDay, setAnchorDay] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -62,12 +66,65 @@ export function AdminMembershipForm({
     }
   }
 
+  async function cancelMembership(membership: Membership) {
+    if (!membershipCanCancel(membership.status, membership.ends_at)) return;
+    if (!window.confirm(`确认取消 ${membership.snapshot.plan_name} 的授权？现有连接将在配置收敛和额度租约到期后停止。`)) return;
+    setCancelBusy(membership.id);
+    setError("");
+    const result = await mutateCatalog<Membership>(
+      `/api/v1/admin/memberships/${membership.id}`,
+      "PATCH",
+      { status: "cancelled" },
+      csrfToken(),
+    );
+    setCancelBusy("");
+    if (result.kind === "error") setError(result.message);
+    else onSaved();
+  }
+
   return (
     <AdminSection
       title="套餐授权"
       description="为普通用户分配已有套餐，并设定账期起算日与有效期。"
     >
-      <form
+      <div className="admin-card-grid">
+        {memberships.map((membership) => {
+          const user = users.find((item) => item.id === membership.user_id);
+          return (
+            <article className="catalog-card" key={membership.id}>
+              <div className="catalog-card-name">
+                <strong>{user?.email ?? membership.user_id}</strong>
+                <span>{membershipStatusLabel(membership.status, membership.ends_at)}</span>
+              </div>
+              <div className="catalog-detail-grid">
+                <div>
+                  <small>套餐</small>
+                  <strong>{membership.snapshot.plan_name}</strong>
+                </div>
+                <div>
+                  <small>有效期</small>
+                  <strong>{formatMembershipDate(membership.ends_at)}</strong>
+                </div>
+                <div>
+                  <small>账期</small>
+                  <strong>{membership.snapshot.period_months ?? 1} 个月 / {membership.anchor_day} 日</strong>
+                </div>
+                <div>
+                  <small>倍率</small>
+                  <strong>×{((membership.snapshot.default_multiplier_milli ?? 1000) / 1000).toFixed(3)}</strong>
+                </div>
+                {canWrite && membershipCanCancel(membership.status, membership.ends_at) && (
+                  <button className="catalog-toggle admin-status-toggle" type="button" disabled={cancelBusy !== ""} onClick={() => void cancelMembership(membership)}>
+                    {cancelBusy === membership.id ? "取消中…" : "取消授权"}
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+        {memberships.length === 0 && <div className="catalog-state">暂无授权记录。</div>}
+      </div>
+      {canWrite && <form
         className="admin-membership-form"
         onSubmit={(event) => void submit(event)}
       >
@@ -150,7 +207,7 @@ export function AdminMembershipForm({
           {busy ? "创建中…" : "创建授权"}
           <Plus size={16} />
         </button>
-      </form>
+      </form>}
       {error && (
         <p className="catalog-page-error" role="alert">
           {error}
@@ -163,4 +220,10 @@ export function AdminMembershipForm({
       )}
     </AdminSection>
   );
+}
+
+function formatMembershipDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: "UTC" }).format(date);
 }

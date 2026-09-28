@@ -17,6 +17,17 @@ type memoryRepository struct {
 	onFind   func()
 }
 
+type auditedMemoryRepository struct {
+	*memoryRepository
+	requestIDs []string
+	logoutIDs  []string
+}
+
+func (r *auditedMemoryRepository) InsertSessionWithAudit(ctx context.Context, record Session, expectedPasswordHash, requestID string) error {
+	r.requestIDs = append(r.requestIDs, requestID)
+	return r.memoryRepository.InsertSession(ctx, record, expectedPasswordHash)
+}
+
 func (r *memoryRepository) FindUserByEmail(_ context.Context, email string) (User, error) {
 	if email != r.user.Email {
 		return User{}, ErrNotFound
@@ -39,6 +50,10 @@ func (r *memoryRepository) InsertSession(_ context.Context, record Session, expe
 	return nil
 }
 
+func (r *memoryRepository) InsertSessionWithAudit(ctx context.Context, record Session, expectedPasswordHash, _ string) error {
+	return r.InsertSession(ctx, record, expectedPasswordHash)
+}
+
 func (r *memoryRepository) FindSession(_ context.Context, hash [32]byte) (Session, User, error) {
 	record, ok := r.sessions[hash]
 	if !ok {
@@ -50,6 +65,15 @@ func (r *memoryRepository) FindSession(_ context.Context, hash [32]byte) (Sessio
 func (r *memoryRepository) DeleteSession(_ context.Context, hash [32]byte) error {
 	delete(r.sessions, hash)
 	return nil
+}
+
+func (r *memoryRepository) DeleteSessionWithAudit(ctx context.Context, hash [32]byte, _ string, _ string) error {
+	return r.DeleteSession(ctx, hash)
+}
+
+func (r *auditedMemoryRepository) DeleteSessionWithAudit(ctx context.Context, hash [32]byte, _ string, requestID string) error {
+	r.logoutIDs = append(r.logoutIDs, requestID)
+	return r.memoryRepository.DeleteSession(ctx, hash)
 }
 
 func activeRepository(t *testing.T) *memoryRepository {
@@ -100,6 +124,32 @@ func TestLoginCreatesHashedSessionAndAuthenticates(t *testing.T) {
 	principal, err := service.Authenticate(context.Background(), result.Token)
 	if err != nil || principal.Email != repo.user.Email {
 		t.Fatalf("authentication = %+v, %v", principal, err)
+	}
+}
+
+func TestLoginWithRequestIDUsesAtomicAuditAwareSessionInsert(t *testing.T) {
+	repo := &auditedMemoryRepository{memoryRepository: activeRepository(t)}
+	service := NewService(repo)
+	if _, err := service.LoginWithRequestID(context.Background(), repo.user.Email, "correct-password", "request-login-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.requestIDs) != 1 || repo.requestIDs[0] != "request-login-1" {
+		t.Fatalf("audit request IDs = %#v", repo.requestIDs)
+	}
+}
+
+func TestLogoutWithRequestIDUsesAtomicAuditAwareSessionDelete(t *testing.T) {
+	repo := &auditedMemoryRepository{memoryRepository: activeRepository(t)}
+	service := NewService(repo)
+	login, err := service.Login(context.Background(), repo.user.Email, "correct-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.LogoutWithRequestID(context.Background(), login.Token, login.CSRFToken, "request-logout-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.logoutIDs) != 1 || repo.logoutIDs[0] != "request-logout-1" || len(repo.sessions) != 0 {
+		t.Fatalf("logout audit IDs=%#v sessions=%d", repo.logoutIDs, len(repo.sessions))
 	}
 }
 

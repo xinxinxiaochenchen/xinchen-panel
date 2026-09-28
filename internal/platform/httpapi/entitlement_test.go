@@ -50,6 +50,17 @@ func (s *entitlementStub) CreatePlan(_ context.Context, input entitlement.PlanIn
 func (s *entitlementStub) ListPlans(context.Context, int, string) ([]entitlement.Plan, error) {
 	return []entitlement.Plan{}, nil
 }
+func (s *entitlementStub) ListMemberships(context.Context, int, string) ([]entitlement.Membership, error) {
+	return []entitlement.Membership{{ID: "22222222-2222-7222-8222-222222222222", UserID: "member-id", Status: "active"}}, nil
+}
+func (s *entitlementStub) SetMembershipStatus(_ context.Context, id, status, actor, _ string) (entitlement.Membership, error) {
+	s.createdBy = actor
+	return entitlement.Membership{ID: id, UserID: "member-id", Status: status}, nil
+}
+func (s *entitlementStub) SetPlanStatus(_ context.Context, id, status, actor, _ string) (entitlement.Plan, error) {
+	s.createdBy = actor
+	return entitlement.Plan{ID: id, Name: "Standard", Status: status}, nil
+}
 func (s *entitlementStub) CreateMembership(_ context.Context, input entitlement.MembershipInput, actor, _ string) (entitlement.Membership, error) {
 	s.createdBy = actor
 	return entitlement.Membership{ID: "22222222-2222-7222-8222-222222222222", UserID: input.UserID,
@@ -113,5 +124,73 @@ func TestMemberSeesOnlyOwnFrozenEntitlements(t *testing.T) {
 	handler.ServeHTTP(response, catalogRequest(http.MethodGet, "/api/v1/admin/plans", "member-token", "", ""))
 	if response.Code != 403 {
 		t.Fatalf("member admin list = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestMembershipDirectoryRequiresPlanRead(t *testing.T) {
+	store := &entitlementStub{}
+	handler := NewHandlerWithEntitlements(testLogger(), nil, entitlementSessions{}, nil, store)
+	for _, tc := range []struct {
+		token  string
+		status int
+	}{
+		{"", http.StatusUnauthorized},
+		{"member-token", http.StatusForbidden},
+		{"admin-token", http.StatusOK},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodGet, "/api/v1/admin/memberships", tc.token, "", ""))
+		if response.Code != tc.status {
+			t.Fatalf("membership list token=%q status=%d body=%s", tc.token, response.Code, response.Body.String())
+		}
+		if tc.status == http.StatusOK && !strings.Contains(response.Body.String(), `"user_id":"member-id"`) {
+			t.Fatalf("membership directory = %s", response.Body.String())
+		}
+	}
+}
+
+func TestMembershipCancellationRequiresWritePermissionAndCSRF(t *testing.T) {
+	store := &entitlementStub{}
+	handler := NewHandlerWithEntitlements(testLogger(), nil, entitlementSessions{}, nil, store)
+	for _, tc := range []struct {
+		token, csrf string
+		status      int
+	}{
+		{"", "", http.StatusUnauthorized},
+		{"member-token", "valid-csrf", http.StatusForbidden},
+		{"admin-token", "", http.StatusForbidden},
+		{"admin-token", "valid-csrf", http.StatusOK},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodPatch, "/api/v1/admin/memberships/22222222-2222-7222-8222-222222222222", tc.token, tc.csrf, `{"status":"cancelled"}`))
+		if response.Code != tc.status {
+			t.Fatalf("membership cancel token=%q csrf=%q status=%d body=%s", tc.token, tc.csrf, response.Code, response.Body.String())
+		}
+	}
+	if store.createdBy != "admin-id" {
+		t.Fatalf("membership cancel actor = %q", store.createdBy)
+	}
+}
+
+func TestPlanStatusChangeRequiresWritePermissionAndCSRF(t *testing.T) {
+	store := &entitlementStub{}
+	handler := NewHandlerWithEntitlements(testLogger(), nil, entitlementSessions{}, nil, store)
+	for _, tc := range []struct {
+		token, csrf string
+		status      int
+	}{
+		{"", "", http.StatusUnauthorized},
+		{"member-token", "valid-csrf", http.StatusForbidden},
+		{"admin-token", "", http.StatusForbidden},
+		{"admin-token", "valid-csrf", http.StatusOK},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodPatch, "/api/v1/admin/plans/11111111-1111-7111-8111-111111111111", tc.token, tc.csrf, `{"status":"archived"}`))
+		if response.Code != tc.status {
+			t.Fatalf("plan status token=%q csrf=%q status=%d body=%s", tc.token, tc.csrf, response.Code, response.Body.String())
+		}
+	}
+	if store.createdBy != "admin-id" {
+		t.Fatalf("plan status actor = %q", store.createdBy)
 	}
 }

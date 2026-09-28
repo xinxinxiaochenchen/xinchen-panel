@@ -1,5 +1,6 @@
 export type NodeRecord = {
   id: string
+  group_id: string
   group_code: string
   name: string
   region: string
@@ -14,12 +15,14 @@ export type NodeRecord = {
   enabled: boolean
   agent_status: string
   last_seen_at: string | null
+  latency_ms: number | null
 }
 
 export type NodeMetricsRecord = {
   node_id: string
   agent_status: string
   last_seen_at: string | null
+  latency_ms: number | null
   fresh: boolean
   metrics: null | {
     observed_at: string
@@ -185,4 +188,12 @@ export function nodeStatusLabel(status: string): string {
 
 export function capabilityLabel(capability: string): string {
   return capability === 'proxy' ? '代理出口' : capability === 'forward' ? '中转入口' : capability
+}
+
+export function formatBandwidthBPS(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || value < 0) return '—'
+  if (value >= 1_000_000_000) return `${Number((value / 1_000_000_000).toFixed(1))} Gbps`
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))} Mbps`
+  if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))} Kbps`
+  return `${Math.round(value)} bps`
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { formatMetricBytes, metricFreshnessLabel } from '../src/features/admin/nodeMetrics.ts'
+import { formatLatency, formatMetricBytes, metricFreshnessLabel } from '../src/features/admin/nodeMetrics.ts'
 
 test('node metric display distinguishes unknown and stale observations', () => {
   assert.equal(metricFreshnessLabel(null), '暂无心跳数据')
@@ -14,4 +14,9 @@ test('node metric byte counters remain distinct from billed traffic', () => {
   assert.equal(formatMetricBytes(0), '0 B')
   assert.equal(formatMetricBytes(1048576), '1 MiB')
   assert.equal(formatMetricBytes(1610612736), '1.5 GiB')
+})
+
+test('node latency is a measured RTT and unknown latency stays blank', () => {
+  assert.equal(formatLatency(null), '—')
+  assert.equal(formatLatency(17), '17 ms')
 })

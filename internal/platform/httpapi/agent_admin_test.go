@@ -54,6 +54,7 @@ func (s agentAdminSessions) VerifyCSRF(ctx context.Context, token, csrf string) 
 type agentTokenStub struct {
 	nodeID, actorID string
 	calls           int
+	revoked         bool
 }
 
 func (stub *agentTokenStub) CreateToken(_ context.Context, nodeID, actorID, requestID string) (agentidentity.EnrollmentToken, error) {
@@ -63,6 +64,13 @@ func (stub *agentTokenStub) CreateToken(_ context.Context, nodeID, actorID, requ
 		return agentidentity.EnrollmentToken{}, errors.New("missing request ID")
 	}
 	return agentidentity.EnrollmentToken{Token: "one-time-secret", ExpiresAt: time.Now().Add(10 * time.Minute)}, nil
+}
+func (stub *agentTokenStub) RevokeAgent(_ context.Context, nodeID, actorID, requestID string) error {
+	if requestID == "" {
+		return errors.New("missing request ID")
+	}
+	stub.nodeID, stub.actorID, stub.revoked = nodeID, actorID, true
+	return nil
 }
 
 func TestAdminCanCreateAgentTokenWithCSRFAndPermission(t *testing.T) {
@@ -108,5 +116,29 @@ func TestAdminAgentTokenRouteAbsentWithoutIdentity(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("public HTTP token route = %d", response.Code)
+	}
+}
+
+func TestAdminCanRevokeAgentWithCSRFAndPermission(t *testing.T) {
+	store := &agentTokenStub{}
+	handler := NewHandlerWithAgentTokens(slog.New(slog.NewTextHandler(io.Discard, nil)), nil,
+		agentAdminSessions{}, nil, nil, nil, nil, nil, nil, store)
+	path := "/api/v1/admin/nodes/" + certificateTestNodeID + "/agent"
+	request := func(session, csrf string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(`{"status":"revoked"}`))
+		r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
+		r.Header.Set("X-CSRF-Token", csrf)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, r)
+		return response
+	}
+	if response := request("member-token", "valid-csrf"); response.Code != http.StatusForbidden || store.revoked {
+		t.Fatalf("member revoked Agent: %d, revoked=%v", response.Code, store.revoked)
+	}
+	if response := request("admin-token", ""); response.Code != http.StatusForbidden || store.revoked {
+		t.Fatalf("missing CSRF revoked Agent: %d, revoked=%v", response.Code, store.revoked)
+	}
+	if response := request("admin-token", "valid-csrf"); response.Code != http.StatusNoContent || !store.revoked || store.nodeID != certificateTestNodeID || store.actorID != certificateTestNodeID {
+		t.Fatalf("admin revoke = %d, revoked=%v, node=%s, actor=%s", response.Code, store.revoked, store.nodeID, store.actorID)
 	}
 }

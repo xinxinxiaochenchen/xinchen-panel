@@ -19,6 +19,7 @@ type NodeMetrics struct {
 	NodeID      string        `json:"node_id"`
 	AgentStatus string        `json:"agent_status"`
 	LastSeenAt  *time.Time    `json:"last_seen_at"`
+	LatencyMS   *int          `json:"latency_ms"`
 	Fresh       bool          `json:"fresh"`
 	Metrics     *AgentMetrics `json:"metrics"`
 }

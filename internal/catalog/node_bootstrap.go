@@ -58,10 +58,7 @@ func (r *PostgresRepository) EnsureGroupAndNode(ctx context.Context, groupID str
 	input.GroupID = resourceGroup.ID
 	existing, err := scanNode(tx.QueryRow(ctx, nodeSelect+` WHERE n.group_id=$1 AND n.name=$2`, resourceGroup.ID, input.Name))
 	if err == nil {
-		if existing.Region != input.Region || existing.Host != input.Host || !reflect.DeepEqual(existing.PublicIP, input.PublicIP) ||
-			!reflect.DeepEqual(existing.ProxyPort, input.ProxyPort) || !reflect.DeepEqual(existing.Capabilities, input.Capabilities) ||
-			!reflect.DeepEqual(existing.BandwidthBPS, input.BandwidthBPS) || existing.MultiplierMilli != input.MultiplierMilli ||
-			!reflect.DeepEqual(existing.Tags, input.Tags) || existing.Enabled != input.Enabled {
+		if !bootstrapNodeMatches(existing, input) {
 			return ResourceGroup{}, Node{}, false, ErrConflict
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -80,8 +77,8 @@ func (r *PostgresRepository) EnsureGroupAndNode(ctx context.Context, groupID str
 	if err != nil {
 		return ResourceGroup{}, Node{}, false, err
 	}
-	node := Node{ID: nodeID, GroupID: resourceGroup.ID, GroupCode: resourceGroup.Code, Name: input.Name, Region: input.Region, Host: input.Host, PublicIP: input.PublicIP, ProxyPort: input.ProxyPort, Capabilities: input.Capabilities, BandwidthBPS: input.BandwidthBPS, MultiplierMilli: input.MultiplierMilli, Tags: input.Tags, Enabled: input.Enabled, AgentStatus: "unknown"}
-	if err := tx.QueryRow(ctx, `INSERT INTO nodes(id,group_id,name,region,host,public_ip,proxy_port,capabilities,bandwidth_bps,multiplier_milli,tags,enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING created_at`, node.ID, node.GroupID, node.Name, node.Region, node.Host, node.PublicIP, node.ProxyPort, node.Capabilities, node.BandwidthBPS, node.MultiplierMilli, node.Tags, node.Enabled).Scan(&node.CreatedAt); err != nil {
+	node := Node{ID: nodeID, GroupID: resourceGroup.ID, GroupCode: resourceGroup.Code, Name: input.Name, Region: input.Region, Host: input.Host, PublicIP: input.PublicIP, ProxyPort: input.ProxyPort, RelayPort: input.RelayPort, Capabilities: input.Capabilities, BandwidthBPS: input.BandwidthBPS, MultiplierMilli: input.MultiplierMilli, Tags: input.Tags, Enabled: input.Enabled, AgentStatus: "unknown"}
+	if err := tx.QueryRow(ctx, `INSERT INTO nodes(id,group_id,name,region,host,public_ip,proxy_port,relay_port,capabilities,bandwidth_bps,multiplier_milli,tags,enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING created_at`, node.ID, node.GroupID, node.Name, node.Region, node.Host, node.PublicIP, node.ProxyPort, node.RelayPort, node.Capabilities, node.BandwidthBPS, node.MultiplierMilli, node.Tags, node.Enabled).Scan(&node.CreatedAt); err != nil {
 		return ResourceGroup{}, Node{}, false, fmt.Errorf("insert bootstrap node: %w", catalogError(err))
 	}
 	after, err := json.Marshal(node)
@@ -95,4 +92,15 @@ func (r *PostgresRepository) EnsureGroupAndNode(ctx context.Context, groupID str
 		return ResourceGroup{}, Node{}, false, fmt.Errorf("commit catalog bootstrap: %w", err)
 	}
 	return resourceGroup, node, true, nil
+}
+
+func bootstrapNodeMatches(existing Node, input NodeInput) bool {
+	return existing.Region == input.Region && existing.Host == input.Host &&
+		reflect.DeepEqual(existing.PublicIP, input.PublicIP) &&
+		reflect.DeepEqual(existing.ProxyPort, input.ProxyPort) &&
+		reflect.DeepEqual(existing.RelayPort, input.RelayPort) &&
+		reflect.DeepEqual(existing.Capabilities, input.Capabilities) &&
+		reflect.DeepEqual(existing.BandwidthBPS, input.BandwidthBPS) &&
+		existing.MultiplierMilli == input.MultiplierMilli &&
+		reflect.DeepEqual(existing.Tags, input.Tags) && existing.Enabled == input.Enabled
 }

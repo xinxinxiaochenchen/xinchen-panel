@@ -15,6 +15,8 @@ CASE WHEN a.status='revoked' THEN 'revoked'
      WHEN a.status='online' AND a.last_seen_at >= now()-interval '45 seconds' THEN 'online'
      WHEN a.id IS NULL THEN 'unknown' ELSE 'offline' END,
 a.last_seen_at,
+CASE WHEN a.status='online' AND a.last_seen_at >= now()-interval '45 seconds'
+          AND a.latency_observed_at >= now()-interval '45 seconds' THEN a.latency_ms END,
 COALESCE(a.status='online' AND a.last_seen_at >= now()-interval '45 seconds'
          AND m.observed_at >= now()-interval '45 seconds'
          AND m.observed_at >= a.last_seen_at, false),
@@ -23,10 +25,11 @@ FROM nodes n LEFT JOIN agents a ON a.node_id=n.id LEFT JOIN agent_metrics m ON m
 WHERE n.id=$1`
 	var result NodeMetrics
 	var lastSeen, observedAt pgtype.Timestamptz
+	var latency pgtype.Int4
 	var uptime, memory, rx, tx, connections pgtype.Int8
 	var cpu pgtype.Float8
 	var engine pgtype.Text
-	err := r.pool.QueryRow(ctx, query, nodeID).Scan(&result.NodeID, &result.AgentStatus, &lastSeen, &result.Fresh,
+	err := r.pool.QueryRow(ctx, query, nodeID).Scan(&result.NodeID, &result.AgentStatus, &lastSeen, &latency, &result.Fresh,
 		&observedAt, &uptime, &cpu, &memory, &rx, &tx, &connections, &engine)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NodeMetrics{}, ErrNotFound
@@ -37,6 +40,10 @@ WHERE n.id=$1`
 	if lastSeen.Valid {
 		value := lastSeen.Time
 		result.LastSeenAt = &value
+	}
+	if latency.Valid {
+		value := int(latency.Int32)
+		result.LatencyMS = &value
 	}
 	if observedAt.Valid {
 		result.Metrics = &AgentMetrics{

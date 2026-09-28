@@ -18,10 +18,11 @@ const (
 )
 
 type IdentitySessions interface {
-	Login(context.Context, string, string) (identity.LoginResult, error)
+	LoginWithRequestID(context.Context, string, string, string) (identity.LoginResult, error)
 	Authenticate(context.Context, string) (identity.PublicUser, error)
 	VerifyCSRF(context.Context, string, string) (identity.PublicUser, error)
 	Logout(context.Context, string, string) error
+	LogoutWithRequestID(context.Context, string, string, string) error
 }
 
 func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
@@ -48,7 +49,7 @@ func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
 			WriteError(w, r, http.StatusTooManyRequests, "RATE_LIMITED", "too many login attempts")
 			return
 		}
-		result, err := sessions.Login(r.Context(), input.Email, input.Password)
+		result, err := sessions.LoginWithRequestID(r.Context(), input.Email, input.Password, requestID(r))
 		if errors.Is(err, identity.ErrInvalidCredentials) {
 			WriteError(w, r, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid credentials")
 			return
@@ -77,7 +78,7 @@ func registerIdentityRoutes(mux *http.ServeMux, sessions IdentitySessions) {
 			WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication required")
 			return
 		}
-		if err := sessions.Logout(r.Context(), cookie.Value, r.Header.Get("X-CSRF-Token")); err != nil {
+		if err := sessions.LogoutWithRequestID(r.Context(), cookie.Value, r.Header.Get("X-CSRF-Token"), requestID(r)); err != nil {
 			writeIdentityError(w, r, err)
 			return
 		}

@@ -27,6 +27,9 @@ export type Snapshot = {
   line_ids?: string[]
 }
 export type Membership = { id: string; status: string; starts_at: string; ends_at: string; anchor_day: number; timezone: string; snapshot: Snapshot }
+export type ScopeNode = { id: string; group_id: string; group_code: string; name: string }
+export type ScopeLine = { id: string; name: string }
+export type PlanScopeLabels = { resourceGroups: string[]; lines: string[] }
 export type Usage = {
   starts_at: string
   ends_at: string
@@ -44,6 +47,18 @@ export type Usage = {
 export type DailyUsage = { date: string; uploaded_bytes: number; downloaded_bytes: number; charged_bytes: number }
 export type Viewer = { kind: 'preview' } | { kind: 'guest' } | { kind: 'signed-in'; user: User }
 export type Resource<T> = { kind: 'loading' } | { kind: 'empty' } | { kind: 'ready'; data: T } | { kind: 'error'; message: string }
+
+export function planScopeLabels(snapshot: Pick<Snapshot, 'resource_group_ids' | 'line_ids'>, nodes: ScopeNode[], lines: ScopeLine[]): PlanScopeLabels {
+  const groups = new Map<string, string>()
+  for (const node of nodes) {
+    if (node.group_id && node.group_code && !groups.has(node.group_id)) groups.set(node.group_id, node.group_code)
+  }
+  const lineNames = new Map(lines.map((line) => [line.id, line.name]))
+  return {
+    resourceGroups: (snapshot.resource_group_ids ?? []).map((id) => groups.get(id)).filter((value): value is string => Boolean(value)),
+    lines: (snapshot.line_ids ?? []).map((id) => lineNames.get(id)).filter((value): value is string => Boolean(value)),
+  }
+}
 
 export function isSecureLocation(protocol: string, hostname: string): boolean {
   return protocol === 'https:' || protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)

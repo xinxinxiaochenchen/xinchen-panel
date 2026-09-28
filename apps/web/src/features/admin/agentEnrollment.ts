@@ -7,3 +7,8 @@ export async function issueAgentEnrollmentToken(nodeID: string, password: string
   if (!csrf) return { kind: 'error', message: '安全令牌不可用，请刷新页面后重试。' }
   return mutateCatalog<AgentEnrollmentToken>(`/api/v1/admin/nodes/${encodeURIComponent(nodeID)}/agent-enrollment`, 'POST', { password }, csrf, request)
 }
+
+export async function revokeAgent(nodeID: string, csrf: string, request: typeof fetch = fetch): Promise<MutationResource<null>> {
+  if (!csrf) return { kind: 'error', message: '安全令牌不可用，请刷新页面后重试。' }
+  return mutateCatalog<null>(`/api/v1/admin/nodes/${encodeURIComponent(nodeID)}/agent`, 'PATCH', { status: 'revoked' }, csrf, request)
+}

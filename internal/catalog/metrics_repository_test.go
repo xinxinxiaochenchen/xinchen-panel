@@ -43,10 +43,26 @@ func TestPostgresNodeMetricsFreshAndStale(t *testing.T) {
 VALUES ($1,3600,12.5,1048576,2000,3000,7,'running')`, nodeID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE agents SET latency_ms=17,latency_observed_at=clock_timestamp() WHERE node_id=$1`, nodeID); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM agent_metrics WHERE node_id=$1`, nodeID) })
 	fresh, err := repo.GetNodeMetrics(ctx, nodeID)
-	if err != nil || fresh.AgentStatus != "online" || !fresh.Fresh || fresh.Metrics == nil || fresh.Metrics.Connections != 7 || fresh.Metrics.CPUPct != 12.5 {
+	if err != nil || fresh.AgentStatus != "online" || !fresh.Fresh || fresh.Metrics == nil || fresh.Metrics.Connections != 7 || fresh.Metrics.CPUPct != 12.5 || fresh.LatencyMS == nil || *fresh.LatencyMS != 17 {
 		t.Fatalf("fresh metrics = %+v, %v", fresh, err)
+	}
+	nodes, err := repo.ListAllNodes(ctx, 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundLatency := false
+	for _, node := range nodes {
+		if node.ID == nodeID {
+			foundLatency = node.LatencyMS != nil && *node.LatencyMS == 17
+		}
+	}
+	if !foundLatency {
+		t.Fatalf("node list omitted fresh latency: %+v", nodes)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE agents SET last_seen_at=clock_timestamp()+interval '1 second' WHERE node_id=$1`, nodeID); err != nil {
 		t.Fatal(err)
@@ -62,7 +78,7 @@ VALUES ($1,3600,12.5,1048576,2000,3000,7,'running')`, nodeID); err != nil {
 		t.Fatal(err)
 	}
 	stale, err := repo.GetNodeMetrics(ctx, nodeID)
-	if err != nil || stale.AgentStatus != "offline" || stale.Fresh || stale.Metrics == nil || stale.Metrics.Connections != 7 {
+	if err != nil || stale.AgentStatus != "offline" || stale.Fresh || stale.Metrics == nil || stale.Metrics.Connections != 7 || stale.LatencyMS != nil {
 		t.Fatalf("stale metrics = %+v, %v", stale, err)
 	}
 	if _, err := repo.GetNodeMetrics(ctx, "44444444-4444-7444-8444-444444444444"); !errors.Is(err, ErrNotFound) {

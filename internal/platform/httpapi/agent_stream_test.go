@@ -59,6 +59,7 @@ type streamStore struct {
 	desired    orchestration.DesiredRevision
 	results    chan agentproto.ConfigResult
 	heartbeats chan agentproto.Heartbeat
+	latencies  chan int64
 	online     int
 }
 
@@ -81,7 +82,61 @@ func (s *streamStore) RecordHeartbeat(_ context.Context, _ string, value agentpr
 	s.heartbeats <- value
 	return nil
 }
+func (s *streamStore) RecordLatency(_ context.Context, _ string, value int64) error {
+	if s.latencies != nil {
+		select {
+		case s.latencies <- value:
+		default:
+		}
+	}
+	return nil
+}
 func (s *streamStore) MarkOffline(context.Context, string) error { return nil }
+
+func TestAgentStreamMeasuresWebSocketRoundTrip(t *testing.T) {
+	store := &streamStore{latencies: make(chan int64, 1)}
+	stream := NewAgentStreamHandler(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), &streamAuthenticator{}, store, store)
+	stream.latencyEvery = 10 * time.Millisecond
+	server := httptest.NewUnstartedServer(NewAgentHandlerWithStream(slog.New(slog.NewTextHandler(io.Discard, nil)), nil, stream))
+	pair, roots := testStreamCertificate(t)
+	server.TLS = &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: roots}
+	server.StartTLS()
+	defer server.Close()
+	client := server.Client()
+	transport := client.Transport.(*http.Transport).Clone()
+	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	transport.TLSClientConfig.Certificates = []tls.Certificate{pair}
+	client.Transport = transport
+	endpoint := "wss" + strings.TrimPrefix(server.URL, "https") + "/api/v1/agent/stream"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	helloPayload, _ := json.Marshal(agentproto.Hello{AgentVersion: "1.0.0", Capabilities: []string{"forward"}})
+	hello, _ := agentproto.Encode(agentproto.Envelope{ProtocolVersion: 1, MessageID: "018f7d37-c20e-7a6a-8bb8-b0c3a4d3e429",
+		NodeID: certificateTestNodeID, Type: agentproto.TypeHello, SentAt: time.Now(), Payload: helloPayload})
+	if err := conn.Write(ctx, websocket.MessageText, hello); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			if _, _, err := conn.Read(ctx); err != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case latency := <-store.latencies:
+		if latency < 0 || latency > 2000 {
+			t.Fatalf("invalid latency = %d ms", latency)
+		}
+	case <-ctx.Done():
+		t.Fatal("Agent WebSocket RTT was not recorded")
+	}
+}
 
 func testStreamCertificate(t *testing.T) (tls.Certificate, *x509.CertPool) {
 	t.Helper()

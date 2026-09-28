@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadAllCatalogPages, loadCatalogPage, loadLineHealth, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
+import { formatBandwidthBPS, lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadAllCatalogPages, loadCatalogPage, loadLineHealth, mutateCatalog, type NodeRecord } from '../src/lib/catalog.ts'
+
+test('node bandwidth uses decimal bit-rate units and leaves unknown values blank', () => {
+  assert.equal(formatBandwidthBPS(null), '—')
+  assert.equal(formatBandwidthBPS(100_000_000), '100 Mbps')
+  assert.equal(formatBandwidthBPS(1_000_000_000), '1 Gbps')
+  assert.equal(formatBandwidthBPS(500_000), '500 Kbps')
+})
 import { customRolePermissions, loadRoleDirectory } from '../src/lib/admin.ts'
 import { lineEditPayload, lineEditPath, lineTogglePath } from '../src/features/catalog/lineAccess.ts'
 import { draftLinePayload } from '../src/features/catalog/lineDraft.ts'

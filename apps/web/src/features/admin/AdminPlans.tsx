@@ -10,12 +10,14 @@ export function PlanPanel({
   groups,
   lines,
   canWrite,
+  canManageStatus,
   onRefresh,
 }: {
   plans: Plan[];
   groups: ResourceGroup[];
   lines: LineRecord[];
   canWrite: boolean;
+  canManageStatus: boolean;
   onRefresh: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -28,6 +30,7 @@ export function PlanPanel({
   const [maxHops, setMaxHops] = useState(1);
   const [maxProxyLines, setMaxProxyLines] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [statusBusy, setStatusBusy] = useState("");
   const [error, setError] = useState("");
   const [multiplier, setMultiplier] = useState(1);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
@@ -70,10 +73,23 @@ export function PlanPanel({
       setBusy(false);
     }
   }
+  async function togglePlanStatus(plan: Plan) {
+    setStatusBusy(plan.id);
+    setError("");
+    const result = await mutateCatalog<Plan>(
+      `/api/v1/admin/plans/${plan.id}`,
+      "PATCH",
+      { status: plan.status === "active" ? "archived" : "active" },
+      csrfToken(),
+    );
+    setStatusBusy("");
+    if (result.kind === "error") setError(result.message);
+    else onRefresh();
+  }
   return (
     <AdminSection
       title="套餐"
-      description="设置流量额度、规则上限和资源域授权。"
+      description="设置流量额度、规则上限和资源域授权。归档套餐只影响新的授权。"
       action={
         canWrite ? (
           <button
@@ -92,7 +108,7 @@ export function PlanPanel({
           <article className="catalog-card" key={item.id}>
             <div className="catalog-card-name">
               <strong>{item.name}</strong>
-              <span>{item.status}</span>
+              <span>{item.status === "active" ? "可授权" : "已归档"}</span>
             </div>
             <div className="catalog-detail-grid">
               <div>
@@ -111,13 +127,23 @@ export function PlanPanel({
                 <small>资源域</small>
                 <strong>{item.resource_group_ids.length}</strong>
               </div>
+              <div>
+                <small>账期</small>
+                <strong>{item.period_months ?? 1} 个月按起算日重置</strong>
+              </div>
             </div>
+            {canManageStatus && (
+              <button className="catalog-toggle admin-status-toggle" type="button" disabled={statusBusy !== ""} onClick={() => void togglePlanStatus(item)}>
+                {statusBusy === item.id ? "处理中…" : item.status === "active" ? "归档套餐" : "恢复套餐"}
+              </button>
+            )}
           </article>
         ))}
         {plans.length === 0 && (
           <div className="catalog-state">暂无套餐数据。</div>
         )}
       </div>
+      {error && !open && <div className="catalog-state catalog-error" role="alert">{error}</div>}
       {open && (
         <div className="catalog-dialog-backdrop" role="presentation">
           <form
@@ -202,7 +228,7 @@ export function PlanPanel({
             <span className="catalog-form-label">授权资源域</span>
             <label htmlFor="admin-plan-hops">线路跳数上限</label>
             <input id="admin-plan-hops" type="number" min={1} max={8} step={1} value={maxHops} onChange={(event) => setMaxHops(Number(event.target.value))} />
-            <small className="catalog-form-note">候选线路上限已预留；当前代理连接创建仍只允许一条线路。</small>
+            <small className="catalog-form-note">代理连接可按套餐上限绑定候选线路，运行时会按优先级和权重选择可用线路。</small>
             <div className="catalog-check-list">
               {groups
                 .filter((group) => group.enabled)

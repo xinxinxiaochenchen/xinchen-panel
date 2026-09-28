@@ -106,8 +106,24 @@ func TestPostgresMemberCreationAndPasswordRotation(t *testing.T) {
 	if _, err := service.Login(ctx, member.Email, "long-initial-password"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("old password accepted = %v", err)
 	}
-	if _, err := service.Login(ctx, member.Email, "new-password-123"); err != nil {
+	newLogin, err := service.LoginWithRequestID(ctx, member.Email, "new-password-123", "login-audit-request")
+	if err != nil {
 		t.Fatalf("new password rejected = %v", err)
+	}
+	var loginAudits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs
+WHERE actor_user_id=$1 AND action='login' AND object_type='user' AND object_id=$1 AND request_id='login-audit-request'
+AND after_json = '{"session_created":true}'::jsonb`, member.ID).Scan(&loginAudits); err != nil || loginAudits != 1 {
+		t.Fatalf("login audit count = %d, %v", loginAudits, err)
+	}
+	if err := service.LogoutWithRequestID(ctx, newLogin.Token, newLogin.CSRFToken, "logout-audit-request"); err != nil {
+		t.Fatalf("logout = %v", err)
+	}
+	var logoutAudits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs
+WHERE actor_user_id=$1 AND action='logout' AND object_type='user' AND object_id=$1 AND request_id='logout-audit-request'
+AND after_json = '{"session_revoked":true}'::jsonb`, member.ID).Scan(&logoutAudits); err != nil || logoutAudits != 1 {
+		t.Fatalf("logout audit count = %d, %v", logoutAudits, err)
 	}
 	var auditText string
 	if err := pool.QueryRow(ctx, `SELECT string_agg(COALESCE(after_json::text,''),' ') FROM audit_logs

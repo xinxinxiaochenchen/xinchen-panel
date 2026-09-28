@@ -123,6 +123,14 @@ func TestConvergenceWorkerConsumesRuleAndPolicyEvents(t *testing.T) {
 	if _, err := revisions.Desired(ctx, fixture.nodes[1]); err != nil {
 		t.Fatalf("policy did not reconcile second Agent: %v", err)
 	}
+	groupEvent := fixture.addEvent(t, "group.changed", fmt.Sprintf(`{"group_id":%q}`, fixture.groupID))
+	processed, err = worker.ProcessOne(ctx)
+	if err != nil || !processed {
+		t.Fatalf("group event = %t, %v", processed, err)
+	}
+	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at FROM outbox_events WHERE id=$1`, groupEvent).Scan(&processedAt); err != nil || processedAt == nil {
+		t.Fatalf("group event not marked processed: %v, %v", processedAt, err)
+	}
 	userEvent := fixture.addEvent(t, "user.changed", `{}`)
 	processed, err = worker.ProcessOne(ctx)
 	if err != nil || !processed {
@@ -366,5 +374,24 @@ func TestConvergenceWorkerConsumesBillingPeriodEvent(t *testing.T) {
 	var done bool
 	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at IS NOT NULL FROM outbox_events WHERE id=$1`, event).Scan(&done); err != nil || !done {
 		t.Fatalf("billing event not acknowledged: %t %v", done, err)
+	}
+}
+
+func TestConvergenceWorkerConsumesMembershipEvent(t *testing.T) {
+	fixture := newConvergenceFixture(t, 1)
+	ctx := context.Background()
+	repo := NewRevisionRepository(fixture.pool)
+	worker := NewConvergenceWorker(fixture.pool, repo)
+	event := fixture.addEvent(t, "membership.changed", `{}`)
+	processed, err := worker.ProcessOne(ctx)
+	if err != nil || !processed {
+		t.Fatalf("membership event: %t %v", processed, err)
+	}
+	if _, err := repo.Desired(ctx, fixture.nodes[0]); err != nil {
+		t.Fatalf("membership event did not reconcile Agent: %v", err)
+	}
+	var done bool
+	if err := fixture.pool.QueryRow(ctx, `SELECT processed_at IS NOT NULL FROM outbox_events WHERE id=$1`, event).Scan(&done); err != nil || !done {
+		t.Fatalf("membership event not acknowledged: %t %v", done, err)
 	}
 }

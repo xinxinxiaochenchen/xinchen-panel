@@ -110,6 +110,7 @@ type Node struct {
 	Enabled         bool       `json:"enabled"`
 	AgentStatus     string     `json:"agent_status"`
 	LastSeenAt      *time.Time `json:"last_seen_at"`
+	LatencyMS       *int       `json:"latency_ms"`
 	CreatedAt       time.Time  `json:"created_at"`
 }
 

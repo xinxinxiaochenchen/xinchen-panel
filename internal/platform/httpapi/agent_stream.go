@@ -33,6 +33,7 @@ type AgentStreamRevisions interface {
 type AgentStreamPresence interface {
 	MarkOnline(context.Context, string, string, []string) error
 	RecordHeartbeat(context.Context, string, agentproto.Heartbeat) error
+	RecordLatency(context.Context, string, int64) error
 	MarkOffline(context.Context, string) error
 }
 
@@ -62,6 +63,7 @@ type AgentStreamHandler struct {
 	mu           sync.Mutex
 	active       map[string]*websocket.Conn
 	pollEvery    time.Duration
+	latencyEvery time.Duration
 	renewEvery   time.Duration
 	recheckEvery time.Duration
 }
@@ -77,6 +79,7 @@ func NewAgentStreamHandler(parent context.Context, logger *slog.Logger, auth Age
 	}
 	return &AgentStreamHandler{parent: parent, logger: logger, auth: auth, revisions: revisions, usage: recorder,
 		presence: presence, active: make(map[string]*websocket.Conn), pollEvery: 3 * time.Second,
+		latencyEvery: 15 * time.Second,
 		renewEvery:   time.Minute,
 		recheckEvery: 15 * time.Second}
 }
@@ -210,6 +213,8 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 	}()
 	poll := time.NewTicker(s.pollEvery)
 	defer poll.Stop()
+	latency := time.NewTicker(s.latencyEvery)
+	defer latency.Stop()
 	recheck := time.NewTicker(s.recheckEvery)
 	defer recheck.Stop()
 	for {
@@ -289,6 +294,21 @@ func (s *AgentStreamHandler) serve(ctx context.Context, connection *websocket.Co
 		case <-poll.C:
 			if err := s.sendDesired(ctx, connection, nodeID, hello.Capabilities, appliedRevision, &lastSent, &lastRenewed); err != nil {
 				return err
+			}
+		case <-latency.C:
+			pingCtx, pingCancel := context.WithTimeout(ctx, 2*time.Second)
+			started := time.Now()
+			pingErr := connection.Ping(pingCtx)
+			pingCancel()
+			if pingErr != nil {
+				return pingErr
+			}
+			latencyMS := time.Since(started).Milliseconds()
+			if err := s.presence.RecordLatency(ctx, nodeID, latencyMS); err != nil {
+				if errors.Is(err, orchestration.ErrAgentPresenceDenied) {
+					return err
+				}
+				s.logger.Warn("record Agent latency failed", "node_id", nodeID, "error", err)
 			}
 		case <-recheck.C:
 			authCtx, authCancel := context.WithTimeout(ctx, 3*time.Second)

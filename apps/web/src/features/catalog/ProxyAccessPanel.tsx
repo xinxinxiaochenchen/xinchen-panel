@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Eye, KeyRound, Pencil, Plus, RotateCw, ShieldCheck } from 'lucide-react'
+import { Eye, KeyRound, Pencil, Plus, RotateCw, ShieldCheck, Trash2 } from 'lucide-react'
 import { mutateCatalog, type LineRecord, type ProxyAccessRecord } from '../../lib/catalog'
 import { csrfToken } from './CreateLine'
 import { proxyAccessDraftFromRecord, proxyAccessPayload, type ProxyLineDraft } from './proxyAccessDraft'
@@ -98,6 +98,11 @@ export function ProxyAccessPanel({ accesses, lines, onSaved, canWrite }: { acces
       else if (data.credential) setCredential((current) => ({ ...current, [access.id]: data.credential! }))
     } catch { setError('凭据暂不可用。') }
   }
+  async function remove(access: ProxyAccessRecord) {
+    if (!window.confirm(`删除代理连接「${access.name}」？现有客户端凭据会立即失效。`)) return
+    const result = await mutateCatalog<void>(`/api/v1/proxy-accesses/${access.id}`, 'DELETE', null, csrfToken())
+    if (result.kind === 'error') setError(result.message); else onSaved()
+  }
 
   return <section className="proxy-panel" aria-labelledby="proxy-panel-title">
     <div className="proxy-panel-head"><div><span className="section-overline">PROXY ACCESS</span><h2 id="proxy-panel-title">代理连接</h2><p>可绑定多条授权线路；Agent 会按优先级和权重为每次新连接选择出口。</p></div>
@@ -112,6 +117,7 @@ export function ProxyAccessPanel({ accesses, lines, onSaved, canWrite }: { acces
           <button type="button" onClick={() => openEdit(access)}><Pencil size={14} />编辑线路</button>
           <button type="button" onClick={() => void rotate(access)}><RotateCw size={14} />轮换</button>
           <button type="button" onClick={() => void toggle(access)}><KeyRound size={14} />{access.enabled ? '停用' : '启用'}</button>
+          <button type="button" onClick={() => void remove(access)}><Trash2 size={14} />删除</button>
         </>}</div>
       </div>)}</div>}
     {error && !open && <p className="catalog-page-error" role="alert">{error}</p>}

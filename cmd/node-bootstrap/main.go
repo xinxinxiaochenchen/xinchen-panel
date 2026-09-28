@@ -67,7 +67,7 @@ AND EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=u.id AND ur.role_code='
 		publicIP = &cfg.PublicIP
 	}
 	node, err := catalog.NormalizeNode(catalog.NewNode{GroupID: groupID, Name: cfg.NodeName, Region: cfg.NodeRegion,
-		Host: cfg.NodeHost, PublicIP: publicIP, ProxyPort: cfg.ProxyPort, Capabilities: cfg.Capabilities,
+		Host: cfg.NodeHost, PublicIP: publicIP, ProxyPort: cfg.ProxyPort, RelayPort: cfg.RelayPort, Capabilities: cfg.Capabilities,
 		Enabled: boolPointer(true)})
 	if err != nil {
 		return err

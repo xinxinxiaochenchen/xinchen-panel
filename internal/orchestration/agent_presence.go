@@ -19,7 +19,7 @@ func NewAgentPresenceRepository(pool *pgxpool.Pool) *AgentPresenceRepository {
 }
 
 func (r *AgentPresenceRepository) MarkOnline(ctx context.Context, nodeID, version string, capabilities []string) error {
-	result, err := r.pool.Exec(ctx, `UPDATE agents a SET status='online',version=$2,capabilities=$3,last_seen_at=clock_timestamp()
+	result, err := r.pool.Exec(ctx, `UPDATE agents a SET status='online',version=$2,capabilities=$3,last_seen_at=clock_timestamp(),latency_ms=NULL,latency_observed_at=NULL
 FROM nodes n WHERE a.node_id=$1 AND n.id=a.node_id AND n.enabled AND a.status <> 'revoked'`, nodeID, version, capabilities)
 	if err != nil {
 		return fmt.Errorf("mark Agent online: %w", err)
@@ -60,15 +60,33 @@ tx_bytes=EXCLUDED.tx_bytes,connections=EXCLUDED.connections,engine_status=EXCLUD
 }
 
 func (r *AgentPresenceRepository) MarkOffline(ctx context.Context, nodeID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE agents SET status='offline' WHERE node_id=$1 AND status='online'`, nodeID)
+	_, err := r.pool.Exec(ctx, `UPDATE agents SET status='offline',latency_ms=NULL,latency_observed_at=NULL WHERE node_id=$1 AND status='online'`, nodeID)
 	if err != nil {
 		return fmt.Errorf("mark Agent offline: %w", err)
 	}
 	return nil
 }
 
+// RecordLatency stores a recent control-plane WebSocket Ping/Pong round trip.
+// It is separate from heartbeat telemetry so a quiet Agent still exposes a
+// useful reachability signal without fabricating CPU or traffic values.
+func (r *AgentPresenceRepository) RecordLatency(ctx context.Context, nodeID string, latencyMS int64) error {
+	if latencyMS < 0 || latencyMS > 120000 {
+		return fmt.Errorf("invalid Agent latency")
+	}
+	result, err := r.pool.Exec(ctx, `UPDATE agents a SET latency_ms=$2,latency_observed_at=clock_timestamp()
+FROM nodes n WHERE a.node_id=$1 AND n.id=a.node_id AND n.enabled AND a.status='online'`, nodeID, latencyMS)
+	if err != nil {
+		return fmt.Errorf("store Agent latency: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return ErrAgentPresenceDenied
+	}
+	return nil
+}
+
 func (r *AgentPresenceRepository) MarkOfflineStale(ctx context.Context, before time.Time) (int64, error) {
-	result, err := r.pool.Exec(ctx, `UPDATE agents SET status='offline' WHERE status='online' AND last_seen_at < $1`, before)
+	result, err := r.pool.Exec(ctx, `UPDATE agents SET status='offline',latency_ms=NULL,latency_observed_at=NULL WHERE status='online' AND last_seen_at < $1`, before)
 	if err != nil {
 		return 0, fmt.Errorf("sweep stale Agents: %w", err)
 	}

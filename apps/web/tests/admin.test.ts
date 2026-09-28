@@ -10,7 +10,19 @@ import {
   loadAdminUsagePage,
   validateAdminUsageFilters,
   adminUsageDimensionLabel,
+  membershipStatusLabel,
+  membershipCanCancel,
 } from "../src/lib/admin.ts";
+
+test("membership status reflects expiry even before the database cleanup", () => {
+  const now = new Date("2026-09-28T12:00:00Z");
+  assert.equal(membershipStatusLabel("active", "2026-09-28T11:59:59Z", now), "已到期");
+  assert.equal(membershipStatusLabel("active", "2026-09-29T00:00:00Z", now), "生效中");
+  assert.equal(membershipStatusLabel("cancelled", "2026-09-29T00:00:00Z", now), "已取消");
+  assert.equal(membershipCanCancel("active", "2026-09-29T00:00:00Z", now), true);
+  assert.equal(membershipCanCancel("active", "2026-09-28T11:59:59Z", now), false);
+  assert.equal(membershipCanCancel("cancelled", "2026-09-29T00:00:00Z", now), false);
+});
 
 test("plan input converts GiB quota to integer bytes and preserves grants", () => {
   const input = buildPlanInput({
@@ -122,6 +134,27 @@ test("relay listener port requires forward capability and cannot reuse proxy por
   assert.throws(() => buildNodeInput({ ...draft, relayPort: 443 }), /中继端口/);
   assert.throws(() => buildNodeInput({ ...draft, relayPort: 1023 }), /中继端口/);
   assert.throws(() => buildNodeInput({ ...draft, forward: false }), /中继端口/);
+});
+
+test("node input preserves public address bandwidth multiplier and tags", () => {
+  const node = buildNodeInput({
+    groupID: "group",
+    name: "Tokyo",
+    region: "JP",
+    host: "tokyo.example.test",
+    publicIP: "203.0.113.10",
+    bandwidthBPS: 1_000_000_000,
+    multiplier: 1.25,
+    tags: ["premium", " jp1 "],
+    proxy: true,
+    forward: true,
+    proxyPort: 443,
+    relayPort: 24443,
+  });
+  assert.equal(node.public_ip, "203.0.113.10");
+  assert.equal(node.bandwidth_bps, 1_000_000_000);
+  assert.equal(node.multiplier_milli, 1250);
+  assert.deepEqual(node.tags, ["premium", "jp1"]);
 });
 
 test("forward destination policy requires a bounded port range and node group", () => {

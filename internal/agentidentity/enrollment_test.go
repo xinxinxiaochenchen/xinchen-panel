@@ -3,7 +3,9 @@ package agentidentity
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"net/url"
 	"os"
@@ -112,6 +114,41 @@ AND after_json::text NOT LIKE '%' || $3 || '%'`, fixture.actorID, fixture.nodeID
 	}
 	if _, err := fixture.service.Enroll(ctx, issuedToken.Token, testCSR(t), "v1.0"); !errors.Is(err, ErrInvalidEnrollment) {
 		t.Fatalf("replay = %v", err)
+	}
+	pendingToken, err := fixture.service.CreateToken(ctx, fixture.nodeID, fixture.actorID, "pending-revocation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.service.RevokeAgent(ctx, fixture.nodeID, fixture.actorID, "revoke-agent"); err != nil {
+		t.Fatalf("revoke Agent: %v", err)
+	}
+	if _, err := fixture.service.Enroll(ctx, pendingToken.Token, testCSR(t), "v1.0"); !errors.Is(err, ErrInvalidEnrollment) {
+		t.Fatalf("unused token survived revocation: %v", err)
+	}
+	if err := fixture.pool.QueryRow(ctx, `SELECT status FROM agents WHERE node_id=$1`, fixture.nodeID).Scan(&status); err != nil || status != "revoked" {
+		t.Fatalf("revoked Agent status = %q, %v", status, err)
+	}
+	var grants int
+	if err := fixture.pool.QueryRow(ctx, `SELECT count(*) FROM agent_certificate_grants WHERE node_id=$1`, fixture.nodeID).Scan(&grants); err != nil || grants != 0 {
+		t.Fatalf("renewal grants survived explicit revoke: %d, %v", grants, err)
+	}
+	block, _ := pem.Decode(result.CertificatePEM)
+	if block == nil {
+		t.Fatal("enrolled certificate is not PEM")
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.AuthenticateCertificate(ctx, certificate); !errors.Is(err, ErrAgentUnauthorized) {
+		t.Fatalf("revoked certificate accepted: %v", err)
+	}
+	newToken, err := fixture.service.CreateToken(ctx, fixture.nodeID, fixture.actorID, "reenroll-after-revoke")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.Enroll(ctx, newToken.Token, testCSR(t), "v2.0"); err != nil {
+		t.Fatalf("reenrollment after revocation: %v", err)
 	}
 }
 

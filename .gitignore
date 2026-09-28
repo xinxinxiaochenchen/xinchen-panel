@@ -4,3 +4,5 @@ deployments/compose/.env
 bin/
 apps/web/node_modules/
 apps/web/dist/
+release-*.tar.gz
+.local/

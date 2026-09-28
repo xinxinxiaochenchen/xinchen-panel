@@ -16,9 +16,11 @@ import (
 
 type CatalogStore interface {
 	CreateGroup(context.Context, catalog.GroupInput, string, string) (catalog.ResourceGroup, error)
+	SetGroupEnabled(context.Context, string, bool, string, string) (catalog.ResourceGroup, error)
 	ListGroups(context.Context, int, string) ([]catalog.ResourceGroup, error)
 	CreateNode(context.Context, catalog.NodeInput, string, string) (catalog.Node, error)
 	SetNodeEnabled(context.Context, string, bool, string, string) (catalog.Node, error)
+	UpdateNodeConfig(context.Context, string, catalog.NodeInput, string, string) (catalog.Node, error)
 	ListAllNodes(context.Context, int, string) ([]catalog.Node, error)
 	GetNodeMetrics(context.Context, string) (catalog.NodeMetrics, error)
 	ListAllowedNodes(context.Context, string, int, string) ([]catalog.Node, error)
@@ -70,6 +72,33 @@ func registerCatalogRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 		default:
 			WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 		}
+	})
+	mux.HandleFunc("PATCH /api/v1/admin/resource-groups/{id}", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := catalogPrincipal(w, r, sessions, "nodes.write", true)
+		if !ok {
+			return
+		}
+		groupID := r.PathValue("id")
+		if !catalog.ValidID(groupID) {
+			WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+			return
+		}
+		var input struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if !decodeCatalogJSON(w, r, &input) {
+			return
+		}
+		if input.Enabled == nil {
+			WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "enabled is required")
+			return
+		}
+		group, err := store.SetGroupEnabled(r.Context(), groupID, *input.Enabled, user.ID, requestID(r))
+		if err != nil {
+			writeCatalogError(w, r, err)
+			return
+		}
+		writeCatalogJSON(w, http.StatusOK, group)
 	})
 	mux.HandleFunc("/api/v1/admin/nodes", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -137,6 +166,36 @@ func registerCatalogRoutes(mux *http.ServeMux, sessions IdentitySessions, store 
 			return
 		}
 		node, err := store.SetNodeEnabled(r.Context(), nodeID, *input.Enabled, user.ID, requestID(r))
+		if err != nil {
+			writeCatalogError(w, r, err)
+			return
+		}
+		writeCatalogJSON(w, http.StatusOK, node)
+	})
+	mux.HandleFunc("PATCH /api/v1/admin/nodes/{id}/config", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := catalogPrincipal(w, r, sessions, "nodes.write", true)
+		if !ok {
+			return
+		}
+		nodeID := r.PathValue("id")
+		if !catalog.ValidID(nodeID) {
+			WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+			return
+		}
+		var input catalog.NewNode
+		if !decodeCatalogJSON(w, r, &input) {
+			return
+		}
+		if input.Enabled != nil {
+			WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "use the node status endpoint to change enabled")
+			return
+		}
+		normalized, err := catalog.NormalizeNode(input)
+		if err != nil {
+			writeCatalogError(w, r, err)
+			return
+		}
+		node, err := store.UpdateNodeConfig(r.Context(), nodeID, normalized, user.ID, requestID(r))
 		if err != nil {
 			writeCatalogError(w, r, err)
 			return

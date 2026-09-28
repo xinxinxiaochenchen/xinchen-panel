@@ -17,6 +17,9 @@ type catalogSessions struct{}
 func (catalogSessions) Login(context.Context, string, string) (identity.LoginResult, error) {
 	return identity.LoginResult{}, identity.ErrInvalidCredentials
 }
+func (catalogSessions) LoginWithRequestID(context.Context, string, string, string) (identity.LoginResult, error) {
+	return identity.LoginResult{}, identity.ErrInvalidCredentials
+}
 func (catalogSessions) Authenticate(_ context.Context, token string) (identity.PublicUser, error) {
 	switch token {
 	case "admin-token":
@@ -70,13 +73,17 @@ func (s catalogSessions) VerifyCSRF(ctx context.Context, token, csrf string) (id
 	}
 	return user, nil
 }
-func (catalogSessions) Logout(context.Context, string, string) error { return nil }
+func (catalogSessions) Logout(context.Context, string, string) error                      { return nil }
+func (catalogSessions) LogoutWithRequestID(context.Context, string, string, string) error { return nil }
 
 type catalogStub struct {
-	createdBy   string
-	listedFor   string
-	nodes       []catalog.Node
-	nodeEnabled bool
+	createdBy    string
+	listedFor    string
+	nodes        []catalog.Node
+	nodeEnabled  bool
+	groupEnabled bool
+	updatedNode  catalog.Node
+	updatedBy    string
 }
 
 func (s *catalogStub) SetNodeEnabled(_ context.Context, nodeID string, enabled bool, actorID, requestID string) (catalog.Node, error) {
@@ -85,6 +92,17 @@ func (s *catalogStub) SetNodeEnabled(_ context.Context, nodeID string, enabled b
 		return catalog.Node{}, catalog.ErrNotFound
 	}
 	return catalog.Node{ID: nodeID, Enabled: enabled}, nil
+}
+
+func (s *catalogStub) UpdateNodeConfig(_ context.Context, nodeID string, input catalog.NodeInput, actorID, requestID string) (catalog.Node, error) {
+	if nodeID != "33333333-3333-7333-8333-333333333333" {
+		return catalog.Node{}, catalog.ErrNotFound
+	}
+	s.updatedBy = actorID
+	s.updatedNode = catalog.Node{ID: nodeID, GroupID: input.GroupID, Name: input.Name, Region: input.Region,
+		Host: input.Host, PublicIP: input.PublicIP, ProxyPort: input.ProxyPort, RelayPort: input.RelayPort,
+		Capabilities: input.Capabilities, BandwidthBPS: input.BandwidthBPS, MultiplierMilli: input.MultiplierMilli, Tags: input.Tags}
+	return s.updatedNode, nil
 }
 
 func TestAdminCanStopNodeWithCSRFAndNodePermission(t *testing.T) {
@@ -106,6 +124,28 @@ func TestAdminCanStopNodeWithCSRFAndNodePermission(t *testing.T) {
 	}
 	if store.nodeEnabled {
 		t.Fatal("node was not stopped")
+	}
+}
+
+func TestAdminCanEditNodeConfigurationWithCSRFAndNodePermission(t *testing.T) {
+	store := &catalogStub{}
+	handler := NewHandlerWithCatalog(testLogger(), nil, catalogSessions{}, store)
+	path := "/api/v1/admin/nodes/33333333-3333-7333-8333-333333333333/config"
+	body := `{"group_id":"11111111-1111-7111-8111-111111111111","name":"Updated exit","region":"US","host":"updated.example.invalid","public_ip":"203.0.113.44","proxy_port":8443,"relay_port":24443,"capabilities":["proxy","forward"],"bandwidth_bps":1000000000,"multiplier_milli":1250,"tags":["premium"]}`
+	for _, item := range []struct {
+		token, csrf string
+		status      int
+	}{
+		{"", "", 401}, {"member-token", "valid-csrf", 403}, {"admin-token", "", 403}, {"admin-token", "valid-csrf", 200},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodPatch, path, item.token, item.csrf, body))
+		if response.Code != item.status {
+			t.Fatalf("token %q csrf %q = %d %s", item.token, item.csrf, response.Code, response.Body.String())
+		}
+	}
+	if store.updatedNode.Name != "Updated exit" || store.updatedNode.Host != "updated.example.invalid" || store.updatedBy != "admin-id" {
+		t.Fatalf("updated node = %+v actor=%q", store.updatedNode, store.updatedBy)
 	}
 }
 
@@ -144,6 +184,14 @@ func TestAdminNodeMetricsRequiresNodePermission(t *testing.T) {
 func (s *catalogStub) CreateGroup(_ context.Context, input catalog.GroupInput, actor, _ string) (catalog.ResourceGroup, error) {
 	s.createdBy = actor
 	return catalog.ResourceGroup{ID: "11111111-1111-7111-8111-111111111111", Code: input.Code, Name: input.Name, Region: input.Region, Enabled: input.Enabled}, nil
+}
+func (s *catalogStub) SetGroupEnabled(_ context.Context, groupID string, enabled bool, actor, _ string) (catalog.ResourceGroup, error) {
+	if groupID != "11111111-1111-7111-8111-111111111111" {
+		return catalog.ResourceGroup{}, catalog.ErrNotFound
+	}
+	s.groupEnabled = enabled
+	s.createdBy = actor
+	return catalog.ResourceGroup{ID: groupID, Code: "RFC.JPT1", Name: "Tokyo", Region: "JP", Enabled: enabled}, nil
 }
 func (s *catalogStub) ListGroups(context.Context, int, string) ([]catalog.ResourceGroup, error) {
 	return []catalog.ResourceGroup{}, nil
@@ -208,6 +256,27 @@ func TestAdminGroupCreateRequiresSessionRoleAndCSRF(t *testing.T) {
 	}
 	if service.createdBy != "admin-id" {
 		t.Fatalf("actor = %q", service.createdBy)
+	}
+}
+
+func TestAdminCanToggleResourceGroupWithCSRFAndNodePermission(t *testing.T) {
+	service := &catalogStub{groupEnabled: true}
+	handler := NewHandlerWithCatalog(testLogger(), nil, catalogSessions{}, service)
+	path := "/api/v1/admin/resource-groups/11111111-1111-7111-8111-111111111111"
+	for _, item := range []struct {
+		token, csrf string
+		status      int
+	}{
+		{"", "", 401}, {"member-token", "valid-csrf", 403}, {"admin-token", "", 403}, {"admin-token", "valid-csrf", 200},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, catalogRequest(http.MethodPatch, path, item.token, item.csrf, `{"enabled":false}`))
+		if response.Code != item.status {
+			t.Fatalf("token %q csrf %q = %d %s", item.token, item.csrf, response.Code, response.Body.String())
+		}
+	}
+	if service.groupEnabled {
+		t.Fatal("resource group was not stopped")
 	}
 }
 

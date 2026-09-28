@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"controlplane/internal/agentidentity"
+	"controlplane/internal/catalog"
 	"controlplane/internal/identity"
 )
 
 type AgentTokenStore interface {
 	CreateToken(context.Context, string, string, string) (agentidentity.EnrollmentToken, error)
+	RevokeAgent(context.Context, string, string, string) error
 }
 
 type agentReauthenticator interface {
@@ -73,5 +75,39 @@ func registerAgentTokenRoutes(mux *http.ServeMux, sessions IdentitySessions, sto
 			Token     string    `json:"token"`
 			ExpiresAt time.Time `json:"expires_at"`
 		}{Token: result.Token, ExpiresAt: result.ExpiresAt})
+	})
+	mux.HandleFunc("PATCH /api/v1/admin/nodes/{id}/agent", func(w http.ResponseWriter, r *http.Request) {
+		actor, ok := catalogPrincipal(w, r, sessions, "agents.write", true)
+		if !ok {
+			return
+		}
+		nodeID := r.PathValue("id")
+		if !catalog.ValidID(nodeID) {
+			WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "node not found")
+			return
+		}
+		var input struct {
+			Status string `json:"status"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "invalid Agent status request")
+			return
+		}
+		if input.Status != "revoked" {
+			WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "only Agent revocation is supported")
+			return
+		}
+		if err := store.RevokeAgent(r.Context(), nodeID, actor.ID, requestID(r)); err != nil {
+			if errors.Is(err, agentidentity.ErrNodeNotFound) {
+				WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Agent not found")
+				return
+			}
+			WriteError(w, r, http.StatusInternalServerError, "INTERNAL", "internal server error")
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNoContent)
 	})
 }

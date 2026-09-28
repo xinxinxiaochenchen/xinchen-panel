@@ -8,6 +8,7 @@ import { AdminSection } from "./AdminSection";
 import { AdminNodeForm } from "./AdminNodeForm";
 import { AdminNodeMetrics } from "./AdminNodeMetrics";
 import { AdminAgentEnrollment } from "./AdminAgentEnrollment";
+import { revokeAgent } from "./agentEnrollment";
 
 export function ResourcePanel({
   groups,
@@ -29,13 +30,33 @@ export function ResourcePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [metricsNodeID, setMetricsNodeID] = useState("");
+  const [busyGroupID, setBusyGroupID] = useState("");
   const [busyNodeID, setBusyNodeID] = useState("");
+  const [groupError, setGroupError] = useState("");
   const [nodeError, setNodeError] = useState("");
+  const [revokeBusyNodeID, setRevokeBusyNodeID] = useState("");
+  async function toggleGroup(group: ResourceGroup) {
+    setBusyGroupID(group.id);
+    setGroupError("");
+    const result = await mutateCatalog<ResourceGroup>(`/api/v1/admin/resource-groups/${group.id}`, "PATCH", { enabled: !group.enabled }, csrfToken());
+    setBusyGroupID("");
+    if (result.kind === "error") setGroupError(result.message);
+    else onRefresh();
+  }
   async function toggleNode(node: NodeRecord) {
     setBusyNodeID(node.id);
     setNodeError("");
     const result = await mutateCatalog<NodeRecord>(`/api/v1/admin/nodes/${node.id}`, "PATCH", { enabled: !node.enabled }, csrfToken());
     setBusyNodeID("");
+    if (result.kind === "error") setNodeError(result.message);
+    else onRefresh();
+  }
+  async function revokeNodeAgent(node: NodeRecord) {
+    if (!window.confirm(`确认撤销节点「${node.name}」当前 Agent？现有连接会被关闭，需要重新入网。`)) return;
+    setRevokeBusyNodeID(node.id);
+    setNodeError("");
+    const result = await revokeAgent(node.id, csrfToken());
+    setRevokeBusyNodeID("");
     if (result.kind === "error") setNodeError(result.message);
     else onRefresh();
   }
@@ -87,6 +108,7 @@ export function ResourcePanel({
                 {group.name} · {group.region}
               </span>
               <em>{group.enabled ? "启用" : "停用"}</em>
+              <button className="refresh-button" type="button" disabled={busyGroupID !== ""} onClick={() => void toggleGroup(group)}>{busyGroupID === group.id ? "处理中…" : group.enabled ? "停用资源域" : "启用资源域"}</button>
             </div>
           ))}
           {groups.length === 0 && (
@@ -99,12 +121,14 @@ export function ResourcePanel({
             <div className="admin-node-entry" key={node.id}>
               <div className="admin-row">
                 <strong>{node.name}</strong>
-                <span>{node.group_code} · {node.host}</span>
+                <span>{node.group_code} · {node.host} · {node.latency_ms == null ? '延迟未知' : `控制面延迟 ${node.latency_ms} ms`}</span>
                 <em>{nodeStatusLabel(node.agent_status)}</em>
                 <em>{node.enabled ? "已启用" : "已停用"}</em>
                 <button className="refresh-button" type="button" aria-expanded={metricsNodeID === node.id} onClick={() => setMetricsNodeID((current) => current === node.id ? "" : node.id)}>{metricsNodeID === node.id ? "收起指标" : "查看指标"}</button>
                 {canManageNodes && <button className="refresh-button" type="button" disabled={busyNodeID !== ""} onClick={() => void toggleNode(node)}>{busyNodeID === node.id ? "处理中…" : node.enabled ? "停用节点" : "启用节点"}</button>}
+                {canManageNodes && <AdminNodeForm groups={groups} node={node} onSaved={onRefresh} />}
                 {canEnrollAgents && <AdminAgentEnrollment nodeID={node.id} nodeName={node.name} />}
+                {canEnrollAgents && node.agent_status !== "unknown" && <button className="refresh-button" type="button" disabled={revokeBusyNodeID !== ""} onClick={() => void revokeNodeAgent(node)}>{revokeBusyNodeID === node.id ? "撤销中…" : "撤销 Agent"}</button>}
               </div>
               {metricsNodeID === node.id && <AdminNodeMetrics nodeID={node.id} />}
             </div>
@@ -116,6 +140,7 @@ export function ResourcePanel({
           )}
         </div>
       </div>
+      {groupError && <p className="catalog-page-error" role="alert">{groupError}</p>}
       {nodeError && <p className="catalog-page-error" role="alert">{nodeError}</p>}
       {canManageNodes && open && (
         <div className="catalog-dialog-backdrop" role="presentation">

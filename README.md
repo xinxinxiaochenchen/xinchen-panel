@@ -6,7 +6,7 @@
 
 ## VPS 部署
 
-浏览器 WebUI 的 Docker Compose 部署、HTTPS 反代、管理员初始化和密钥挂载步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
+装有 Docker Engine、Compose 插件和 Git 的 VPS 可在克隆源码后运行 `sh scripts/deploy-vps.sh`，由 Docker 构建控制面与 WebUI、生成私有数据库密码、迁移并启动服务。默认绑定 `127.0.0.1:18080`；纯 IP 只读预览显式使用 `sh scripts/deploy-vps.sh --public-preview`。浏览器 WebUI 的 Docker Compose 部署、HTTPS 反代、管理员初始化和密钥挂载步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
 
 ## 本地运行
 
@@ -38,11 +38,13 @@ curl http://127.0.0.1:8080/api/v1/health/ready
 
 节点支持可选 `relay_port`，预留该节点 TCP/UDP 端口用于中继；须具备 `forward` 能力且与代理端口不同。握手契约见 [Agent 中继协议](docs/agent-relay-protocol.md)。多跳 TCP 的配置流和 Agent 执行器已接入，正式节点端到端验收仍待完成。
 
-管理员可通过 `/api/v1/admin/resource-groups` 和 `/api/v1/admin/nodes` 创建及分页查询资源组、节点。普通用户通过 `/api/v1/nodes` 和 `/api/v1/nodes/{id}` 只能读取有效套餐快照授权的已启用节点。写请求要求 `nodes.write` 权限及 CSRF 令牌，创建操作与审计记录在同一事务中。列表参数 `limit` 和 `cursor` 见 [OpenAPI](api/openapi/control-plane.yaml)。这些路由随浏览器身份认证开关一起启用；公网纯 HTTP 预览上仍关闭。
+管理员可通过 `/api/v1/admin/resource-groups` 和 `/api/v1/admin/nodes` 创建及分页查询资源域、节点，并通过 `PATCH /api/v1/admin/resource-groups/{id}` 启停资源域。资源域状态变更会写审计并触发全局配置收敛。WebUI 可创建和编辑节点的公网 IP、带宽、计费倍率、标签、代理端口和中继端口；编辑使用 `PATCH /api/v1/admin/nodes/{id}/config`，节点启停仍使用独立状态接口。资料变更写审计并触发配置收敛，地址或中继参数变化会使现有中继证书授权失效，需要 Agent 重新申请。普通用户通过 `/api/v1/nodes` 和 `/api/v1/nodes/{id}` 只能读取有效套餐快照授权的已启用节点。写请求要求 `nodes.write` 权限及 CSRF 令牌，创建操作与审计记录在同一事务中。列表参数 `limit` 和 `cursor` 见 [OpenAPI](api/openapi/control-plane.yaml)。这些路由随浏览器身份认证开关一起启用；公网纯 HTTP 预览上仍关闭。
+
+发布包中的 `node-bootstrap` 也支持用 `CONTROL_NODE_RELAY_PORT` 初始化中继端口；该端口会参与幂等校验并写入节点记录，必须与代理端口不同且节点具备 `forward` 能力。
 
 ## 套餐与订购开发状态
 
-管理员可通过 `/api/v1/admin/plans` 创建带明确资源组、共享线路授权与额度限制的套餐，并通过 `/api/v1/admin/memberships` 为已有用户创建立即生效的订购。订购事务把额度、倍率、限制和授权 ID 冻结在快照中；同一用户不能同时拥有两个有效订购。`/api/v1/my/membership` 和 `/api/v1/my/entitlements` 只读取登录用户自己的有效订购。套餐授权共享线路时要求整条线路的每个 hop 属于授权资源组，节点能力、端口和 `max_hops` 均满足套餐限制；私有线路不得授予其他用户。创建订购要求结束时间至少比数据库当前时间晚五分钟。接口契约见 [OpenAPI](api/openapi/control-plane.yaml)。
+管理员可通过 `/api/v1/admin/plans` 创建、分页查看并归档/恢复带明确资源组、共享线路授权与额度限制的套餐，并通过 `/api/v1/admin/memberships` 为已有用户创建立即生效的订购及分页查看历史授权。订购事务把额度、倍率、限制和授权 ID 冻结在快照中；同一用户不能同时拥有两个有效订购。`/api/v1/my/membership` 和 `/api/v1/my/entitlements` 只读取登录用户自己的有效订购。套餐授权共享线路时要求整条线路的每个 hop 属于授权资源组，节点能力、端口和 `max_hops` 均满足套餐限制；私有线路不得授予其他用户。创建订购要求结束时间至少比数据库当前时间晚五分钟。管理员可取消现有授权；取消会保留历史账本和快照、阻止新的额度准入，并触发节点配置收敛。已发放的短期额度租约需到期或由 Agent 收到撤销配置后结束。接口契约见 [OpenAPI](api/openapi/control-plane.yaml)。
 
 ## 线路开发状态
 
@@ -71,6 +73,8 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 `internal/agentidentity` 提供 Agent 入网与续签身份链路：10 分钟一次性令牌只以 SHA-256 存库；Agent 以 Ed25519 CSR 换取绑定节点 URI 的 24 小时客户端证书；签发和令牌消费在同一事务中完成。证书到期前六小时，Agent 使用当前 mTLS 证书和同一私钥签名的 CSR 调用 `POST /api/v1/agent/renew`；控制面事务化保存有限的重叠证书授权，同一父证书重试返回同一证书。Agent 原子替换证书文件，新的 TLS 连接自动加载新证书。证书认证核对 CA、节点 URI、数据库指纹、节点启用状态与吊销状态。管理员须用当前密码重新认证，并经 `POST /api/v1/admin/nodes/{id}/agent-enrollment` 签发一次性令牌；签发记录审计但不保存明文令牌。Agent 经独立 TLS 入口入网和续签；公网纯 IP HTTP 预览不提供这些路由。CA 私钥不写入数据库或响应，Agent 私钥不离开节点。
 
+管理员也可在节点页撤销现有 Agent 身份，或调用 `PATCH /api/v1/admin/nodes/{id}/agent` 并提交 `{"status":"revoked"}`。该操作需要 `agents.write` 与 CSRF，在同一数据库事务中吊销现有证书、续签与中继授权，删除未使用的入网令牌，写入审计与配置收敛事件；重复撤销不重复写事件。旧证书无法再次认证，现有控制流会在身份复核或心跳时断开，Agent 随后关闭数据监听。需要恢复时须重新签发一次性令牌并完成入网。
+
 `cmd/agent` 提供独立 Agent 进程和 `enroll` 命令。入网命令从标准输入读取一次性令牌，在 Agent 本机生成 Ed25519 私钥，经受信任 HTTPS 换取证书，并仅新建权限为 `0600` 的证书和私钥文件。运行进程主动建立 mTLS WebSocket，发送 hello 与 15 秒心跳，接收完整转发快照，由 `agentruntime` 原子应用并回传 ACK/NACK；异常断线会关闭转发监听并重连。证书续签后通过同一控制流的 `certificate_update`/`certificate_update_ack` 交接在线身份，避免正常旧证书到期关闭数据运行时，详见 [Agent 证书交接协议](docs/agent-certificate-handover.md)。心跳采集 Linux `/proc` 的 CPU、内存、网卡字节及本机活动转发连接数。控制面数据库保存最新指标，45 秒无心跳会转为离线。迁移 `000007_agent_presence` 增加指标表。`cmd/agent-token` 可在受限服务器本机为现有管理员和节点签发令牌到新建的私有文件；命令不在标准输出打印令牌。发布包提供可选 `compose.agent-local.yaml`，使用 host network 连接回环 mTLS 并持久化额度租约/用量 outbox；它不会默认启动。多节点实际部署仍待完成；公网 Agent TLS 入口已有显式开关和可选部署文件，但当前纯 IP HTTP 预览继续关闭浏览器登录，Agent TLS 仅在服务器回环地址开放，尚未进行真实节点验收。
 
 管理员审计页通过 `GET /api/v1/admin/audit` 按时间与 ID 倒序分页查看操作元数据，需 `audit.read` 权限；API 不返回审计记录中的前后状态快照。迁移 `000019_audit_pagination` 为该查询增加排序索引。
@@ -83,11 +87,13 @@ Agent 的代理证书使用 `CONTROL_AGENT_PROXY_CERT_FILE` 与 `CONTROL_AGENT_P
 
 代码提供 `POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`GET /api/v1/me` 和 `GET /api/v1/me/permissions`。会话使用 12 小时有效的随机令牌，数据库只存哈希；浏览器 Cookie 带 `Secure`、`HttpOnly`（会话）和 `SameSite=Lax`，写请求使用 CSRF 令牌。登录在单进程内限制为每账户 5 次/5 分钟、全局 60 次/分钟；过期会话每小时分批清理。首次管理员由 `cmd/admin-bootstrap` 创建，邮箱通过 `CONTROL_ADMIN_EMAIL` 提供，密码从非交互标准输入读取且不得少于 12 字节。完整契约见 [OpenAPI](api/openapi/control-plane.yaml)。
 
-浏览器身份路由默认关闭，需显式设置 `CONTROL_BROWSER_AUTH_ENABLED=true`。当前公网纯 HTTP 预览已部署身份数据表，但浏览器身份路由关闭，登录请求返回 404。需要先准备 HTTPS 反代、将主机绑定恢复为回环地址，并补齐登录审计，再开启身份功能。多实例部署前应把进程内登录限流改为 Redis 共享限流。
+浏览器身份路由默认关闭，需显式设置 `CONTROL_BROWSER_AUTH_ENABLED=true`。当前公网纯 HTTP 预览已部署身份数据表，但浏览器身份路由关闭，登录请求返回 404。成功登录和退出会在创建或撤销浏览器会话的同一数据库事务中写入不含凭据的审计事件；正式启用前仍需准备 HTTPS 反代并将主机绑定恢复为回环地址。多实例部署前应把进程内登录限流改为 Redis 共享限流。
 
-## 后续阶段
+## 当前交付边界
 
-下一阶段重点是真实正式节点入网、受信任 HTTPS 管理入口和多 Agent 公网数据面通流。迁移 24/25 已通过 PostgreSQL 16.10 真实数据库验证；Agent 已接入经认证的 TCP/UDP 多跳线路绑定转发以及代理候选的拨号重试，额度请求会记录最终线路，多候选创建、编辑和订阅导出已经接通。公网多 Agent 通流和 HTTPS 管理入口仍待完成。隔离数据库和临时 Agent 此前已通过直达 TCP/UDP/Trojan TLS 及计费入账验收。自定义 RBAC 已支持创建角色、分配已登记权限和为普通用户分配角色，权限变更在下一次请求生效；系统角色不可改，`roles.write` 只由系统管理员持有。正式 VPS 验收按用户要求留到整体开发后。当前 Docker Compose 部署只是纯 IP 只读预览。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
+控制面代码已经覆盖节点、资源域、线路、转发、代理连接、订阅、分流、套餐、账期计费、RBAC、审计、Agent mTLS、配置收敛和多跳 TCP/UDP 数据面。迁移 1–26、REST/OpenAPI、React WebUI、Linux amd64 发布归档和 Docker Compose 文件均在仓库中；项目不包含用户付费、订单、充值或支付模块。
+
+真实公网多 Agent 通流、首个正式管理员、可信 HTTPS 反代和正式节点入网属于部署现场验收，不会改变代码交付形态。纯 IP HTTP 入口继续保持只读，浏览器登录、写操作和订阅 Token 只有在 HTTPS 反代与密钥准备完成后才启用。用户确认的 MVP 采用单跳线路、Trojan over TLS 和上传加下载的流量口径。
 
 当前 `us bwg` 的纯 IP 只读预览见[部署说明](docs/deployment/us-bwg-preview.md)；旧 `us dmit` 的历史部署见[历史记录](docs/deployment/private-preview.md)。预览实例可检查页面与服务状态，不代表完整控制台已经上线。
 

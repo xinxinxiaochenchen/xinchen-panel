@@ -50,6 +50,7 @@ func TestPostgresPlanMembershipFreezesGrantsAndAudits(t *testing.T) {
 		}
 	}
 	defer func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox_events WHERE kind='membership.changed' AND payload->>'user_id'=$1`, memberID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM memberships WHERE user_id=$1`, memberID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE actor_user_id=$1`, actorID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM plans WHERE name IN ('entitlement-integration-plan','private-line-grant','mismatched-line-grant')`)
@@ -146,6 +147,33 @@ VALUES (gen_random_uuid(),$1,$2) RETURNING id::text`, spec.name, actorID).Scan(&
 	if err != nil || membership.Status != "active" || membership.Snapshot.QuotaBytes != 1_000_000 || membership.Snapshot.DefaultMultiplierMilli != 2000 {
 		t.Fatalf("membership = %+v, %v", membership, err)
 	}
+	membershipPage, err := repo.ListMemberships(ctx, 10, "")
+	if err != nil || len(membershipPage) == 0 {
+		t.Fatalf("membership directory = %+v, %v", membershipPage, err)
+	}
+	foundMembership := false
+	for _, item := range membershipPage {
+		if item.ID == membership.ID {
+			foundMembership = item.UserID == memberID && item.Snapshot.PlanName == plan.Name
+		}
+	}
+	if !foundMembership {
+		t.Fatalf("membership missing from directory: %+v", membershipPage)
+	}
+	for _, item := range membershipPage {
+		if item.ID == membership.ID {
+			pageAfter, err := repo.ListMemberships(ctx, 10, item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, later := range pageAfter {
+				if later.ID == item.ID {
+					t.Fatalf("cursor returned same membership: %+v", pageAfter)
+				}
+			}
+			break
+		}
+	}
 	if _, err := repo.CreateMembership(ctx, input, actorID, "duplicate-membership"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate membership = %v", err)
 	}
@@ -177,5 +205,33 @@ VALUES (gen_random_uuid(),$1,$2) RETURNING id::text`, spec.name, actorID).Scan(&
 	var persisted Snapshot
 	if err := json.Unmarshal(raw, &persisted); err != nil || len(persisted.ResourceGroupIDs) != 1 || persisted.ResourceGroupIDs[0] != firstGroup {
 		t.Fatalf("persisted snapshot = %+v, %v", persisted, err)
+	}
+	cancelled, err := repo.SetMembershipStatus(ctx, membership.ID, "cancelled", actorID, "cancel-membership")
+	if err != nil || cancelled.Status != "cancelled" || cancelled.Snapshot.PlanName != plan.Name {
+		t.Fatalf("cancelled membership = %+v, %v", cancelled, err)
+	}
+	if _, err := repo.GetCurrentMembership(ctx, memberID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cancelled membership remains current: %v", err)
+	}
+	var cancellationEvents int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE kind='membership.changed' AND aggregate_id=$1`, membership.ID).Scan(&cancellationEvents); err != nil || cancellationEvents != 1 {
+		t.Fatalf("cancellation events = %d, %v", cancellationEvents, err)
+	}
+	if _, err := repo.SetMembershipStatus(ctx, membership.ID, "cancelled", actorID, "repeat-cancel"); err != nil {
+		t.Fatalf("idempotent cancellation: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE kind='membership.changed' AND aggregate_id=$1`, membership.ID).Scan(&cancellationEvents); err != nil || cancellationEvents != 1 {
+		t.Fatalf("repeat cancellation events = %d, %v", cancellationEvents, err)
+	}
+	archived, err := repo.SetPlanStatus(ctx, plan.ID, "archived", actorID, "archive-plan")
+	if err != nil || archived.Status != "archived" {
+		t.Fatalf("archived plan = %+v, %v", archived, err)
+	}
+	if _, err := repo.CreateMembership(ctx, input, actorID, "archived-plan-membership"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("archived plan accepted new membership: %v", err)
+	}
+	active, err := repo.SetPlanStatus(ctx, plan.ID, "active", actorID, "restore-plan")
+	if err != nil || active.Status != "active" {
+		t.Fatalf("restored plan = %+v, %v", active, err)
 	}
 }

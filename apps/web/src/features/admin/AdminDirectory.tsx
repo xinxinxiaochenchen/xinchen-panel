@@ -6,7 +6,7 @@ import {
   type LineRecord,
   type NodeRecord,
 } from "../../lib/catalog";
-import type { ForwardTargetPolicy, GeoRuleSetRecord, Plan, ResourceGroup } from "../../lib/admin";
+import type { ForwardTargetPolicy, GeoRuleSetRecord, Membership, Plan, ResourceGroup } from "../../lib/admin";
 import { UserPanel } from "./AdminUsers";
 import { PlanPanel } from "./AdminPlans";
 import { ResourcePanel } from "./AdminResources";
@@ -20,6 +20,7 @@ import { AdminUsage } from "./AdminUsage";
 type AdminData = {
   users: User[];
   plans: Plan[];
+  memberships: Membership[];
   groups: ResourceGroup[];
   nodes: NodeRecord[];
   lines: LineRecord[];
@@ -29,6 +30,7 @@ type AdminData = {
 const emptyData: AdminData = {
   users: [],
   plans: [],
+  memberships: [],
   groups: [],
   nodes: [],
   lines: [],
@@ -60,6 +62,11 @@ export function AdminDirectory({ user }: { user: User }) {
         {
           key: "plans",
           path: "/api/v1/admin/plans",
+          allowed: can("plans.read"),
+        },
+        {
+          key: "memberships",
+          path: "/api/v1/admin/memberships",
           allowed: can("plans.read"),
         },
         {
@@ -100,6 +107,7 @@ export function AdminDirectory({ user }: { user: User }) {
       const next: AdminData = {
         users: [],
         plans: [],
+        memberships: [],
         groups: [],
         nodes: [],
         lines: [],
@@ -169,18 +177,18 @@ export function AdminDirectory({ user }: { user: User }) {
             !failed.includes("groups") &&
             !failed.includes("lines")
           }
+          canManageStatus={can("plans.write")}
           onRefresh={refresh}
         />
       )}
       {!loading &&
-        can("plans.write") &&
         can("plans.read") &&
-        can("users.read") &&
-        !failed.includes("users") &&
-        !failed.includes("plans") && (
+        !failed.includes("memberships") && (
           <AdminMembershipForm
-            users={data.users.filter((item) => item.status === "active" && item.roles.includes("user"))}
+            users={can("users.read") && !failed.includes("users") ? data.users : []}
             plans={data.plans}
+            memberships={data.memberships}
+            canWrite={can("plans.write") && can("users.read") && !failed.includes("users") && !failed.includes("plans")}
             onSaved={refresh}
           />
         )}

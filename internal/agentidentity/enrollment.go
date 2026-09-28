@@ -42,6 +42,13 @@ type EnrollmentService struct {
 	issuer *Issuer
 }
 
+func lockAgentLifecycle(ctx context.Context, tx pgx.Tx, nodeID string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 34034))`, nodeID); err != nil {
+		return fmt.Errorf("lock Agent lifecycle: %w", err)
+	}
+	return nil
+}
+
 func NewEnrollmentService(pool *pgxpool.Pool, issuer *Issuer) *EnrollmentService {
 	return &EnrollmentService{pool: pool, issuer: issuer}
 }
@@ -67,6 +74,9 @@ func (service *EnrollmentService) CreateToken(ctx context.Context, nodeID, actor
 		return EnrollmentToken{}, fmt.Errorf("begin Agent token creation: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockAgentLifecycle(ctx, tx, nodeID); err != nil {
+		return EnrollmentToken{}, err
+	}
 	var enabled bool
 	if err := tx.QueryRow(ctx, `SELECT enabled FROM nodes WHERE id=$1 FOR UPDATE`, nodeID).Scan(&enabled); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -99,6 +109,66 @@ VALUES ($1,$2,'create','agent_enrollment',$3,'{"status":"issued"}'::jsonb,$4)`, 
 	return EnrollmentToken{Token: token, ExpiresAt: expiresAt}, nil
 }
 
+// RevokeAgent immediately invalidates the current client certificate and all
+// overlapping renewal/relay grants. The node record remains available so an
+// administrator can issue a fresh enrollment token later.
+func (service *EnrollmentService) RevokeAgent(ctx context.Context, nodeID, actorID, requestID string) error {
+	if !nodeIDPattern.MatchString(nodeID) || !nodeIDPattern.MatchString(actorID) {
+		return ErrNodeNotFound
+	}
+	auditID, err := id.NewV7()
+	if err != nil {
+		return err
+	}
+	eventID, err := id.NewV7()
+	if err != nil {
+		return err
+	}
+	tx, err := service.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin Agent revocation: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockAgentLifecycle(ctx, tx, nodeID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_enrollment_tokens WHERE node_id=$1 AND consumed_at IS NULL`, nodeID); err != nil {
+		return fmt.Errorf("revoke unused Agent enrollment tokens: %w", err)
+	}
+	var current string
+	err = tx.QueryRow(ctx, `SELECT status FROM agents WHERE node_id=$1 FOR UPDATE`, nodeID).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNodeNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock Agent revocation: %w", err)
+	}
+	if current == "revoked" {
+		return tx.Commit(ctx)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE agents SET status='revoked',last_seen_at=NULL WHERE node_id=$1`, nodeID); err != nil {
+		return fmt.Errorf("revoke Agent identity: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_certificate_grants WHERE node_id=$1`, nodeID); err != nil {
+		return fmt.Errorf("revoke Agent certificate grants: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_relay_certificate_grants WHERE node_id=$1`, nodeID); err != nil {
+		return fmt.Errorf("revoke Agent relay grants: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,actor_user_id,action,object_type,object_id,before_json,after_json,request_id)
+VALUES ($1,$2,'update','agent',$3,jsonb_build_object('status',$4),jsonb_build_object('status','revoked'),$5)`, auditID, actorID, nodeID, current, requestID); err != nil {
+		return fmt.Errorf("audit Agent revocation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO outbox_events(id,kind,aggregate_id,payload,idempotency_key)
+VALUES ($1,'node.changed',$2,jsonb_build_object('node_id',$2::text),$3)`, eventID, nodeID, "agent-revocation:"+eventID); err != nil {
+		return fmt.Errorf("queue Agent revocation convergence: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit Agent revocation: %w", err)
+	}
+	return nil
+}
+
 // Enroll locks the node before the token so replacement and consumption have
 // the same lock order. Signing and digest persistence complete in one transaction.
 func (service *EnrollmentService) Enroll(ctx context.Context, token string, csrPEM []byte, version string) (EnrollmentResult, error) {
@@ -118,6 +188,9 @@ func (service *EnrollmentService) Enroll(ctx context.Context, token string, csrP
 			return EnrollmentResult{}, ErrInvalidEnrollment
 		}
 		return EnrollmentResult{}, fmt.Errorf("find Agent enrollment token: %w", err)
+	}
+	if err := lockAgentLifecycle(ctx, tx, nodeID); err != nil {
+		return EnrollmentResult{}, err
 	}
 	var enabled bool
 	if err := tx.QueryRow(ctx, `SELECT enabled FROM nodes WHERE id=$1 FOR UPDATE`, nodeID).Scan(&enabled); err != nil {

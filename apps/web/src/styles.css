@@ -204,6 +204,11 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
 .scope-grid span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
 .scope-grid svg { color: var(--accent); }
 .scope-grid strong { font-size: 14px; }
+.scope-detail-list { display: grid; gap: 10px; margin-top: 12px; }
+.scope-detail-list > div { padding: 13px 14px; border: 1px solid var(--border); border-radius: 11px; background: color-mix(in srgb, var(--surface) 82%, transparent); }
+.scope-detail-list span { display: block; color: var(--muted); font-size: 10px; }
+.scope-detail-list p { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.scope-detail-list em { padding: 5px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 11px; font-style: normal; font-weight: 700; }
 .scope-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; margin-top: 22px; }
 .scope-limits > div { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; }
 .scope-limits strong { color: var(--text); font-size: 11px; }

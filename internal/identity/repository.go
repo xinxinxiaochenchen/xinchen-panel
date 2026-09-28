@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"controlplane/internal/platform/id"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -45,6 +46,14 @@ WHERE lower(u.email) = $1 GROUP BY u.id`
 }
 
 func (r *PostgresRepository) InsertSession(ctx context.Context, session Session, expectedPasswordHash string) error {
+	return r.insertSession(ctx, session, expectedPasswordHash, "")
+}
+
+func (r *PostgresRepository) InsertSessionWithAudit(ctx context.Context, session Session, expectedPasswordHash, requestID string) error {
+	return r.insertSession(ctx, session, expectedPasswordHash, requestID)
+}
+
+func (r *PostgresRepository) insertSession(ctx context.Context, session Session, expectedPasswordHash, requestID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin session creation: %w", err)
@@ -62,6 +71,16 @@ func (r *PostgresRepository) InsertSession(ctx context.Context, session Session,
 VALUES ($1,$2,$3,$4)`, session.TokenHash[:], session.CSRFHash[:], session.UserID, session.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
+	}
+	if requestID != "" {
+		auditID, err := id.NewV7()
+		if err != nil {
+			return fmt.Errorf("generate login audit ID: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,actor_user_id,action,object_type,object_id,after_json,request_id)
+VALUES ($1,$2,'login','user',$2,'{"session_created":true}'::jsonb,$3)`, auditID, session.UserID, requestID); err != nil {
+			return fmt.Errorf("audit login: %w", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit session creation: %w", err)
@@ -100,6 +119,34 @@ func (r *PostgresRepository) DeleteSession(ctx context.Context, tokenHash [32]by
 	_, err := r.pool.Exec(ctx, `DELETE FROM browser_sessions WHERE token_hash=$1`, tokenHash[:])
 	if err != nil {
 		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) DeleteSessionWithAudit(ctx context.Context, tokenHash [32]byte, actorID, requestID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin session deletion: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var deletedUserID string
+	err = tx.QueryRow(ctx, `DELETE FROM browser_sessions WHERE token_hash=$1 AND user_id=$2 RETURNING user_id::text`, tokenHash[:], actorID).Scan(&deletedUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUnauthenticated
+	}
+	if err != nil {
+		return fmt.Errorf("delete session with audit: %w", err)
+	}
+	auditID, err := id.NewV7()
+	if err != nil {
+		return fmt.Errorf("generate logout audit ID: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,actor_user_id,action,object_type,object_id,after_json,request_id)
+VALUES ($1,$2,'logout','user',$2,'{"session_revoked":true}'::jsonb,$3)`, auditID, deletedUserID, requestID); err != nil {
+		return fmt.Errorf("audit logout: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit session deletion: %w", err)
 	}
 	return nil
 }

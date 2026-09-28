@@ -45,6 +45,36 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/admin/nodes/{id}/agent:
+    patch:
+      operationId: revokeAgent
+      summary: Revoke the current Agent identity for a node
+      description: Invalidates the current certificate, renewal and relay grants, clears unused enrollment tokens, and queues configuration convergence. Re-enrollment can create a fresh identity later.
+      security: [{browserSession: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: {type: string, const: revoked}
+      responses:
+        '204': {description: Agent identity revoked}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/agent/enroll:
     post:
       operationId: enrollAgent
@@ -202,7 +232,7 @@ paths:
     post:
       operationId: login
       summary: Create a browser session
-      description: Requires HTTPS. Sets a Secure HttpOnly session cookie and a readable CSRF cookie.
+      description: Requires HTTPS. Sets a Secure HttpOnly session cookie and a readable CSRF cookie. A successful login writes a credential-free audit record in the same transaction as the browser session.
       requestBody:
         required: true
         content:
@@ -236,6 +266,7 @@ paths:
     post:
       operationId: logout
       summary: Revoke the current browser session
+      description: Requires HTTPS and CSRF. Session deletion and the credential-free logout audit record are committed atomically.
       security:
         - browserSession: []
       parameters:
@@ -538,7 +569,53 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/plans/{id}:
+    patch:
+      operationId: setPlanStatus
+      summary: Archive or restore a plan (administrator)
+      description: Changes availability for new memberships while preserving immutable snapshots already assigned to users.
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status: {type: string, enum: [active, archived]}
+      responses:
+        '200':
+          description: Updated plan
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Plan'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /api/v1/admin/memberships:
+    get:
+      operationId: listMemberships
+      summary: List membership records and frozen grants (administrator)
+      security: [{browserSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PageLimit'}
+        - {$ref: '#/components/parameters/PageCursor'}
+      responses:
+        '200':
+          description: Membership page ordered by ID
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MembershipList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
     post:
       operationId: createMembership
       summary: Assign an immediately active membership (administrator)
@@ -557,6 +634,37 @@ paths:
       responses:
         '201':
           description: Created active membership
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Membership'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/memberships/{id}:
+    patch:
+      operationId: cancelMembership
+      summary: Cancel an active or scheduled membership (administrator)
+      description: Stops new quota admissions, queues Agent configuration convergence, and preserves billing history. Repeating cancellation is idempotent.
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status: {type: string, const: cancelled}
+      responses:
+        '200':
+          description: Cancelled membership
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Membership'}
@@ -731,6 +839,39 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/resource-groups/{id}:
+    patch:
+      operationId: setResourceGroupEnabled
+      summary: Enable or disable a resource group
+      description: Requires nodes.write and CSRF. A state change writes an audit entry and queues configuration convergence for all enrolled Agents. Repeating the current state is a no-op.
+      security: [{browserSession: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: Updated resource group
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResourceGroup'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /api/v1/admin/nodes:
     get:
       operationId: listAllNodes
@@ -807,11 +948,40 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/admin/nodes/{id}/config:
+    patch:
+      operationId: updateAdminNodeConfig
+      summary: Replace a node's connection metadata
+      description: Requires nodes.write and CSRF. Replaces group, name, region, host, public IP, proxy and relay ports, capabilities, bandwidth, multiplier and tags. Enablement stays unchanged. A change writes audit and queues global configuration convergence; endpoint conflicts are rejected. Changing host or relay details invalidates relay certificate grants.
+      security: [{browserSession: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: '#/components/schemas/NewNode'}
+                - {not: {required: [enabled]}}
+      responses:
+        '200':
+          description: Updated node
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /api/v1/admin/nodes/{id}/metrics:
     get:
       operationId: getAdminNodeMetrics
       summary: Read the latest Agent telemetry for a node
-      description: Requires nodes.write or agents.write. Metrics are fresh only when both the Agent and telemetry were observed within 45 seconds and the telemetry is from the latest connection. RX and TX are cumulative network interface counters, separate from billed user traffic.
+      description: Requires nodes.write or agents.write. Heartbeat metrics are fresh only when both the Agent and telemetry were observed within 45 seconds and the telemetry is from the latest connection. Latency is a separate control-plane WebSocket Ping/Pong round trip, returned only for a recent online Agent. RX and TX are cumulative network interface counters, separate from billed user traffic.
       security: [{browserSession: []}]
       parameters:
         - in: path
@@ -2193,6 +2363,14 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Plan'}
         next_cursor: {type: ['string', 'null']}
+    MembershipList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Membership'}
+        next_cursor: {type: ['string', 'null']}
     NewMembership:
       type: object
       required: [user_id, plan_id, starts_at, ends_at, anchor_day, timezone]
@@ -2259,7 +2437,7 @@ components:
           required: [id, status, snapshot, created_at]
           properties:
             id: {type: string, format: uuid}
-            status: {type: string, const: active}
+            status: {type: string, enum: [scheduled, active, expired, cancelled]}
             snapshot: {$ref: '#/components/schemas/EntitlementSnapshot'}
             created_at: {type: string, format: date-time}
     NewResourceGroup:
@@ -2304,7 +2482,7 @@ components:
           type: ['integer', 'null']
           minimum: 1024
           maximum: 65535
-          description: Optional port reserved for future Agent relay. Requires forward capability and must differ from proxy_port. Multi-hop execution is not yet enabled.
+          description: Optional TCP/UDP relay listener port. Requires forward capability and must differ from proxy_port; multi-hop lines also require relay certificates and an applied topology.
         capabilities:
           type: array
           items: {type: string, enum: [proxy, forward]}
@@ -2318,12 +2496,13 @@ components:
       allOf:
         - {$ref: '#/components/schemas/NewNode'}
         - type: object
-          required: [id, group_code, multiplier_milli, tags, enabled, agent_status, created_at]
+          required: [id, group_code, multiplier_milli, tags, enabled, agent_status, latency_ms, created_at]
           properties:
             id: {type: string, format: uuid}
             group_code: {type: string}
             agent_status: {type: string, enum: [unknown, online, offline, revoked]}
             last_seen_at: {type: ['string', 'null'], format: date-time}
+            latency_ms: {type: ['integer', 'null'], minimum: 0, description: Recent control-plane WebSocket round trip; null when unavailable or stale.}
             created_at: {type: string, format: date-time}
     NodeList:
       type: object
@@ -2335,11 +2514,12 @@ components:
         next_cursor: {type: ['string', 'null']}
     NodeMetrics:
       type: object
-      required: [node_id, agent_status, last_seen_at, fresh, metrics]
+      required: [node_id, agent_status, last_seen_at, latency_ms, fresh, metrics]
       properties:
         node_id: {type: string, format: uuid}
         agent_status: {type: string, enum: [unknown, online, offline, revoked]}
         last_seen_at: {type: ['string', 'null'], format: date-time}
+        latency_ms: {type: ['integer', 'null'], minimum: 0, description: Recent control-plane WebSocket Ping/Pong round trip; null when no fresh sample exists.}
         fresh: {type: boolean}
         metrics:
           oneOf:

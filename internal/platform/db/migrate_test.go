@@ -84,8 +84,8 @@ func TestRepositoryMigrationLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 25 {
-		t.Fatalf("expected proxy line candidate migration 25; found %d migrations", len(migrations))
+	if len(migrations) != 26 {
+		t.Fatalf("expected Agent latency migration 26; found %d migrations", len(migrations))
 	}
 	for i, migration := range migrations {
 		if migration.Version != int64(i+1) {

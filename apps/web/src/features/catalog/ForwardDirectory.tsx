@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ArrowRight, GitBranch, RefreshCw } from 'lucide-react'
+import { ArrowRight, GitBranch, Pencil, RefreshCw, Trash2 } from 'lucide-react'
 import type { Section } from '../../app/sections'
 import { loadAllCatalogPages, loadCatalogPage, mutateCatalog, type ForwardRecord, type LineRecord, type NodeRecord } from '../../lib/catalog'
 import type { User } from '../../lib/dashboard'
 import { csrfToken } from './CreateLine'
+import { forwardDraftFromRecord, forwardDraftPayload } from './forwardDraft'
 
 const statusLabel: Record<string, string> = { pending: '等待下发', active: '运行中', apply_failed: '下发失败', disabled: '已停用' }
 
@@ -68,6 +69,40 @@ function ForwardForm({ user, onSaved }: { user: User; onSaved: () => void }) {
   </>
 }
 
+function ForwardEditor({ rule, onSaved }: { rule: ForwardRecord; onSaved: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState(rule.name)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    let payload: { name: string }
+    try { payload = forwardDraftPayload({ name }) } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '规则名称无效。')
+      return
+    }
+    setBusy(true)
+    const result = await mutateCatalog<ForwardRecord>(`/api/v1/forward-rules/${rule.id}`, 'PATCH', payload, csrfToken())
+    setBusy(false)
+    if (result.kind === 'error') { setError(result.message); return }
+    setOpen(false)
+    onSaved()
+  }
+
+  return <>
+    <button className="catalog-toggle" type="button" onClick={() => { setName(forwardDraftFromRecord(rule).name); setError(''); setOpen(true) }}><Pencil size={14} />编辑</button>
+    {open && <div className="catalog-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setOpen(false) }}><form className="catalog-dialog" onSubmit={(event) => void submit(event)} aria-label="编辑转发规则">
+      <div className="catalog-dialog-head"><span className="section-overline">EDIT FORWARD</span><h2>编辑转发规则</h2><p>当前规则的入口、目标、端口和协议已固定；变更这些字段需重新创建规则。</p></div>
+      <label htmlFor={`forward-edit-${rule.id}`}>规则名称</label><input id={`forward-edit-${rule.id}`} required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} />
+      <div className="catalog-form-note">{rule.protocol} · 入口端口 {rule.ingress_port} → 目标端口 {rule.target_port}</div>
+      {error && <div className="auth-error" role="alert">{error}</div>}
+      <div className="catalog-form-actions"><button type="button" className="refresh-button" disabled={busy} onClick={() => setOpen(false)}>取消</button><button className="primary-button" type="submit" disabled={busy}>{busy ? '正在保存…' : '保存名称'}</button></div>
+    </form></div>}
+  </>
+}
+
 export function ForwardDirectory({ section, user }: { section: Section; user: User }) {
   const [generation, setGeneration] = useState(0)
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
@@ -87,11 +122,16 @@ export function ForwardDirectory({ section, user }: { section: Section; user: Us
     const result = await mutateCatalog<ForwardRecord>(`/api/v1/forward-rules/${rule.id}`, 'PATCH', { enabled: !rule.enabled }, csrfToken())
     if (result.kind === 'error') setError(result.message); else setGeneration((value) => value + 1)
   }
+  async function remove(rule: ForwardRecord) {
+    if (!window.confirm(`删除转发规则「${rule.name}」？入口端口将释放。`)) return
+    const result = await mutateCatalog<void>(`/api/v1/forward-rules/${rule.id}`, 'DELETE', null, csrfToken())
+    if (result.kind === 'error') setError(result.message); else setGeneration((value) => value + 1)
+  }
   return <div className="catalog-page"><div className="catalog-title"><div><span className="section-overline">{section.eyebrow}</span><h1>{section.title}</h1><p>{section.description}</p></div><div className="catalog-title-actions"><button className="refresh-button" type="button" onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={16} />刷新列表</button>{user.permissions.includes('forward_rules.write') && <ForwardForm user={user} onSaved={() => setGeneration((value) => value + 1)} />}</div></div>
     {state === 'loading' && <div className="catalog-state" role="status">正在加载转发规则…</div>}
     {state === 'error' && <div className="catalog-state catalog-error">{error}</div>}
     {state === 'empty' && <div className="catalog-state"><GitBranch size={24} /><span>还没有转发规则。</span></div>}
-    {state === 'ready' && <div className="forward-list">{items.map((rule) => <article className="catalog-card forward-card" key={rule.id}><div className="catalog-card-head"><span className="catalog-icon"><GitBranch size={18} /></span><span className={`status-chip status-${rule.enabled ? 'online' : 'offline'}`}><i />{rule.enabled ? statusLabel[rule.apply_status] ?? '已启用' : '已停用'}</span></div><div className="catalog-card-name"><strong>{rule.name}</strong><span>{rule.protocol} · 入口端口 {rule.ingress_port}{rule.line_id ? ' · 多跳线路' : ''}</span></div><div className="forward-path"><span>{rule.ingress_node_id.slice(0, 8)}:{rule.ingress_port}</span><ArrowRight size={15} /><span>{rule.target_node_id ? rule.target_node_id.slice(0, 8) : rule.target_host}:{rule.target_port}</span></div><div className="catalog-card-foot"><span>应用状态：{statusLabel[rule.apply_status] ?? rule.apply_status}</span>{user.permissions.includes('forward_rules.write') && <button className="catalog-toggle" type="button" onClick={() => void toggle(rule)}>{rule.enabled ? '停用规则' : '启用规则'}</button>}</div></article>)}</div>}
+    {state === 'ready' && <div className="forward-list">{items.map((rule) => <article className="catalog-card forward-card" key={rule.id}><div className="catalog-card-head"><span className="catalog-icon"><GitBranch size={18} /></span><span className={`status-chip status-${rule.enabled ? 'online' : 'offline'}`}><i />{rule.enabled ? statusLabel[rule.apply_status] ?? '已启用' : '已停用'}</span></div><div className="catalog-card-name"><strong>{rule.name}</strong><span>{rule.protocol} · 入口端口 {rule.ingress_port}{rule.line_id ? ' · 多跳线路' : ''}</span></div><div className="forward-path"><span>{rule.ingress_node_id.slice(0, 8)}:{rule.ingress_port}</span><ArrowRight size={15} /><span>{rule.target_node_id ? rule.target_node_id.slice(0, 8) : rule.target_host}:{rule.target_port}</span></div><div className="catalog-card-foot"><span>应用状态：{statusLabel[rule.apply_status] ?? rule.apply_status}</span>{user.permissions.includes('forward_rules.write') && <><ForwardEditor rule={rule} onSaved={() => setGeneration((value) => value + 1)} /><button className="catalog-toggle" type="button" onClick={() => void toggle(rule)}>{rule.enabled ? '停用规则' : '启用规则'}</button><button className="catalog-toggle" type="button" onClick={() => void remove(rule)}><Trash2 size={14} />删除</button></>}</div></article>)}</div>}
     {cursor && <button className="load-more-button" type="button" disabled={loadingMore} onClick={async () => { setLoadingMore(true); await load(false); setLoadingMore(false) }}>{loadingMore ? '正在加载…' : '加载更多'}</button>}
     {error && state === 'ready' && <p className="catalog-page-error" role="alert">{error}</p>}
   </div>

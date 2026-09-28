@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import type { NodeMetricsRecord } from '../../lib/catalog'
-import { formatMetricBytes, metricFreshnessLabel } from './nodeMetrics'
+import { formatLatency, formatMetricBytes, metricFreshnessLabel } from './nodeMetrics'
 
 export function AdminNodeMetrics({ nodeID }: { nodeID: string }) {
   const [data, setData] = useState<NodeMetricsRecord | null>(null)
@@ -36,6 +36,7 @@ export function AdminNodeMetrics({ nodeID }: { nodeID: string }) {
     <div className="admin-node-metrics-head"><strong>{metricFreshnessLabel(data)}</strong><button className="refresh-button" type="button" onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={13} />刷新</button></div>
     {loading && <span className="catalog-form-note">正在读取 Agent 指标…</span>}
     {error && <span className="catalog-page-error" role="alert">{error}</span>}
+    {data && <span className="catalog-form-note">控制面到 Agent 往返延迟：{formatLatency(data.latency_ms)}</span>}
     {metrics && <><div className="admin-node-metrics-grid">
       <span><small>CPU</small><strong>{metrics.cpu_pct.toFixed(1)}%</strong></span>
       <span><small>已用内存</small><strong>{formatMetricBytes(metrics.memory_used_bytes)}</strong></span>

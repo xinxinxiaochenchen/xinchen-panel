@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { issueAgentEnrollmentToken } from '../src/features/admin/agentEnrollment.ts'
+import { issueAgentEnrollmentToken, revokeAgent } from '../src/features/admin/agentEnrollment.ts'
 
 test('Agent enrollment reauth sends password with CSRF to the node scoped endpoint', async () => {
   let path = ''
@@ -23,4 +23,20 @@ test('Agent enrollment does not send a request without password or CSRF', async 
   const noRequest = async () => { throw new Error('request was sent') }
   assert.equal((await issueAgentEnrollmentToken('node', '', 'csrf', noRequest)).kind, 'error')
   assert.equal((await issueAgentEnrollmentToken('node', 'password', '', noRequest)).kind, 'error')
+})
+
+test('Agent revoke sends only the status mutation with CSRF', async () => {
+  let path = ''
+  let method = ''
+  let body = ''
+  const response = await revokeAgent('node/id', 'csrf-value', async (input, init) => {
+    path = String(input)
+    method = init?.method ?? ''
+    body = String(init?.body)
+    return new Response(null, { status: 204 })
+  })
+  assert.equal(path, '/api/v1/admin/nodes/node%2Fid/agent')
+  assert.equal(method, 'PATCH')
+  assert.deepEqual(JSON.parse(body), { status: 'revoked' })
+  assert.equal(response.kind, 'ready')
 })

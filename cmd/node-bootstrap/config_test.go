@@ -15,10 +15,11 @@ func TestLoadBootstrapConfig(t *testing.T) {
 		"CONTROL_NODE_CAPABILITIES": "forward,proxy",
 		"CONTROL_NODE_PUBLIC_IP":    "179.255.145.149",
 		"CONTROL_NODE_PROXY_PORT":   "18444",
+		"CONTROL_NODE_RELAY_PORT":   "24443",
 	}
 	lookup := func(key string) (string, bool) { value, ok := values[key]; return value, ok }
 	cfg, err := LoadBootstrapConfig(lookup)
-	if err != nil || cfg.AdminEmail != "admin@example.invalid" || len(cfg.Capabilities) != 2 || cfg.ProxyPort == nil || *cfg.ProxyPort != 18444 {
+	if err != nil || cfg.AdminEmail != "admin@example.invalid" || len(cfg.Capabilities) != 2 || cfg.ProxyPort == nil || *cfg.ProxyPort != 18444 || cfg.RelayPort == nil || *cfg.RelayPort != 24443 {
 		t.Fatalf("config = %+v, err=%v", cfg, err)
 	}
 	for _, key := range []string{"CONTROL_DATABASE_URL", "CONTROL_ADMIN_EMAIL", "CONTROL_NODE_GROUP_CODE", "CONTROL_NODE_NAME", "CONTROL_NODE_HOST", "CONTROL_NODE_CAPABILITIES"} {

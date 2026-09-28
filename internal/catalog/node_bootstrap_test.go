@@ -3,11 +3,29 @@ package catalog
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"controlplane/internal/platform/id"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func TestBootstrapNodeIdentityIncludesRelayPort(t *testing.T) {
+	relayPort := 24443
+	changedRelayPort := relayPort + 1
+	existing := Node{Region: "US", Host: "bootstrap.example.invalid", RelayPort: &relayPort, Capabilities: []string{"forward"}, MultiplierMilli: 1000, Tags: []string{}, Enabled: true}
+	input := NodeInput{Region: existing.Region, Host: existing.Host, RelayPort: &changedRelayPort, Capabilities: existing.Capabilities, MultiplierMilli: existing.MultiplierMilli, Tags: existing.Tags, Enabled: existing.Enabled}
+	if bootstrapNodeMatches(existing, input) {
+		t.Fatalf("bootstrap identity ignored relay port: existing=%v input=%v", existing.RelayPort, input.RelayPort)
+	}
+	input.RelayPort = &relayPort
+	if !bootstrapNodeMatches(existing, input) {
+		t.Fatal("matching relay port should preserve idempotent bootstrap")
+	}
+	if !reflect.DeepEqual(existing.RelayPort, input.RelayPort) {
+		t.Fatal("test setup did not preserve relay port pointers")
+	}
+}
 
 func TestEnsureGroupAndNodeIsAtomicAndIdempotent(t *testing.T) {
 	databaseURL := catalogTestDatabaseURL()
@@ -36,10 +54,14 @@ func TestEnsureGroupAndNodeIsAtomicAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	group := GroupInput{Code: "TEST.BOOTSTRAP", Name: "Bootstrap Test", Region: "US", Enabled: true}
-	node := NodeInput{GroupID: groupID, Name: "Bootstrap Test Node", Region: "US", Host: "bootstrap.example.invalid", Capabilities: []string{"forward"}, Tags: []string{}, MultiplierMilli: 1000, Enabled: true}
+	relayPort := 24443
+	node := NodeInput{GroupID: groupID, Name: "Bootstrap Test Node", Region: "US", Host: "bootstrap.example.invalid", RelayPort: &relayPort, Capabilities: []string{"forward"}, Tags: []string{}, MultiplierMilli: 1000, Enabled: true}
 	createdGroup, createdNode, inserted, err := repo.EnsureGroupAndNode(ctx, groupID, group, node, actorID, "bootstrap-first")
 	if err != nil || !inserted || createdGroup.ID != groupID || createdNode.GroupID != groupID {
 		t.Fatalf("first bootstrap = %+v %+v inserted=%t err=%v", createdGroup, createdNode, inserted, err)
+	}
+	if createdNode.RelayPort == nil || *createdNode.RelayPort != relayPort {
+		t.Fatalf("first bootstrap relay port = %v, want %d", createdNode.RelayPort, relayPort)
 	}
 	otherID, err := id.NewV7()
 	if err != nil {
@@ -57,6 +79,12 @@ func TestEnsureGroupAndNodeIsAtomicAndIdempotent(t *testing.T) {
 	node.Host = "changed.example.invalid"
 	if _, _, _, err := repo.EnsureGroupAndNode(ctx, otherID, group, node, actorID, "bootstrap-changed"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed identity = %v", err)
+	}
+	node.Host = "bootstrap.example.invalid"
+	changedRelayPort := relayPort + 1
+	node.RelayPort = &changedRelayPort
+	if _, _, _, err := repo.EnsureGroupAndNode(ctx, otherID, group, node, actorID, "bootstrap-changed-relay"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed relay port = %v", err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE resource_groups SET enabled=false WHERE id=$1`, groupID); err != nil {
 		t.Fatal(err)

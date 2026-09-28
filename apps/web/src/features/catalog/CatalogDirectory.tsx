@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Activity, ArrowUpRight, CircleDashed, Gauge, Globe2, Layers3, RefreshCw, Route, Server } from 'lucide-react'
+import { Activity, ArrowUpRight, CircleDashed, Gauge, Globe2, Layers3, RefreshCw, Route, Server, Trash2 } from 'lucide-react'
 import type { Section } from '../../app/sections'
-import { capabilityLabel, lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadCatalogPage, loadLineHealth, nodeStatusLabel, type CatalogPage, type CatalogResource, type LineHealthRecord, type LineRecord, type NodeRecord } from '../../lib/catalog'
+import { capabilityLabel, formatBandwidthBPS, lineHealthReasonLabel, lineHealthStateLabel, lineHopHealthLabel, loadCatalogPage, loadLineHealth, nodeStatusLabel, type CatalogPage, type CatalogResource, type LineHealthRecord, type LineRecord, type NodeRecord } from '../../lib/catalog'
 import type { User } from '../../lib/dashboard'
 import { CreateLine, csrfToken } from './CreateLine'
 import { mutateCatalog } from '../../lib/catalog'
@@ -31,7 +31,7 @@ function NodeCard({ node }: { node: NodeRecord }) {
   return <article className="catalog-card">
     <div className="catalog-card-head"><span className="catalog-icon"><Server size={18} /></span><span className={`status-chip status-${node.agent_status}`}><i />{nodeStatusLabel(node.agent_status)}</span></div>
     <div className="catalog-card-name"><strong>{node.name}</strong><span>{node.group_code} · {node.region}</span></div>
-    <div className="catalog-detail-grid"><div><small>地址</small><strong>{address}</strong></div><div><small>代理端口</small><strong>{node.proxy_port ?? '—'}</strong></div><div><small>中继端口</small><strong>{node.relay_port ?? '—'}</strong></div><div><small>倍率</small><strong>×{(node.multiplier_milli / 1000).toFixed(2)}</strong></div><div><small>能力</small><strong>{node.capabilities.map(capabilityLabel).join(' / ')}</strong></div></div>
+    <div className="catalog-detail-grid"><div><small>地址</small><strong>{address}</strong></div><div><small>代理端口</small><strong>{node.proxy_port ?? '—'}</strong></div><div><small>中继端口</small><strong>{node.relay_port ?? '—'}</strong></div><div><small>控制面延迟</small><strong>{node.latency_ms == null ? '—' : `${node.latency_ms} ms`}</strong></div><div><small>带宽</small><strong>{formatBandwidthBPS(node.bandwidth_bps)}</strong></div><div><small>倍率</small><strong>×{(node.multiplier_milli / 1000).toFixed(2)}</strong></div><div><small>能力</small><strong>{node.capabilities.map(capabilityLabel).join(' / ')}</strong></div></div>
     <div className="catalog-card-foot"><span>{node.tags.length ? node.tags.join(' · ') : '未设置标签'}</span>{node.last_seen_at && <span>最近心跳 {new Date(node.last_seen_at).toLocaleString('zh-CN')}</span>}</div>
   </article>
 }
@@ -61,6 +61,14 @@ function LineCard({ line, user, onChanged }: { line: LineRecord; user: User; onC
     if (result.kind === 'error') setError(result.message)
     else onChanged()
   }
+  async function remove() {
+    if (line.owner_user_id !== user.id || !user.permissions.includes('lines.write.self')) return
+    if (!window.confirm(`删除自有线路「${line.name}」？仍被代理连接或分流引用时服务器会拒绝删除。`)) return
+    setBusy(true); setError('')
+    const result = await mutateCatalog<void>(`/api/v1/lines/${line.id}`, 'DELETE', null, csrfToken())
+    setBusy(false)
+    if (result.kind === 'error') setError(result.message); else onChanged()
+  }
   return <article className="catalog-card">
     <div className="catalog-card-head"><span className="catalog-icon"><Route size={18} /></span><span className={`status-chip ${line.enabled ? 'status-online' : 'status-offline'}`}><i />{line.enabled ? '启用' : '停用'}</span></div>
     <div className="catalog-card-name"><strong>{line.name}</strong><span>{line.owner_user_id ? '我的线路' : '共享线路'}</span></div>
@@ -69,7 +77,7 @@ function LineCard({ line, user, onChanged }: { line: LineRecord; user: User; onC
     <div className="catalog-card-foot"><span>{line.hops.length === 1 ? '单跳线路' : `${line.hops.length} 跳线路`}</span><span><Layers3 size={13} /> {line.hops.length} 个节点</span><span className={`status-chip status-${health.state === 'ready' ? health.data.state : health.state === 'error' ? 'offline' : 'pending'}`} title={health.state === 'ready' ? lineHealthReasonLabel(health.data.reason) : health.state === 'error' ? health.message : '正在读取线路健康状态'}><i />{health.state === 'ready' ? lineHealthStateLabel(health.data.state) : health.state === 'error' ? '状态未知' : '读取中'}</span></div>
     {health.state === 'ready' && health.data.reason && <p className="catalog-form-note">{lineHealthReasonLabel(health.data.reason)}{health.data.generation > 0 ? ` · 世代 ${health.data.generation}` : ''}</p>}
     {health.state === 'ready' && health.data.hops.length > 0 && <div className="line-health-hops">{health.data.hops.map((hop) => <span key={`${hop.position}-${hop.node_id}`} className={`health-hop ${lineHopHealthLabel(hop, health.data.hops.length > 1) === '已应用' ? 'health-hop-ok' : 'health-hop-offline'}`}>{hop.position + 1}. {hop.node_id.slice(0, 8)} · {lineHopHealthLabel(hop, health.data.hops.length > 1)}</span>)}</div>}
-    {canToggle && <div className="catalog-card-actions"><EditLine line={line} user={user} onSaved={onChanged} /><button className="catalog-toggle" type="button" disabled={busy} onClick={() => void toggle()}>{busy ? '正在保存…' : line.enabled ? '停用线路' : '启用线路'}</button></div>}
+    {canToggle && <div className="catalog-card-actions"><EditLine line={line} user={user} onSaved={onChanged} /><button className="catalog-toggle" type="button" disabled={busy} onClick={() => void toggle()}>{busy ? '正在保存…' : line.enabled ? '停用线路' : '启用线路'}</button>{line.owner_user_id === user.id && user.permissions.includes('lines.write.self') && <button className="catalog-toggle" type="button" disabled={busy} onClick={() => void remove()}><Trash2 size={14} />删除自有线路</button>}</div>}
     {error && <p className="catalog-page-error" role="alert">{error}</p>}
   </article>
 }

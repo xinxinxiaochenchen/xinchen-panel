@@ -193,6 +193,54 @@ func (r *PostgresRepository) ListPlans(ctx context.Context, limit int, afterID s
 	return plans, nil
 }
 
+func (r *PostgresRepository) SetPlanStatus(ctx context.Context, planID, status, actorID, requestID string) (Plan, error) {
+	if status != "active" && status != "archived" {
+		return Plan{}, ValidationError{"status", "expected active or archived"}
+	}
+	auditID, err := id.NewV7()
+	if err != nil {
+		return Plan{}, err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return Plan{}, fmt.Errorf("begin plan status change: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var lockedID string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM plans WHERE id=$1 FOR UPDATE`, planID).Scan(&lockedID); errors.Is(err, pgx.ErrNoRows) {
+		return Plan{}, ErrNotFound
+	} else if err != nil {
+		return Plan{}, fmt.Errorf("lock plan status: %w", err)
+	}
+	plan, err := loadPlan(ctx, tx, planID)
+	if err != nil {
+		return Plan{}, err
+	}
+	if plan.Status == status {
+		return plan, tx.Commit(ctx)
+	}
+	before, err := json.Marshal(plan)
+	if err != nil {
+		return Plan{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE plans SET status=$2 WHERE id=$1`, planID, status); err != nil {
+		return Plan{}, fmt.Errorf("update plan status: %w", entitlementError(err))
+	}
+	plan.Status = status
+	after, err := json.Marshal(plan)
+	if err != nil {
+		return Plan{}, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,actor_user_id,action,object_type,object_id,before_json,after_json,request_id)
+VALUES ($1,$2,'update','plan',$3,$4,$5,$6)`, auditID, actorID, planID, string(before), string(after), requestID); err != nil {
+		return Plan{}, fmt.Errorf("audit plan status: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Plan{}, fmt.Errorf("commit plan status: %w", err)
+	}
+	return plan, nil
+}
+
 func (r *PostgresRepository) CreateMembership(ctx context.Context, input MembershipInput, actorID, requestID string) (Membership, error) {
 	membershipID, err := id.NewV7()
 	if err != nil {
@@ -226,6 +274,12 @@ WHERE user_id=$1 AND status='active')`, input.UserID).Scan(&exists); err != nil 
 	}
 	if exists {
 		return Membership{}, ErrConflict
+	}
+	var selectedPlanID string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM plans WHERE id=$1 FOR SHARE`, input.PlanID).Scan(&selectedPlanID); errors.Is(err, pgx.ErrNoRows) {
+		return Membership{}, ErrNotFound
+	} else if err != nil {
+		return Membership{}, fmt.Errorf("lock membership plan: %w", err)
 	}
 	plan, err := loadPlan(ctx, tx, input.PlanID)
 	if err != nil {
@@ -269,6 +323,97 @@ VALUES ($1,$2,'create','membership',$3,$4,$5)`, auditID, actorID, membership.ID,
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Membership{}, fmt.Errorf("commit membership: %w", entitlementError(err))
+	}
+	return membership, nil
+}
+
+func (r *PostgresRepository) ListMemberships(ctx context.Context, limit int, afterID string) ([]Membership, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text,user_id::text,plan_id::text,starts_at,ends_at,
+status,anchor_day,timezone,snapshot_json,created_at FROM memberships
+WHERE id::text>$1 ORDER BY id::text LIMIT $2`, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list memberships: %w", err)
+	}
+	defer rows.Close()
+	memberships := make([]Membership, 0)
+	for rows.Next() {
+		var membership Membership
+		var snapshotJSON []byte
+		if err := rows.Scan(&membership.ID, &membership.UserID, &membership.PlanID, &membership.StartsAt,
+			&membership.EndsAt, &membership.Status, &membership.AnchorDay, &membership.Timezone,
+			&snapshotJSON, &membership.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan membership: %w", err)
+		}
+		if err := json.Unmarshal(snapshotJSON, &membership.Snapshot); err != nil {
+			return nil, fmt.Errorf("decode membership snapshot: %w", err)
+		}
+		memberships = append(memberships, membership)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate memberships: %w", err)
+	}
+	return memberships, nil
+}
+
+func (r *PostgresRepository) SetMembershipStatus(ctx context.Context, membershipID, status, actorID, requestID string) (Membership, error) {
+	if status != "cancelled" {
+		return Membership{}, ValidationError{"status", "only cancellation is supported"}
+	}
+	auditID, err := id.NewV7()
+	if err != nil {
+		return Membership{}, err
+	}
+	eventID, err := id.NewV7()
+	if err != nil {
+		return Membership{}, err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return Membership{}, fmt.Errorf("begin membership status change: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var membership Membership
+	var snapshotJSON []byte
+	err = tx.QueryRow(ctx, `SELECT id::text,user_id::text,plan_id::text,starts_at,ends_at,status,anchor_day,timezone,snapshot_json,created_at
+FROM memberships WHERE id=$1 FOR UPDATE`, membershipID).Scan(&membership.ID, &membership.UserID, &membership.PlanID,
+		&membership.StartsAt, &membership.EndsAt, &membership.Status, &membership.AnchorDay, &membership.Timezone, &snapshotJSON, &membership.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Membership{}, ErrNotFound
+	}
+	if err != nil {
+		return Membership{}, fmt.Errorf("load membership for status change: %w", err)
+	}
+	if err := json.Unmarshal(snapshotJSON, &membership.Snapshot); err != nil {
+		return Membership{}, fmt.Errorf("decode membership snapshot: %w", err)
+	}
+	if membership.Status == status {
+		return membership, tx.Commit(ctx)
+	}
+	if membership.Status != "active" && membership.Status != "scheduled" {
+		return Membership{}, ErrConflict
+	}
+	before, err := json.Marshal(membership)
+	if err != nil {
+		return Membership{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE memberships SET status=$2 WHERE id=$1`, membership.ID, status); err != nil {
+		return Membership{}, fmt.Errorf("cancel membership: %w", entitlementError(err))
+	}
+	membership.Status = status
+	after, err := json.Marshal(membership)
+	if err != nil {
+		return Membership{}, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,actor_user_id,action,object_type,object_id,before_json,after_json,request_id)
+VALUES ($1,$2,'update','membership',$3,$4,$5,$6)`, auditID, actorID, membership.ID, string(before), string(after), requestID); err != nil {
+		return Membership{}, fmt.Errorf("audit membership status: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO outbox_events(id,kind,aggregate_id,payload,idempotency_key)
+VALUES ($1,'membership.changed',$2,jsonb_build_object('membership_id',$2::text,'user_id',$3::text),$4)`, eventID, membership.ID, membership.UserID, "membership-status:"+eventID); err != nil {
+		return Membership{}, fmt.Errorf("queue membership convergence: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Membership{}, fmt.Errorf("commit membership status: %w", err)
 	}
 	return membership, nil
 }

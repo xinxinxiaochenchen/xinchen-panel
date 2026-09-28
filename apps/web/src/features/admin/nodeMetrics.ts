@@ -8,6 +8,11 @@ export function formatMetricBytes(value: number): string {
   return `${Number(amount.toFixed(1))} ${units[unit]}`
 }
 
+export function formatLatency(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || value < 0) return '—'
+  return `${Math.round(value)} ms`
+}
+
 export function metricFreshnessLabel(value: { fresh: boolean; agent_status: string } | null): string {
   if (!value) return '暂无心跳数据'
   if (value.agent_status === 'unknown') return '暂无心跳数据'

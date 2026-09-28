@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Plus, Server } from "lucide-react";
 import { mutateCatalog, type NodeRecord } from "../../lib/catalog";
 import { buildNodeInput, type ResourceGroup } from "../../lib/admin";
@@ -6,9 +6,11 @@ import { csrfToken } from "../catalog/CreateLine";
 
 export function AdminNodeForm({
   groups,
+  node,
   onSaved,
 }: {
   groups: ResourceGroup[];
+  node?: NodeRecord;
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -16,12 +18,32 @@ export function AdminNodeForm({
   const [name, setName] = useState("");
   const [region, setRegion] = useState("");
   const [host, setHost] = useState("");
+  const [publicIP, setPublicIP] = useState("");
+  const [bandwidthBPS, setBandwidthBPS] = useState<number | null>(null);
+  const [multiplier, setMultiplier] = useState(1);
+  const [tagsText, setTagsText] = useState("");
   const [proxy, setProxy] = useState(true);
   const [forward, setForward] = useState(false);
   const [proxyPort, setProxyPort] = useState(443);
   const [relayPort, setRelayPort] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!node) return;
+    setGroupID(node.group_id);
+    setName(node.name);
+    setRegion(node.region);
+    setHost(node.host);
+    setPublicIP(node.public_ip ?? "");
+    setBandwidthBPS(node.bandwidth_bps);
+    setMultiplier(node.multiplier_milli / 1000);
+    setTagsText(node.tags.join(", "));
+    setProxy(node.capabilities.includes("proxy"));
+    setForward(node.capabilities.includes("forward"));
+    setProxyPort(node.proxy_port ?? 443);
+    setRelayPort(node.relay_port);
+  }, [node]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -33,14 +55,18 @@ export function AdminNodeForm({
         name,
         region,
         host,
+        publicIP,
+        bandwidthBPS,
+        multiplier,
+        tags: tagsText.split(",").map((tag) => tag.trim()).filter(Boolean),
         proxy,
         forward,
         proxyPort,
         relayPort,
       });
       const result = await mutateCatalog<NodeRecord>(
-        "/api/v1/admin/nodes",
-        "POST",
+        node ? `/api/v1/admin/nodes/${node.id}/config` : "/api/v1/admin/nodes",
+        node ? "PATCH" : "POST",
         body,
         csrfToken(),
       );
@@ -49,6 +75,10 @@ export function AdminNodeForm({
         setOpen(false);
         setName("");
         setHost("");
+        setPublicIP("");
+        setBandwidthBPS(null);
+        setMultiplier(1);
+        setTagsText("");
         onSaved();
       }
     } catch (caught) {
@@ -61,12 +91,12 @@ export function AdminNodeForm({
   return (
     <>
       <button
-        className="primary-button catalog-create-button"
+        className={node ? "refresh-button" : "primary-button catalog-create-button"}
         type="button"
         onClick={() => setOpen(true)}
       >
         <Server size={16} />
-        创建节点
+        {node ? "编辑节点" : "创建节点"}
       </button>
       {open && (
         <div className="catalog-dialog-backdrop" role="presentation">
@@ -75,9 +105,9 @@ export function AdminNodeForm({
             onSubmit={(event) => void submit(event)}
           >
             <div className="catalog-dialog-head">
-              <span className="section-overline">NEW NODE</span>
-              <h2>创建节点</h2>
-              <p>节点记录建立后，再签发 Agent 入网令牌并部署 Agent。</p>
+              <span className="section-overline">{node ? "EDIT NODE" : "NEW NODE"}</span>
+              <h2>{node ? "编辑节点" : "创建节点"}</h2>
+              <p>{node ? "修改地址或中继参数后，Agent 需要重新申请中继证书并等待配置收敛。" : "节点记录建立后，再签发 Agent 入网令牌并部署 Agent。"}</p>
             </div>
             <label htmlFor="admin-node-group">资源域</label>
             <select
@@ -88,7 +118,7 @@ export function AdminNodeForm({
             >
               <option value="">请选择资源域</option>
               {groups
-                .filter((group) => group.enabled)
+                .filter((group) => group.enabled || group.id === node?.group_id)
                 .map((group) => (
                   <option key={group.id} value={group.id}>
                     {group.code} · {group.name}
@@ -115,6 +145,40 @@ export function AdminNodeForm({
               required
               value={host}
               onChange={(event) => setHost(event.target.value)}
+            />
+            <label htmlFor="admin-node-public-ip">对外 IP（可选）</label>
+            <input
+              id="admin-node-public-ip"
+              value={publicIP}
+              onChange={(event) => setPublicIP(event.target.value)}
+              placeholder="订阅或中继使用的公网 IP"
+            />
+            <label htmlFor="admin-node-bandwidth">带宽（bit/s，可选）</label>
+            <input
+              id="admin-node-bandwidth"
+              type="number"
+              min={0}
+              step={1}
+              value={bandwidthBPS ?? ""}
+              onChange={(event) => setBandwidthBPS(event.target.value === "" ? null : Number(event.target.value))}
+              placeholder="例如 1000000000"
+            />
+            <label htmlFor="admin-node-multiplier">节点计费倍率</label>
+            <input
+              id="admin-node-multiplier"
+              type="number"
+              min={0.001}
+              max={100}
+              step={0.001}
+              value={multiplier}
+              onChange={(event) => setMultiplier(Number(event.target.value))}
+            />
+            <label htmlFor="admin-node-tags">标签（逗号分隔，可选）</label>
+            <input
+              id="admin-node-tags"
+              value={tagsText}
+              onChange={(event) => setTagsText(event.target.value)}
+              placeholder="premium, jp1"
             />
             <span className="catalog-form-label">节点能力</span>
             <div className="admin-check-row">
@@ -169,7 +233,7 @@ export function AdminNodeForm({
                 取消
               </button>
               <button className="primary-button" disabled={busy}>
-                {busy ? "创建中…" : "创建节点"}
+                {busy ? (node ? "保存中…" : "创建中…") : node ? "保存节点" : "创建节点"}
                 <Plus size={16} />
               </button>
             </div>

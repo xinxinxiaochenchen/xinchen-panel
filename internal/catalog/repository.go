@@ -137,7 +137,10 @@ n.capabilities,n.bandwidth_bps,COALESCE(n.multiplier_milli,1000),n.tags,n.enable
 CASE WHEN a.status='revoked' THEN 'revoked'
      WHEN a.status='online' AND a.last_seen_at >= now()-interval '45 seconds' THEN 'online'
      WHEN a.id IS NULL THEN 'unknown' ELSE 'offline' END,
-a.last_seen_at,n.created_at
+a.last_seen_at,
+CASE WHEN a.status='online' AND a.last_seen_at >= now()-interval '45 seconds'
+          AND a.latency_observed_at >= now()-interval '45 seconds' THEN a.latency_ms END,
+n.created_at
 FROM nodes n JOIN resource_groups g ON g.id=n.group_id LEFT JOIN agents a ON a.node_id=n.id`
 
 const allowedNodeWhere = ` WHERE n.enabled AND g.enabled AND EXISTS (
@@ -152,10 +155,11 @@ func scanNode(row pgx.Row) (Node, error) {
 	var relayPort pgtype.Int4
 	var bandwidth pgtype.Int8
 	var lastSeen pgtype.Timestamptz
+	var latency pgtype.Int4
 	err := row.Scan(&node.ID, &node.GroupID, &node.GroupCode, &node.Name, &node.Region,
 		&node.Host, &publicIP, &proxyPort, &relayPort, &node.Capabilities, &bandwidth,
 		&node.MultiplierMilli, &node.Tags, &node.Enabled, &node.AgentStatus,
-		&lastSeen, &node.CreatedAt)
+		&lastSeen, &latency, &node.CreatedAt)
 	if err != nil {
 		return Node{}, err
 	}
@@ -178,6 +182,10 @@ func scanNode(row pgx.Row) (Node, error) {
 	if lastSeen.Valid {
 		value := lastSeen.Time
 		node.LastSeenAt = &value
+	}
+	if latency.Valid {
+		value := int(latency.Int32)
+		node.LatencyMS = &value
 	}
 	return node, nil
 }

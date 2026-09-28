@@ -183,5 +183,127 @@ func TestPostgresNodeEnableToggleAuditsAndQueuesReconcile(t *testing.T) {
 	}
 }
 
+func TestPostgresNodeConfigUpdateAuditsConvergesAndRejectsPortConflict(t *testing.T) {
+	databaseURL := catalogTestDatabaseURL()
+	if databaseURL == "" {
+		t.Skip("test PostgreSQL database is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	repo := NewPostgresRepository(pool)
+	var actorID, groupID string
+	if err := pool.QueryRow(ctx, `INSERT INTO users(id,email,password_hash,status) VALUES (gen_random_uuid(),gen_random_uuid()::text || '@example.invalid','hash','active') RETURNING id::text`).Scan(&actorID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO resource_groups(id,code,name,region) VALUES (gen_random_uuid(),replace(gen_random_uuid()::text,'-',''),'Node edit','US') RETURNING id::text`).Scan(&groupID); err != nil {
+		t.Fatal(err)
+	}
+	firstHost := "edit-" + groupID + ".example.invalid"
+	first, err := repo.CreateNode(ctx, NodeInput{GroupID: groupID, Name: "Edit node", Region: "US", Host: firstHost,
+		ProxyPort: intPointer(8443), RelayPort: intPointer(24443), Capabilities: []string{"proxy", "forward"},
+		MultiplierMilli: 1000, Tags: []string{}, Enabled: false}, actorID, "create-edit-node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox_events WHERE aggregate_id=$1`, first.ID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE actor_user_id=$1`, actorID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM nodes WHERE id=$1`, first.ID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM resource_groups WHERE id=$1`, groupID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, actorID)
+	})
+	updatedHost := "new-" + firstHost
+	input := NodeInput{GroupID: groupID, Name: "Edited node", Region: "JP", Host: updatedHost,
+		PublicIP: stringPointer("203.0.113.45"), ProxyPort: intPointer(9443), RelayPort: intPointer(25443),
+		Capabilities: []string{"proxy", "forward"}, BandwidthBPS: int64Pointer(500000000),
+		MultiplierMilli: 1500, Tags: []string{"jp"}, Enabled: true}
+	updated, err := repo.UpdateNodeConfig(ctx, first.ID, input, actorID, "edit-node")
+	if err != nil || updated.Name != "Edited node" || updated.Host != updatedHost || updated.Enabled ||
+		updated.ProxyPort == nil || *updated.ProxyPort != 9443 || updated.RelayPort == nil || *updated.RelayPort != 25443 {
+		t.Fatalf("edited node = %+v, %v", updated, err)
+	}
+	var audits, events int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE object_id=$1 AND request_id='edit-node'`, first.ID).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE aggregate_id=$1 AND kind='node.changed'`, first.ID).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if audits != 1 || events != 1 {
+		t.Fatalf("edit audits=%d events=%d", audits, events)
+	}
+	if _, err := repo.UpdateNodeConfig(ctx, first.ID, input, actorID, "repeat-edit-node"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE aggregate_id=$1 AND kind='node.changed'`, first.ID).Scan(&events); err != nil || events != 1 {
+		t.Fatalf("no-op events=%d err=%v", events, err)
+	}
+	conflicting := input
+	conflicting.Name = "Conflict node"
+	conflicting.Host = firstHost
+	conflictNode, err := repo.CreateNode(ctx, conflicting, actorID, "create-conflict")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM nodes WHERE id=$1`, conflictNode.ID) })
+	if _, err := repo.UpdateNodeConfig(ctx, first.ID, conflicting, actorID, "conflict-edit"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("endpoint conflict = %v", err)
+	}
+}
+
+func TestPostgresGroupEnableToggleAuditsAndQueuesGlobalReconcile(t *testing.T) {
+	databaseURL := catalogTestDatabaseURL()
+	if databaseURL == "" {
+		t.Skip("test PostgreSQL database is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	repo := NewPostgresRepository(pool)
+	var actorID, groupID string
+	if err := pool.QueryRow(ctx, `INSERT INTO users(id,email,password_hash,status) VALUES (gen_random_uuid(),gen_random_uuid()::text || '@example.invalid','hash','active') RETURNING id::text`).Scan(&actorID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, actorID) })
+	if err := pool.QueryRow(ctx, `INSERT INTO resource_groups(id,code,name,region) VALUES (gen_random_uuid(),gen_random_uuid()::text,'Group toggle','US') RETURNING id::text`).Scan(&groupID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM resource_groups WHERE id=$1`, groupID) })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE actor_user_id=$1`, actorID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox_events WHERE aggregate_id=$1`, groupID)
+	})
+	stopped, err := repo.SetGroupEnabled(ctx, groupID, false, actorID, "toggle-group")
+	if err != nil || stopped.Enabled {
+		t.Fatalf("stopped group = %+v, %v", stopped, err)
+	}
+	var events, audits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE aggregate_id=$1 AND kind='group.changed'`, groupID).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE object_id=$1 AND action='update' AND request_id='toggle-group'`, groupID).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 || audits != 1 {
+		t.Fatalf("events=%d audits=%d", events, audits)
+	}
+	if _, err := repo.SetGroupEnabled(ctx, groupID, false, actorID, "repeat-group"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE aggregate_id=$1 AND kind='group.changed'`, groupID).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 {
+		t.Fatalf("no-op queued %d events", events)
+	}
+}
+
 func stringPointer(value string) *string { return &value }
 func int64Pointer(value int64) *int64    { return &value }

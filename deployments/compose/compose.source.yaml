@@ -1,0 +1,10 @@
+# Build the control plane directly from a GitHub source checkout.
+services:
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deployments/compose/Dockerfile
+  api:
+    build:
+      context: ../..
+      dockerfile: deployments/compose/Dockerfile

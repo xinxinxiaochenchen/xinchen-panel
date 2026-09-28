@@ -2,15 +2,32 @@
 
 本项目是浏览器访问的 Web 控制台，不包含原生 App。控制面、前端静态资源和 PostgreSQL 通过 Docker Compose 运行；节点数据面由独立 Agent 运行。本说明适用于 Linux amd64 VPS。
 
+## 从 GitHub 一键启动只读 WebUI
+
+VPS 先安装 Docker Engine、Compose 插件和 Git，然后克隆项目并运行：
+
+```sh
+git clone <项目的 GitHub 仓库地址> network-control-plane
+cd network-control-plane
+sh scripts/deploy-vps.sh
+```
+
+脚本直接在 Docker 中编译 Go 控制面与 React WebUI，不要求 VPS 预装 Go 或 Node.js；首次运行会生成 `deployments/compose/.env`（权限 `0600`、随机数据库密码），执行 migration，并等待 API 健康检查。默认只在 `127.0.0.1:18080` 提供 HTTP，由你自己的 Nginx/Caddy HTTPS 反代。若临时需要通过纯 IP 查看，只读预览可显式运行 `sh scripts/deploy-vps.sh --public-preview`，此时绑定 `0.0.0.0:18080`，浏览器登录和写接口仍关闭。
+
+重复运行脚本会保留已有 `.env` 和 PostgreSQL 数据卷。检测到已有数据库卷时，脚本在迁移前把自定义格式备份保存到 Git 忽略的 `.local/backups/`，并用 `pg_restore --list` 校验；备份失败则停止升级。若数据库卷存在而当前目录没有原 `.env`，脚本会拒绝生成新密码。已有 `.env` 的绑定地址需与本次选择的模式一致；切换为公网预览须先明确修改 `CONTROL_BIND_IP`。启用过浏览器认证的实例应按下文 HTTPS 步骤运维，不使用只读预览脚本覆盖。
+
+当前工作机没有 Docker，因此源码镜像和真实 Compose 启动必须在装有 Docker 的 Linux VPS 上做最终验证。以下发布包流程仍可用于离线构建与传输。
+
 ## 1. 构建发布包
 
 在构建机的项目根目录准备 Go 1.27.1、Node.js 22，然后执行：
 
 ```sh
 ./scripts/build-linux-amd64.sh
+sh scripts/build-release-archive.sh
 ```
 
-脚本会生成 `bin/` 下的 Linux amd64 控制面、迁移、管理员初始化、节点初始化、Agent 和 Agent 入网令牌程序，并构建 `apps/web/dist`。把完整项目目录连同 `bin/`、`apps/web/dist`、`migrations/` 和 `deployments/compose/` 传到 VPS 的一个版本目录；不要把本机 `.env`、私钥或数据库文件放进发布包。VPS 需要 Docker Engine 与 Compose 插件。
+第一个脚本生成 Linux amd64 控制面、迁移、管理员初始化、节点初始化、Agent 和 Agent 入网令牌程序，并构建 WebUI。第二个脚本生成 `release-<UTC 时间>.tar.gz` 并打印 SHA-256。归档只收录这些二进制、`apps/web/dist`、完整迁移对和预编译镜像所需的 Compose 文件；打包前会检查缺失文件与二进制架构。把归档上传 VPS 后解压到独立版本目录，再进入其 `deployments/compose` 目录操作。发布归档不包含 `.env`、私钥、数据库文件和 macOS 的 `._*` 文件。VPS 需要 Docker Engine 与 Compose 插件。
 
 ## 2. 启动控制面和 WebUI
 
@@ -78,6 +95,27 @@ Nginx 只需要把 HTTPS 管理域名反代到 `127.0.0.1:18080`，并转发 Web
 
 创建节点后，用管理员权限生成一次性入网令牌；令牌只写入控制面服务器私有文件，不打印到标准输出。Agent 使用 `compose.agent-local.yaml` 在节点 VPS 上运行，控制面只运行 `compose.agent-tls.yaml`。生产多跳线路再叠加 `compose.relay-secrets.yaml`。Agent 的证书、CA 私钥、代理服务端证书和线路密钥都应放在发布目录之外。
 
+如果使用发布包中的 `node-bootstrap` 在控制面数据库中初始化节点，可用
+`CONTROL_NODE_RELAY_PORT` 一并登记中继端口；该字段会参与幂等校验并写入节点记录。只有具备
+`forward` 能力的节点才应设置中继端口，且端口必须和代理端口不同：
+
+```sh
+docker compose -f compose.yaml run --rm -T \
+  -e CONTROL_ADMIN_EMAIL='admin@example.com' \
+  -e CONTROL_NODE_GROUP_CODE='RFC.JPT1' \
+  -e CONTROL_NODE_GROUP_NAME='Tokyo' \
+  -e CONTROL_NODE_GROUP_REGION='JP' \
+  -e CONTROL_NODE_NAME='Tokyo 1' \
+  -e CONTROL_NODE_REGION='JP' \
+  -e CONTROL_NODE_HOST='node.example.com' \
+  -e CONTROL_NODE_CAPABILITIES='proxy,forward' \
+  -e CONTROL_NODE_PROXY_PORT=443 \
+  -e CONTROL_NODE_RELAY_PORT=24443 \
+  api /usr/local/bin/node-bootstrap
+```
+
+控制台的“创建节点”表单也会执行同样的校验。
+
 ### 5.1 控制面准备 Agent TLS
 
 控制面需要专用 CA、服务端证书和私钥，并只通过 HTTPS/mTLS 入口暴露 Agent 路径。服务端证书 SAN 必须覆盖节点实际使用的域名或 IP；浏览器管理入口仍由 Nginx/Caddy 反代到 `127.0.0.1:18080`。控制面示例：
@@ -88,6 +126,8 @@ CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
 CONTROL_AGENT_TLS_DIR=/opt/network-control-plane/secrets/agent-tls \
   docker compose -f compose.yaml -f compose.agent-tls.yaml up -d --build api
 ```
+
+独立节点 VPS 需要访问控制面的 18443 端口时，先在 Compose `.env` 中设置 `CONTROL_AGENT_BIND_IP=0.0.0.0`，再执行上面的 `up` 命令，并在服务器防火墙中仅允许已登记节点的来源 IP。保持默认回环绑定时，远程节点无法入网。同机节点继续使用默认的 `127.0.0.1` 绑定。
 
 将 CA 公钥 `agent-ca.crt` 安全复制到节点；CA 私钥和 `server.key` 永远留在控制面。
 
@@ -132,6 +172,8 @@ docker compose -f compose.agent-local.yaml up -d --build agent
 ```
 
 `compose.agent-local.yaml` 使用 host network，因此节点的代理、转发和中继端口直接绑定节点 VPS。需要代理能力时，把 `proxy.crt`/`proxy.key` 放入凭据目录并设置对应环境变量；需要中继能力时设置 `CONTROL_AGENT_RELAY_HOST`、`CONTROL_AGENT_RELAY_PORT`、`CONTROL_AGENT_RELAY_CERT_FILE=/run/agent/relay.crt` 和 `CONTROL_AGENT_RELAY_KEY_FILE=/run/agent/relay.key`。节点必须能验证控制面 CA。18443 是专用 TLS/mTLS 入口，优先直连并限制来源 IP；若经过反代，必须保持端到端 TLS 或正确传递客户端证书，并支持 WebSocket Upgrade。
+
+若节点凭据泄露或需要替换 Agent，管理员在 HTTPS WebUI 的节点页执行“撤销 Agent”，再重新签发入网令牌。撤销会立即使现有证书无法通过新的认证检查；已有控制流在下一次身份复核或心跳时断开，节点本地数据监听随之关闭。撤销操作和重新入网记录保留在审计日志中。
 
 ### 5.3 同机节点
 

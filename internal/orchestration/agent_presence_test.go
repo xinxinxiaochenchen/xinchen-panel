@@ -57,6 +57,13 @@ FROM agents a JOIN agent_metrics m ON m.node_id=a.node_id WHERE a.node_id=$1`, n
 	if status != "online" || version != "1.0.0" || cpu != 12.5 || connections != 3 || engine != "running" || time.Since(lastSeen) > time.Minute {
 		t.Fatalf("presence = %s %s %s %f %d %s", status, version, lastSeen, cpu, connections, engine)
 	}
+	if err := repo.RecordLatency(ctx, nodeID, 12); err != nil {
+		t.Fatal(err)
+	}
+	var latency int64
+	if err := pool.QueryRow(ctx, `SELECT latency_ms FROM agents WHERE node_id=$1`, nodeID).Scan(&latency); err != nil || latency != 12 {
+		t.Fatalf("latency = %d, %v", latency, err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE agents SET last_seen_at=now()-interval '1 minute' WHERE node_id=$1`, nodeID); err != nil {
 		t.Fatal(err)
 	}
@@ -74,5 +81,8 @@ FROM agents a JOIN agent_metrics m ON m.node_id=a.node_id WHERE a.node_id=$1`, n
 	}
 	if err := repo.RecordHeartbeat(ctx, nodeID, heartbeat); !errors.Is(err, ErrAgentPresenceDenied) {
 		t.Fatalf("revoked heartbeat = %v", err)
+	}
+	if err := repo.RecordLatency(ctx, nodeID, 12); !errors.Is(err, ErrAgentPresenceDenied) {
+		t.Fatalf("revoked latency = %v", err)
 	}
 }

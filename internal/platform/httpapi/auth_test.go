@@ -12,8 +12,10 @@ import (
 )
 
 type sessionStub struct {
-	logoutCalled bool
-	loginCalls   int
+	logoutCalled     bool
+	logoutRequestIDs []string
+	loginCalls       int
+	loginRequestIDs  []string
 }
 
 func (s *sessionStub) Login(_ context.Context, email, password string) (identity.LoginResult, error) {
@@ -23,6 +25,11 @@ func (s *sessionStub) Login(_ context.Context, email, password string) (identity
 	}
 	return identity.LoginResult{User: identity.PublicUser{ID: "id-1", Email: email, Permissions: []string{"nodes.read"}},
 		Token: strings.Repeat("a", 64), CSRFToken: strings.Repeat("b", 64)}, nil
+}
+
+func (s *sessionStub) LoginWithRequestID(ctx context.Context, email, password, requestID string) (identity.LoginResult, error) {
+	s.loginRequestIDs = append(s.loginRequestIDs, requestID)
+	return s.Login(ctx, email, password)
 }
 
 func TestLoginRateLimitStopsPasswordChecks(t *testing.T) {
@@ -72,6 +79,11 @@ func (s *sessionStub) Logout(_ context.Context, token, csrf string) error {
 	return nil
 }
 
+func (s *sessionStub) LogoutWithRequestID(ctx context.Context, token, csrf, requestID string) error {
+	s.logoutRequestIDs = append(s.logoutRequestIDs, requestID)
+	return s.Logout(ctx, token, csrf)
+}
+
 func TestLoginSetsSecureCookiesAndMeRequiresSession(t *testing.T) {
 	stub := &sessionStub{}
 	handler := NewHandlerWithIdentity(testLogger(), nil, stub)
@@ -97,6 +109,9 @@ func TestLoginSetsSecureCookiesAndMeRequiresSession(t *testing.T) {
 	}
 	if login.Header().Get("Cache-Control") != "no-store" || strings.Contains(login.Body.String(), sessionCookie.Value) {
 		t.Fatalf("session token leaked in login response: %s", login.Body.String())
+	}
+	if len(stub.loginRequestIDs) != 1 || stub.loginRequestIDs[0] == "" {
+		t.Fatalf("login request ID was not propagated: %#v", stub.loginRequestIDs)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	missing := httptest.NewRecorder()
@@ -133,6 +148,9 @@ func TestLogoutRequiresCSRFAndClearsCookies(t *testing.T) {
 	handler.ServeHTTP(accepted, request)
 	if accepted.Code != http.StatusNoContent || !stub.logoutCalled {
 		t.Fatalf("logout with CSRF = %d", accepted.Code)
+	}
+	if len(stub.logoutRequestIDs) != 2 || stub.logoutRequestIDs[0] == "" || stub.logoutRequestIDs[1] == "" || stub.logoutRequestIDs[0] == stub.logoutRequestIDs[1] {
+		t.Fatalf("logout request ID was not propagated: %#v", stub.logoutRequestIDs)
 	}
 	for _, cookie := range accepted.Result().Cookies() {
 		if cookie.MaxAge != -1 {

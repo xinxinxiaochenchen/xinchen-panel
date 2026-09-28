@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Activity, ArrowDownLeft, ArrowUpRight, CalendarDays, CircleUserRound, Gauge, GitBranch, Layers3, RefreshCw, Route, ShieldCheck, Wallet } from 'lucide-react'
-import { billingCycleLabel, dailyRange, formatBytes, formatDate, formatMultiplier, loadResource, type DailyUsage, type Membership, type Resource, type Usage, type User } from '../../lib/dashboard'
+import { billingCycleLabel, dailyRange, formatBytes, formatDate, formatMultiplier, loadResource, planScopeLabels, type DailyUsage, type Membership, type PlanScopeLabels, type Resource, type ScopeLine, type ScopeNode, type Usage, type User } from '../../lib/dashboard'
+import { loadAllCatalogPages } from '../../lib/catalog'
 
 type DailyResponse = { items: DailyUsage[] }
 const loading = { kind: 'loading' } as const
@@ -27,7 +28,7 @@ function MembershipCard({ state, usage }: { state: Resource<Membership>; usage: 
   </article>
 }
 
-function PlanScopeCard({ state }: { state: Resource<Membership> }) {
+function PlanScopeCard({ state, scope }: { state: Resource<Membership>; scope: Resource<PlanScopeLabels> }) {
   const snapshot = state.kind === 'ready' ? state.data.snapshot : null
   const limits = snapshot?.limits ?? {}
   return <article className="dashboard-card scope-card">
@@ -39,6 +40,10 @@ function PlanScopeCard({ state }: { state: Resource<Membership> }) {
         <div><span><Gauge size={15} />默认倍率</span><strong>{formatMultiplier(snapshot.default_multiplier_milli)}</strong></div>
         <div><span><GitBranch size={15} />最大跳数</span><strong>{limits.max_hops ?? 1} 跳</strong></div>
       </div>
+      {scope.kind === 'ready' && (scope.data.resourceGroups.length > 0 || scope.data.lines.length > 0) && <div className="scope-detail-list">
+        {scope.data.resourceGroups.length > 0 && <div><span>可用资源域</span><p>{scope.data.resourceGroups.map((label) => <em key={label}>{label}</em>)}</p></div>}
+        {scope.data.lines.length > 0 && <div><span>可用线路</span><p>{scope.data.lines.map((label) => <em key={label}>{label}</em>)}</p></div>}
+      </div>}
       <div className="scope-limits">
         <div><span>每节点转发规则</span><strong>{limits.max_forward_rules_per_node ?? 0}</strong></div>
         <div><span>代理候选线路</span><strong>{limits.max_proxy_lines ?? 1}</strong></div>
@@ -98,6 +103,7 @@ export function DashboardHome({ user }: { user: User }) {
   const [membership, setMembership] = useState<Resource<Membership>>(loading)
   const [usage, setUsage] = useState<Resource<Usage>>(loading)
   const [daily, setDaily] = useState<Resource<DailyResponse>>(loading)
+  const [scope, setScope] = useState<Resource<PlanScopeLabels>>(loading)
   const { from, to } = dailyRange(new Date(), 14)
 
   useEffect(() => {
@@ -105,11 +111,25 @@ export function DashboardHome({ user }: { user: User }) {
     setMembership(loading)
     setUsage(loading)
     setDaily(loading)
+    setScope(loading)
     const read = async <T,>(path: string, update: (value: Resource<T>) => void) => {
       const result = await loadResource<T>(path)
       if (active) update(result)
     }
-    void read('/api/v1/my/membership', setMembership)
+    void (async () => {
+      const result = await loadResource<Membership>('/api/v1/my/membership')
+      if (!active) return
+      setMembership(result)
+      if (result.kind !== 'ready') return
+      const [nodes, lines] = await Promise.all([
+        loadAllCatalogPages<ScopeNode>('/api/v1/nodes'),
+        loadAllCatalogPages<ScopeLine>('/api/v1/lines'),
+      ])
+      if (!active) return
+      if (nodes.kind === 'error') return setScope({ kind: 'error', message: nodes.message })
+      if (lines.kind === 'error') return setScope({ kind: 'error', message: lines.message })
+      setScope({ kind: 'ready', data: planScopeLabels(result.data.snapshot, nodes.kind === 'ready' ? nodes.data : [], lines.kind === 'ready' ? lines.data : []) })
+    })()
     void read('/api/v1/my/usage/current', setUsage)
     void read(`/api/v1/my/usage/daily?${new URLSearchParams({ from, to })}`, setDaily)
     return () => { active = false }
@@ -118,7 +138,7 @@ export function DashboardHome({ user }: { user: User }) {
   return <div className="dashboard-home">
     <div className="dashboard-intro"><div><span className="section-overline">PERSONAL OVERVIEW</span><h1>你好，{user.email.split('@')[0]}</h1><p>账户、套餐与真实流量都在这里。</p></div><button className="refresh-button" type="button" onClick={() => setGeneration((value) => value + 1)}><RefreshCw size={16} />刷新数据</button></div>
     <div className="account-strip"><span className="account-avatar"><CircleUserRound size={23} /></span><div><small>当前账户</small><strong>{user.email}</strong></div><span className="account-active"><span />{user.status === 'active' ? '账户正常' : user.status}</span></div>
-    <div className="dashboard-grid"><MembershipCard state={membership} usage={usage} /><PlanScopeCard state={membership} /><UsageCard state={usage} /><DailyCard state={daily} from={from} to={to} /></div>
+    <div className="dashboard-grid"><MembershipCard state={membership} usage={usage} /><PlanScopeCard state={membership} scope={scope} /><UsageCard state={usage} /><DailyCard state={daily} from={from} to={to} /></div>
     <p className="dashboard-footnote">数据来自当前账户的实时接口；账期流量与最近 14 天的 UTC 日统计口径可能不同。</p>
   </div>
 }

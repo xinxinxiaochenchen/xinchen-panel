@@ -63,8 +63,10 @@ type Session struct {
 type Repository interface {
 	FindUserByEmail(context.Context, string) (User, error)
 	InsertSession(context.Context, Session, string) error
+	InsertSessionWithAudit(context.Context, Session, string, string) error
 	FindSession(context.Context, [32]byte) (Session, User, error)
 	DeleteSession(context.Context, [32]byte) error
+	DeleteSessionWithAudit(context.Context, [32]byte, string, string) error
 }
 
 type Service struct {
@@ -84,6 +86,16 @@ type LoginResult struct {
 }
 
 func (s *Service) Login(ctx context.Context, email, password string) (LoginResult, error) {
+	return s.login(ctx, email, password, "")
+}
+
+// LoginWithRequestID is used by the HTTP boundary so a successful login can
+// be recorded in the same transaction as the browser session.
+func (s *Service) LoginWithRequestID(ctx context.Context, email, password, requestID string) (LoginResult, error) {
+	return s.login(ctx, email, password, requestID)
+}
+
+func (s *Service) login(ctx context.Context, email, password, requestID string) (LoginResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	user, err := s.repository.FindUserByEmail(ctx, email)
 	if errors.Is(err, ErrNotFound) {
@@ -105,10 +117,17 @@ func (s *Service) Login(ctx context.Context, email, password string) (LoginResul
 		return LoginResult{}, err
 	}
 	expiresAt := s.now().Add(12 * time.Hour)
-	if err := s.repository.InsertSession(ctx, Session{
+	session := Session{
 		TokenHash: sha256.Sum256(tokenBytes), CSRFHash: sha256.Sum256(csrfBytes),
 		UserID: user.ID, ExpiresAt: expiresAt,
-	}, user.PasswordHash); err != nil {
+	}
+	var insertErr error
+	if requestID != "" {
+		insertErr = s.repository.InsertSessionWithAudit(ctx, session, user.PasswordHash, requestID)
+	} else {
+		insertErr = s.repository.InsertSession(ctx, session, user.PasswordHash)
+	}
+	if err := insertErr; err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
 			return LoginResult{}, ErrInvalidCredentials
 		}
@@ -194,11 +213,27 @@ func (s *Service) VerifyCSRF(ctx context.Context, token, csrfToken string) (Publ
 }
 
 func (s *Service) Logout(ctx context.Context, token, csrfToken string) error {
-	if _, err := s.VerifyCSRF(ctx, token, csrfToken); err != nil {
+	return s.logout(ctx, token, csrfToken, "")
+}
+
+// LogoutWithRequestID records session revocation atomically with deletion.
+func (s *Service) LogoutWithRequestID(ctx context.Context, token, csrfToken, requestID string) error {
+	return s.logout(ctx, token, csrfToken, requestID)
+}
+
+func (s *Service) logout(ctx context.Context, token, csrfToken, requestID string) error {
+	user, err := s.VerifyCSRF(ctx, token, csrfToken)
+	if err != nil {
 		return err
 	}
 	hash, _ := hashToken(token)
-	if err := s.repository.DeleteSession(ctx, hash); err != nil {
+	var deleteErr error
+	if requestID != "" {
+		deleteErr = s.repository.DeleteSessionWithAudit(ctx, hash, user.ID, requestID)
+	} else {
+		deleteErr = s.repository.DeleteSession(ctx, hash)
+	}
+	if err := deleteErr; err != nil {
 		return fmt.Errorf("delete session: %w", err)
 	}
 	return nil

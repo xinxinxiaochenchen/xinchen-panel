@@ -1,4 +1,4 @@
-import type { User } from "./dashboard";
+import type { Snapshot, User } from "./dashboard";
 
 export type ResourceGroup = {
   id: string;
@@ -131,6 +131,8 @@ export function buildForwardPolicyInput(draft: ForwardPolicyDraft) {
 export type Plan = {
   id: string;
   name: string;
+  billing_mode?: string;
+  period_months?: number;
   quota_bytes: number;
   default_multiplier_milli: number;
   status: string;
@@ -138,6 +140,27 @@ export type Plan = {
   resource_group_ids: string[];
   line_ids: string[];
 };
+export type Membership = {
+  id: string;
+  user_id: string;
+  plan_id: string;
+  starts_at: string;
+  ends_at: string;
+  status: "scheduled" | "active" | "expired" | "cancelled" | string;
+  anchor_day: number;
+  timezone: string;
+  snapshot: Snapshot;
+  created_at: string;
+};
+
+export function membershipStatusLabel(status: string, endsAt: string, now = new Date()): string {
+  if (status === "active" && new Date(endsAt).getTime() <= now.getTime()) return "已到期";
+  return ({ active: "生效中", cancelled: "已取消", expired: "已到期", scheduled: "待生效" } as Record<string, string>)[status] ?? status;
+}
+
+export function membershipCanCancel(status: string, endsAt: string, now = new Date()): boolean {
+  return (status === "active" || status === "scheduled") && new Date(endsAt).getTime() > now.getTime();
+}
 export type PlanLimits = {
   max_forward_rules_per_node: number;
   max_subscriptions: number;
@@ -261,6 +284,10 @@ export type NodeDraft = {
   name: string;
   region: string;
   host: string;
+  publicIP?: string;
+  bandwidthBPS?: number | null;
+  multiplier?: number;
+  tags?: string[];
   proxy: boolean;
   forward: boolean;
   proxyPort: number;
@@ -278,11 +305,24 @@ export function buildNodeInput(draft: NodeDraft) {
     throw new Error("代理端口必须在 1–65535 之间。");
   if (draft.relayPort != null && (!draft.forward || !Number.isInteger(draft.relayPort) || draft.relayPort < 1024 || draft.relayPort > 65535 || (draft.proxy && draft.relayPort === draft.proxyPort)))
     throw new Error("中继端口需要转发能力，且须为不同的 1024–65535 端口。");
+  if (draft.bandwidthBPS != null && (!Number.isSafeInteger(draft.bandwidthBPS) || draft.bandwidthBPS < 0))
+    throw new Error("带宽必须是非负整数。");
+  const multiplier = draft.multiplier ?? 1;
+  const multiplierMilli = Math.round(multiplier * 1000);
+  if (!Number.isFinite(multiplier) || !Number.isSafeInteger(multiplierMilli) || multiplierMilli < 1 || multiplierMilli > 100000)
+    throw new Error("节点倍率必须在 0.001–100 之间。");
+  const tags = (draft.tags ?? []).map((tag) => tag.trim());
+  if (tags.length > 16 || tags.some((tag) => !tag || tag.length > 32) || new Set(tags).size !== tags.length)
+    throw new Error("节点标签必须是最多 16 个不重复的非空标签。");
   return {
     group_id: draft.groupID,
     name: draft.name.trim(),
     region: draft.region.trim(),
     host: draft.host.trim(),
+    public_ip: draft.publicIP?.trim() || null,
+    bandwidth_bps: draft.bandwidthBPS ?? null,
+    multiplier_milli: multiplierMilli,
+    tags,
     capabilities: [draft.proxy && "proxy", draft.forward && "forward"].filter(
       (value): value is string => Boolean(value),
     ),

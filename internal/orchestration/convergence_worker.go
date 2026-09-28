@@ -41,7 +41,7 @@ func (w *ConvergenceWorker) ProcessOne(ctx context.Context) (bool, error) {
 	var retries int
 	err = tx.QueryRow(ctx, `SELECT id::text,kind,payload,retry_count FROM outbox_events
 WHERE processed_at IS NULL AND available_at <= now()
-AND kind IN ('forward_rule.changed','forward_policy.changed','proxy_access.changed','billing.period_renewed','node.changed','user.changed')
+AND kind IN ('forward_rule.changed','forward_policy.changed','proxy_access.changed','billing.period_renewed','membership.changed','node.changed','group.changed','user.changed')
 ORDER BY available_at,created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&eventID, &kind, &payload, &retries)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil

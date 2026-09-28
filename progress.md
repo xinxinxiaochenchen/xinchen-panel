@@ -1,5 +1,29 @@
 # 进度
 
+- 2026-09-28：新增 GitHub 源码检出后的 Docker Compose 一键部署脚本 `scripts/deploy-vps.sh` 与源码构建覆盖文件。脚本首次生成 0600 的随机数据库密码，默认只绑定回环；纯 IP 只读预览需要显式 `--public-preview`。已有数据卷升级前先完成并校验 PostgreSQL 自定义格式备份，缺失原 `.env` 或备份失败时拒绝迁移。源码 Dockerfile 补齐节点初始化与 Agent 令牌工具。9 项 Python 部署/打包测试、Shell 语法、Compose YAML 解析和 diff 检查通过；本机没有 Docker，真实容器启动待 VPS 验证。当前 Git 仓库没有远端且本机没有 GitHub CLI，已向用户索取目标 GitHub 仓库地址。
+
+- 2026-09-28：完成当前源码的最终 Linux amd64/WebUI 发布构建。`go test ./... -count=1`（允许回环监听）、`go vet ./...`、WebUI 49 项测试、TypeScript 检查、Vite 生产构建、发布脚本测试和 `git diff --check` 均通过。最终归档为 `/private/tmp/network-control-plane-release-20260928-final.tar.gz`，SHA-256 `7897f13c912c8dc168927dd2d68e06ec9b1e140fffbef05d5abb3fd742843c66`；归档包含 migration 1–26、WebUI 和全部 VPS Compose 文件，不包含 `.env`、私钥或数据库数据。
+
+- 2026-09-28：按完整需求重新审计代码和交付边界。节点、资源域、线路、转发、订阅、分流、套餐/账期、RBAC、审计、Agent mTLS、配置收敛及多跳 TCP/UDP 均已有实现、REST/OpenAPI、WebUI 和回归测试；`task_plan.md` 与 README 已更新为代码完成、真实公网 Agent/HTTPS/正式节点仅属于外部部署验收。用户付费、订单、充值和支付继续排除。
+
+- 2026-09-28：继续完善登录后首页。套餐范围卡片在保留授权数量的同时，从当前账户可见的节点/线路目录解析并展示资源域代码与线路名称；名称解析失败时不阻塞套餐和流量数据。新增纯函数回归测试，WebUI 49 项测试、类型检查、生产构建、Go 全量测试（允许回环监听）、Go vet、发布脚本测试和 diff 检查通过。已生成 `/private/tmp/network-control-plane-release-20260928-dashboard-scope.tar.gz`，SHA-256 `8f4231b283c8093f8ad695335e10ae8dcfd09fb44273143596ab1b59f7f4ce29`。该改动只影响浏览器 WebUI，不引入原生 App、支付或订单能力；最新归档尚未上传 VPS。
+
+- 2026-09-28：补齐成功退出审计。退出请求的 CSRF 校验、会话撤销和 `logout` 审计在 PostgreSQL 同一事务内完成；审计不包含 Token 或 CSRF。新增身份服务、HTTP 请求 ID 和 PostgreSQL 回归覆盖。Go 身份/HTTP 回归、Go vet、WebUI 48 项测试、类型检查、生产构建和打包测试通过。最终发布包为 `/private/tmp/network-control-plane-release-20260928-auth-audit-final.tar.gz`，SHA-256 `1a77b71e4720566bfc4ed98c923a18f6414f51b3c7edc3b7e23de209326a6579`；尚未上传 VPS。真实 PostgreSQL 用例仍需配置 `CONTROL_TEST_DATABASE_URL` 才会运行；支付/充值系统保持排除。
+
+- 2026-09-28：补齐成功登录审计。HTTP 登录将请求 ID 传入身份服务；PostgreSQL 在创建浏览器会话的同一事务中写入不含凭据或 Token 的 `login` 审计记录，内存仓储和旧调用保持兼容。新增服务、HTTP 请求 ID 和 PostgreSQL 回归覆盖；Go 全量测试以 `-count=1` 在允许回环监听的环境中通过，Go vet、WebUI 48 项测试、类型检查、生产构建和打包测试也通过。最终发布包为 `/private/tmp/network-control-plane-release-20260928-final.tar.gz`，SHA-256 `24501b7c9d655617728b11253f756368be4eb46133f9bb7c1e95f4e9b3f42ae9`。真实 PostgreSQL 登录审计用例会在配置 `CONTROL_TEST_DATABASE_URL` 时执行；此包尚未发布到 VPS。
+
+- 2026-09-28：补齐节点带宽展示。节点目录卡片使用统一格式显示 `bandwidth_bps`（Kbps/Mbps/Gbps），空值和非法值显示占位符；新增格式化回归测试。WebUI 48 项测试、TypeScript 类型检查、生产构建、Go 全量测试、Go vet、发布脚本测试和 Linux amd64 交叉构建通过。已生成包含 migration 26、最新 WebUI 和全部 Compose 运行文件的发布包 `/private/tmp/network-control-plane-release-20260928.tar.gz`，SHA-256 为 `2572586f6c68b4df648b4ebec4d5f1b31b0181adebab040258ca7166a7038752`。Termark CLI 当前不可用，因此该包尚未上传 `us bwg`。
+
+- 2026-09-28：补齐节点延迟指标。控制面通过 Agent mTLS WebSocket Ping/Pong 每 15 秒采样往返时间，在线且采样未超过 45 秒时写入节点目录和指标 API；重新连接会清除旧延迟，离线或撤销后不展示过期值。新增 migration 26、OpenAPI 字段、WebUI 节点卡片/管理员指标展示及回归测试；Agent WebSocket 延迟测试、Go 迁移/目录/编排定向测试和 WebUI 延迟测试通过。PGlite 加载 `btree_gist` 后，迁移 1–26 执行与迁移 26 回滚通过；真实 PostgreSQL 16 集成仍待在隔离库运行。
+
+- 2026-09-28：项目形态保持 VPS 部署的 WebUI，不开发原生 App。转发管理页增加已有规则的名称编辑入口，入口/目标/端口/协议按现有 API 保持不可变；WebUI 46 项测试、类型检查、生产构建通过。新增仅收录运行文件的 Linux amd64 发布归档工具，校验二进制架构、migration 配对、WebUI 与 Compose 文件，排除 `.env` 和 AppleDouble；Python 3 项打包回归、实际归档生成与内容检查通过。Go 全量测试在允许本机回环端口的环境中通过；本机无 PostgreSQL DSN，集成测试仍按原有条件跳过。最新改动尚未发布到 VPS。
+
+- 2026-09-28：补齐资源域启停管理。管理员可通过 REST/OpenAPI 和 WebUI 启停资源域；变更写审计并投递 `group.changed` 全局收敛事件，重复当前状态保持幂等。Go HTTP 权限/CSRF、目录纯测试、WebUI 39 项测试及生产构建通过；PostgreSQL 仓储与 worker 集成用例已加入，在未配置 `CONTROL_TEST_DATABASE_URL` 的本机环境中跳过，仍待真实 PostgreSQL 运行。
+
+- 2026-09-28：管理员节点创建表单补齐公网 IP、带宽、节点倍率和标签字段；前端请求模型增加本地校验并保持与后端 `nodes` 数据模型一致。WebUI 39 项测试与生产构建通过。
+
+- 2026-09-28：修复节点引导路径遗漏 `relay_port` 的问题。`node-bootstrap` 新增 `CONTROL_NODE_RELAY_PORT`，幂等初始化现在会持久化并比较中继端口；新增回归测试覆盖端口变更冲突和返回模型。完整 Go 测试、`go vet`、WebUI 38 项测试与生产构建通过。
+
 - 2026-09-28：修复无有效订购用户创建代理连接时未将 PostgreSQL `no rows` 转换为资源不存在的问题；订阅集成测试补充 `{line}` 模板以覆盖“自动线路”标签。使用 `us bwg` 的 PostgreSQL 16.10，为每个用例创建全新临时数据库并逐项通过 17 项代理、迁移 24、计费、多跳准入、转发、配置收敛和订阅回归。最新 Linux amd64/WebUI 发布包 SHA-256 为 `e4cef22d760cdeb39164e9b0e5273a69027a44add454d8708e37b7f13eb7a0c1`；已部署到 `/opt/network-control-plane/releases/release-1ea63c9-20260928`，正式库迁移版本 `25|25`，升级前备份 `ncp-before-1ea63c9.dump` 权限 0600，API/DB healthy、重启 0，公网首页/live/ready 200，明文登录 404。正式库仍为 0 用户、0 节点、0 Agent；真实生产 Agent 入网、HTTPS 管理入口和公网多 Agent 数据面仍待正式节点与证书条件。
 
 - 2026-09-27：代理连接候选池补齐创建后的管理闭环：`PATCH /proxy-accesses/{id}` 可事务化替换候选线路、优先级和权重，限制所有候选共享入口节点，检查套餐上限及逐跳授权；移除候选前检查未过期的活跃计费租约。默认线路失效但备用候选可用时仍允许查看/轮换凭据和重新启用连接。WebUI 提供“编辑线路”入口，OpenAPI 同步更新契约。Go 全量测试、vet、WebUI 33 项测试及构建已执行；PostgreSQL 集成测试因本机无真实 PostgreSQL 16 仍待在隔离库执行，VPS 尚未更新。
@@ -296,3 +320,24 @@
 - 套餐快照新增 `billing_mode` 和 `period_months`，账期续期生成的冻结快照同步保留这两个字段；旧快照仍可正常读取。
 - 登录后的首页新增账期重置、下次重置时间、节点资源域/共享线路范围、默认倍率、最大跳数、转发/代理候选/订阅/分流/自有线路限制卡片。
 - 先写入并验证前端账期和倍率回归，再完成 React 类型检查/生产构建、WebUI 38 项测试、Go 全量测试和 `go vet`。
+
+- 2026-09-28：补齐套餐授权管理闭环：管理员可分页查看冻结授权快照，并可通过受 RBAC/CSRF 保护的 PATCH 取消有效授权；取消事务写审计与 membership.changed outbox，收敛 worker 会重新编译 Agent 配置，取消后新的额度准入会因无有效授权而拒绝。新增 HTTP、仓储、收敛与前端状态回归，Go 全量测试/vet 与 WebUI 测试/生产构建通过；本机未配置 CONTROL_TEST_DATABASE_URL，真实 PostgreSQL 仓储和 worker 集成测试仍待执行。当前未部署到 VPS。
+
+- 2026-09-28：补齐套餐生命周期：管理员可通过 `PATCH /api/v1/admin/plans/{id}` 归档或恢复套餐；事务锁定套餐、写审计，已存在订购的冻结快照不受影响。WebUI 增加套餐状态操作，OpenAPI、HTTP/仓储回归已覆盖。Linux amd64 发布脚本、Go 全量测试/vet、WebUI 测试/生产构建及 OpenAPI 解析通过；未部署 VPS，真实 PostgreSQL DSN 仍待配置。
+- 2026-09-28：交付形态再次确认：仅开发可部署到 VPS、通过浏览器访问的 WebUI，节点运行独立 Go Agent，不做原生 App。补齐管理员 Agent 撤销 API 与节点页操作：`agents.write`/CSRF 门槛、证书及中继授权清除、未消费令牌删除、审计和收敛事件，重新入网可恢复。当前本机 Go 全量测试在允许回环监听的环境通过，`go vet`、WebUI 41 项测试及生产构建、OpenAPI YAML 解析和 `git diff --check` 通过；因没有 PostgreSQL 测试 DSN，真实仓储集成测试在本机跳过，尚未部署本轮代码到 VPS。
+
+- 2026-09-28：补齐管理员节点资料编辑：`PATCH /api/v1/admin/nodes/{id}/config` 可更新资源域、地址、端口、能力、带宽、倍率和标签，启停仍由独立状态接口负责。变更写审计并投递 `node.changed`，数据库端口触发器继续保证跨节点占用；地址或中继参数变化会撤销中继证书授权。节点管理 UI 增加编辑入口，HTTP 回归、全量 Go 测试、Go vet、WebUI 41 项测试、生产构建和 OpenAPI 解析通过；真实 PostgreSQL 仓储测试因本机无 DSN 跳过。
+
+## 2026-09-28 WebUI 生命周期收敛
+
+- 订阅页接入现有 PATCH/DELETE 生命周期：支持编辑订阅名称、客户端模板、代理连接和分流 Profile，删除订阅并立即使 Token 失效；编辑表单保留已停用或暂时不可见的旧目标，避免列表过滤导致误删配置。
+- 代理连接、转发规则、分流 Profile/规则和用户自有线路页补齐删除操作；删除请求使用 CSRF、权限检查和二次确认，失败时显示服务端冲突原因。
+- 新增订阅草稿归一化与回归测试；WebUI 43 项测试、TypeScript 类型检查、生产构建、Go 全量测试（允许回环监听）和 `go vet ./...` 通过。当前未执行真实 PostgreSQL 集成测试，也未发布到 VPS。
+- 更新 `docs/agent-usage-protocol.md`，将已接入 Agent 持久计量与用量 outbox 的实现状态和仍待公网 VPS 验收的边界分开描述。
+- 追加验证：Linux amd64 交叉编译 `go build ./cmd/...` 通过；工作区保持未提交改动，未覆盖或重置此前阶段成果。
+
+## 2026-09-28 分流编辑生命周期
+
+- 分流 Profile WebUI 增加编辑默认动作、默认线路和名称；规则 WebUI 增加编辑优先级、动作及目标线路，匹配类型和值保持不可变，避免误改规则身份。
+- 编辑器在列表过滤掉已停用线路时仍保留当前值并显示不可用状态；前端草稿转换和非法优先级/空线路回归已加入。
+- WebUI 45 项测试、类型检查和生产构建通过；后端全量测试、vet 与 Linux amd64 构建此前已通过。

@@ -19,6 +19,7 @@ type BootstrapConfig struct {
 	PublicIP     string
 	Capabilities []string
 	ProxyPort    *int
+	RelayPort    *int
 }
 
 func LoadBootstrapConfig(lookup func(string) (string, bool)) (BootstrapConfig, error) {
@@ -95,6 +96,13 @@ func LoadBootstrapConfig(lookup func(string) (string, bool)) (BootstrapConfig, e
 			return BootstrapConfig{}, errors.New("CONTROL_NODE_PROXY_PORT must be an integer")
 		}
 		cfg.ProxyPort = &port
+	}
+	if value, ok := lookup("CONTROL_NODE_RELAY_PORT"); ok && strings.TrimSpace(value) != "" {
+		port, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return BootstrapConfig{}, errors.New("CONTROL_NODE_RELAY_PORT must be an integer")
+		}
+		cfg.RelayPort = &port
 	}
 	return cfg, nil
 }
