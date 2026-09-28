@@ -6,6 +6,12 @@
 
 ## VPS 部署
 
+```sh
+git clone https://github.com/xinxinxiaochenchen/xinchen-panel.git
+cd xinchen-panel
+sh scripts/deploy-vps.sh
+```
+
 装有 Docker Engine、Compose 插件和 Git 的 VPS 可在克隆源码后运行 `sh scripts/deploy-vps.sh`，由 Docker 构建控制面与 WebUI、生成私有数据库密码、迁移并启动服务。默认绑定 `127.0.0.1:18080`；纯 IP 只读预览显式使用 `sh scripts/deploy-vps.sh --public-preview`。浏览器 WebUI 的 Docker Compose 部署、HTTPS 反代、管理员初始化和密钥挂载步骤见 [VPS WebUI 部署说明](docs/deployment/vps-webui.md)。
 
 ## 本地运行

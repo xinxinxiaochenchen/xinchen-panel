@@ -7,7 +7,7 @@
 VPS 先安装 Docker Engine、Compose 插件和 Git，然后克隆项目并运行：
 
 ```sh
-git clone <项目的 GitHub 仓库地址> network-control-plane
+git clone https://github.com/xinxinxiaochenchen/xinchen-panel.git network-control-plane
 cd network-control-plane
 sh scripts/deploy-vps.sh
 ```
